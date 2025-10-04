@@ -61,8 +61,8 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 VIRTUAL_ENV=/home/appuser/venv
 WORKDIR /home/appuser
 
 COPY --from=builder /home/appuser/venv /home/appuser/venv
-COPY ./src /home/appuser/src
-WORKDIR /home/appuser/src
+COPY ./app /home/appuser/app
+WORKDIR /home/appuser
 
-CMD ["python", "-m", "gunicorn", "-k", "uvicorn.workers.UvicornWorker", "main:app", "--bind", "0.0.0.0:8000", "--workers", "2"]
+CMD ["python", "-m", "gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000", "--workers", "2"]
 

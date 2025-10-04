@@ -13,3 +13,6 @@ prometheus-fastapi-instrumentator==7.0.0
 pyinstrument==4.6.2
 sqladmin==0.20.1
 pydantic-settings>=2.8.1
+asyncpg==0.30.0
+pyjwt[crypto]==2.8.0
+httpx==0.27.0

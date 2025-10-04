@@ -1,4 +1,5 @@
 import os
+
 import requests
 
 HTTP_AUTH_USER = os.getenv("HTTP_AUTH_USER")

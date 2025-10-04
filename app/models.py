@@ -4,14 +4,18 @@ from typing import Optional, Union
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
-    String,
-    Text,
+    CheckConstraint,
     ForeignKey,
     Index,
+    String,
+    Text,
     UniqueConstraint,
-    CheckConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
+from sqlalchemy import (
+    Enum as SQLEnum,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -26,15 +30,20 @@ class WorkflowDeploymentStatus(Enum):
     FAILED = "failed"
 
 
-# SQLAlchemy Models
+class WebhookListenerType(Enum):
+    PUBLISHED_WORKFLOW = "published_workflow"
+    LOCAL_WORKFLOW = "local_workflow"
+
+
 class User(Base):
     __tablename__ = "users"
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
-    username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    workos_user_id: Mapped[str] = mapped_column(
+        String(255), unique=True, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
@@ -202,7 +211,9 @@ class Runtime(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     # Relationships
-    deployments: Mapped[list["WorkflowDeployment"]] = relationship(back_populates="runtime")
+    deployments: Mapped[list["WorkflowDeployment"]] = relationship(
+        back_populates="runtime"
+    )
 
     __table_args__ = (
         UniqueConstraint("name", "version", name="uq_runtime_name_version"),
@@ -232,6 +243,9 @@ class Workflow(Base):
     namespace: Mapped["Namespace"] = relationship(back_populates="workflows")
     created_by: Mapped["User"] = relationship(back_populates="created_workflows")
     deployments: Mapped[list["WorkflowDeployment"]] = relationship(
+        back_populates="workflow", cascade="all, delete-orphan"
+    )
+    webhook_listeners: Mapped[list["WebhookListener"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
     )
 
@@ -271,3 +285,37 @@ class WorkflowDeployment(Base):
     )
 
     __table_args__ = (Index("idx_workflow_deployments_workflow", "workflow_id"),)
+
+
+class Webhook(Base):
+    __tablename__ = "webhooks"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+
+    # Relationships
+    listeners: Mapped[list["WebhookListener"]] = relationship(
+        back_populates="webhook", cascade="all, delete-orphan"
+    )
+
+
+class WebhookListener(Base):
+    __tablename__ = "webhook_listeners"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    webhook_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("webhooks.id", ondelete="CASCADE")
+    )
+    workflow_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("workflows.id", ondelete="CASCADE")
+    )
+    listener_type: Mapped[WebhookListenerType] = mapped_column(
+        SQLEnum(WebhookListenerType), nullable=False
+    )
+
+    # Relationships
+    webhook: Mapped["Webhook"] = relationship(back_populates="listeners")
+    workflow: Mapped["Workflow"] = relationship(back_populates="webhook_listeners")

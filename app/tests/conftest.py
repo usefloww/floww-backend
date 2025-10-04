@@ -1,13 +1,12 @@
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.ext.asyncio import async_sessionmaker
-from app.deps.db import get_async_db
 from httpx import AsyncClient
-from app.models import Base  # Replace with your actual imports
-from app.entrypoint.api import app  # Replace with your actual FastAPI app
-from sqlalchemy.pool import NullPool
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
+from app.deps.db import get_async_db
+from app.entrypoint.api import app  # Replace with your actual FastAPI app
+from app.models import Base  # Replace with your actual imports
 from app.settings import settings
 
 

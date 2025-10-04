@@ -6,8 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqladmin import Admin
 
-
-from routes import health
+from app.routes import health, webhooks, websocket, whoami, workflows
 
 
 def init_sentry():
@@ -50,4 +49,8 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 
 api_router.include_router(health.router)
+api_router.include_router(workflows.router)
+api_router.include_router(whoami.router)
+app.include_router(webhooks.router)
+app.include_router(websocket.router)
 app.include_router(api_router)
