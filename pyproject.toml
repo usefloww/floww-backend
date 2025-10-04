@@ -1,0 +1,9 @@
+[tool.pyright]
+pythonVersion = "3.13"
+typeCheckingMode = "standard"
+extraPaths = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-vv"
+asyncio_mode = "auto"
+pythonpath = ["src"]

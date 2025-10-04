@@ -1,0 +1,31 @@
+services:
+  app:
+    build:
+      context: .
+      secrets:
+        - package_registry_token
+    volumes:
+      - ./src:/home/appuser/src
+    command: >
+      python -X frozen_modules=off -m debugpy --listen 0.0.0.0:3100 -m uvicorn main:app --host 0.0.0.0 --reload
+    ports:
+      - "8000:8000"
+      - "3100:3100"
+    env_file:
+      - .env
+  
+
+  db:
+    image: postgis/postgis:17-3.4-alpine
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=postgis
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=secret
+
+
+secrets:
+  package_registry_token:
+    environment: GL_PAT
