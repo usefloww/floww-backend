@@ -4,7 +4,6 @@ import sentry_sdk
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from tw_fastapi import ProfilerMiddleware
 from sqladmin import Admin
 
 
@@ -30,8 +29,6 @@ def init_sentry():
 app = FastAPI()
 
 admin = Admin(app)
-
-app.add_middleware(ProfilerMiddleware)
 
 api_router = APIRouter(prefix="/api")
 
