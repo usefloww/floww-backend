@@ -1,18 +1,44 @@
+ARG UID=1000
+ARG GID=2000
+
+FROM ghcr.io/astral-sh/uv:0.8.4 AS uv
+
 ###########
 # Builder #
 ###########
-FROM registry.gitlab.com/techwolfbe/infrastructure/base-images/python-313-builder as builder
+FROM python:3.13-slim-bookworm AS builder
+ARG UID
+ARG GID
+
+RUN rm /var/lib/dpkg/info/libc-bin.* && \
+    apt-get clean && \
+    apt-get update && \
+    apt-get install -y libc-bin
+RUN apt-get update && \
+    apt-get -y upgrade && \
+    apt-get install -y --no-install-recommends build-essential && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g "${GID}" appuser
+RUN useradd -u "${UID}" -g "${GID}" --create-home -s /bin/bash appuser
+
+COPY --chown=appuser:appuser --from=uv /uv /usr/local/bin/uv
+USER appuser
+ENV PATH="/home/appuser/venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 VIRTUAL_ENV=/home/appuser/venv
+WORKDIR /home/appuser
+
+RUN uv venv /home/appuser/venv
+RUN uv pip install setuptools wheel pip
 
 COPY ./requirements/requirements_app.txt requirements.txt
-RUN --mount=type=secret,id=package_registry_token,uid=1000 \
-    --mount=type=cache,target=/home/appuser/.cache/uv,uid=1000,gid=2000 \
-    GL_PAT=$(cat /run/secrets/package_registry_token) uv pip install -r requirements.txt
-
+RUN --mount=type=cache,target=/home/appuser/.cache/uv,uid=1000,gid=2000 \
+    uv pip install -r requirements.txt
 
 ##########
 # Checks #
 ##########
-
 FROM builder AS checks
 
 COPY ./requirements/additional_requirements_mypy.txt ./requirements/additional_requirements_test.txt ./
@@ -22,9 +48,19 @@ RUN --mount=type=cache,target=/home/appuser/.cache/uv,uid=1000,gid=2000 \
 ###############
 # Application #
 ###############
-FROM registry.gitlab.com/techwolfbe/infrastructure/base-images/python-313 as app
-COPY --from=builder /home/appuser/venv /home/appuser/venv
+FROM python:3.13-slim-bookworm AS app
+ARG UID=1000
+ARG GID=2000
 
+RUN groupadd -g "${GID}" appuser
+RUN useradd -u "${UID}" -g "${GID}" --create-home -s /bin/bash appuser
+
+USER appuser
+ENV PATH="/home/appuser/venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 VIRTUAL_ENV=/home/appuser/venv
+WORKDIR /home/appuser
+
+COPY --from=builder /home/appuser/venv /home/appuser/venv
 COPY ./src /home/appuser/src
 WORKDIR /home/appuser/src
 
