@@ -4,10 +4,10 @@ import httpx
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
 
 from app.deps.db import SessionDep
 from app.models import User
+from app.services.user_service import get_or_create_user
 from app.settings import settings
 
 security = HTTPBearer()
@@ -84,15 +84,7 @@ async def get_current_user(
         raise credentials_exception
 
     # Get user from database
-    result = await session.execute(
-        select(User).where(User.workos_user_id == workos_user_id)
-    )
-    user = result.scalar_one_or_none()
-
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
+    user = await get_or_create_user(session, workos_user_id)
 
     return user
 
