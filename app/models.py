@@ -35,6 +35,19 @@ class WebhookListenerType(Enum):
     LOCAL_WORKFLOW = "local_workflow"
 
 
+class OrganizationRole(Enum):
+    OWNER = "owner"
+    ADMIN = "admin"
+    MEMBER = "member"
+
+
+class NamespaceRole(Enum):
+    OWNER = "owner"
+    ADMIN = "admin"
+    WRITE = "write"
+    READ = "read"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -101,9 +114,9 @@ class OrganizationMember(Base):
     user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
     )
-    role: Mapped[str] = mapped_column(
-        String(50), nullable=False
-    )  # owner, admin, member
+    role: Mapped[OrganizationRole] = mapped_column(
+        SQLEnum(OrganizationRole), nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     # Relationships
@@ -128,10 +141,12 @@ class Namespace(Base):
 
     # Owner can be either a User or Organization
     user_owner_id: Mapped[Optional[UUID]] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
     organization_owner_id: Mapped[Optional[UUID]] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True
+        PGUUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -161,8 +176,7 @@ class Namespace(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "(user_owner_id IS NOT NULL AND organization_owner_id IS NULL) OR "
-            "(user_owner_id IS NULL AND organization_owner_id IS NOT NULL)",
+            "(user_owner_id IS NOT NULL)::int + (organization_owner_id IS NOT NULL)::int = 1",
             name="chk_namespace_single_owner",
         ),
         Index("idx_namespaces_user_owner", "user_owner_id"),
@@ -182,9 +196,7 @@ class NamespaceMember(Base):
     user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
     )
-    role: Mapped[str] = mapped_column(
-        String(50), nullable=False
-    )  # owner, admin, write, read
+    role: Mapped[NamespaceRole] = mapped_column(SQLEnum(NamespaceRole), nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     # Relationships
@@ -231,8 +243,8 @@ class Workflow(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_by_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("users.id")
+    created_by_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -241,7 +253,9 @@ class Workflow(Base):
 
     # Relationships
     namespace: Mapped["Namespace"] = relationship(back_populates="workflows")
-    created_by: Mapped["User"] = relationship(back_populates="created_workflows")
+    created_by: Mapped[Optional["User"]] = relationship(
+        back_populates="created_workflows"
+    )
     deployments: Mapped[list["WorkflowDeployment"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
     )
@@ -253,6 +267,7 @@ class Workflow(Base):
         UniqueConstraint("namespace_id", "name", name="uq_namespace_workflow"),
         Index("idx_workflows_namespace", "namespace_id"),
         Index("idx_workflows_created_by", "created_by_id"),
+        Index("idx_workflows_updated_at", "updated_at"),
     )
 
 
@@ -266,29 +281,34 @@ class WorkflowDeployment(Base):
         PGUUID(as_uuid=True), ForeignKey("workflows.id", ondelete="CASCADE")
     )
     runtime_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("runtimes.id")
+        PGUUID(as_uuid=True), ForeignKey("runtimes.id", ondelete="RESTRICT")
     )
-    deployed_by_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("users.id")
+    deployed_by_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     deployed_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    status: Mapped[str] = mapped_column(
-        String(50), nullable=False, default=WorkflowDeploymentStatus.ACTIVE.value
+    status: Mapped[WorkflowDeploymentStatus] = mapped_column(
+        SQLEnum(WorkflowDeploymentStatus),
+        nullable=False,
+        default=WorkflowDeploymentStatus.ACTIVE,
     )
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
     workflow: Mapped["Workflow"] = relationship(back_populates="deployments")
     runtime: Mapped["Runtime"] = relationship(back_populates="deployments")
-    deployed_by: Mapped["User"] = relationship(
+    deployed_by: Mapped[Optional["User"]] = relationship(
         foreign_keys=[deployed_by_id], back_populates="deployments"
     )
 
-    __table_args__ = (Index("idx_workflow_deployments_workflow", "workflow_id"),)
+    __table_args__ = (
+        Index("idx_workflow_deployments_workflow", "workflow_id"),
+        Index("idx_workflow_deployments_status", "status"),
+    )
 
 
-class Webhook(Base):
-    __tablename__ = "webhooks"
+class IncomingWebhook(Base):
+    __tablename__ = "incoming_webhooks"
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
@@ -301,13 +321,13 @@ class Webhook(Base):
 
 
 class WebhookListener(Base):
-    __tablename__ = "webhook_listeners"
+    __tablename__ = "incoming_webhook_listeners"
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
     webhook_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("webhooks.id", ondelete="CASCADE")
+        PGUUID(as_uuid=True), ForeignKey("incoming_webhooks.id", ondelete="CASCADE")
     )
     workflow_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("workflows.id", ondelete="CASCADE")
@@ -317,5 +337,5 @@ class WebhookListener(Base):
     )
 
     # Relationships
-    webhook: Mapped["Webhook"] = relationship(back_populates="listeners")
+    webhook: Mapped["IncomingWebhook"] = relationship(back_populates="listeners")
     workflow: Mapped["Workflow"] = relationship(back_populates="webhook_listeners")

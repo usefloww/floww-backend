@@ -16,15 +16,17 @@ security = HTTPBearer()
 _workos_public_keys: Optional[dict] = None
 
 
+issuer_url = f"{settings.WORKOS_API_URL}/user_management/{settings.WORKOS_CLIENT_ID}"
+jwks_url = f"{settings.WORKOS_API_URL}/sso/jwks/{settings.WORKOS_CLIENT_ID}"
+
+
 async def get_workos_public_keys() -> dict:
     """Fetch WorkOS public keys for JWT validation."""
     global _workos_public_keys
 
     if _workos_public_keys is None:
         async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{settings.WORKOS_API_URL}/sso/jwks/{settings.WORKOS_CLIENT_ID}"
-            )
+            response = await client.get(jwks_url)
             response.raise_for_status()
             _workos_public_keys = response.json()
 
@@ -69,8 +71,7 @@ async def get_current_user(
             credentials.credentials,
             public_key,
             algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.WORKOS_CLIENT_ID,
-            issuer=settings.WORKOS_API_URL,
+            issuer=issuer_url,
         )
 
         # Extract user ID from JWT
@@ -78,7 +79,8 @@ async def get_current_user(
         if workos_user_id is None:
             raise credentials_exception
 
-    except jwt.PyJWTError:
+    except jwt.PyJWTError as e:
+        print(f"JWT error: {e}")
         raise credentials_exception
 
     # Get user from database
