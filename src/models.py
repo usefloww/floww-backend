@@ -201,6 +201,9 @@ class Runtime(Base):
     config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
+    # Relationships
+    deployments: Mapped[list["WorkflowDeployment"]] = relationship(back_populates="runtime")
+
     __table_args__ = (
         UniqueConstraint("name", "version", name="uq_runtime_name_version"),
     )
@@ -248,6 +251,9 @@ class WorkflowDeployment(Base):
     workflow_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("workflows.id", ondelete="CASCADE")
     )
+    runtime_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("runtimes.id")
+    )
     deployed_by_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("users.id")
     )
@@ -259,6 +265,7 @@ class WorkflowDeployment(Base):
 
     # Relationships
     workflow: Mapped["Workflow"] = relationship(back_populates="deployments")
+    runtime: Mapped["Runtime"] = relationship(back_populates="deployments")
     deployed_by: Mapped["User"] = relationship(
         foreign_keys=[deployed_by_id], back_populates="deployments"
     )
