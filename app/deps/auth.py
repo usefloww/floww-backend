@@ -23,7 +23,7 @@ async def get_workos_public_keys() -> dict:
     if _workos_public_keys is None:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{settings.WORKOS_API_URL}/.well-known/jwks.json"
+                f"{settings.WORKOS_API_URL}/sso/jwks/{settings.WORKOS_CLIENT_ID}"
             )
             response.raise_for_status()
             _workos_public_keys = response.json()
