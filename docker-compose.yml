@@ -31,6 +31,19 @@ services:
     container_name: floww-backend-valkey
     image: valkey/valkey:latest
     restart: always
+  
+  migrations:
+    container_name: "floww-backend-migrations"
+    build:
+      context: .
+      secrets:
+        - package_registry_token
+    command: "python -m alembic upgrade head"
+    env_file:
+      - .env
+    profiles:
+      - migrations
+    restart: no
 
 
 

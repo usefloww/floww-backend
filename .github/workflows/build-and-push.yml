@@ -68,6 +68,7 @@ jobs:
           key: ${{ secrets.SERVER_PRIVATE_KEY }}
           script: |
             cd /home/ec2-user/infrastructure/services/floww-backend
-            docker-compose pull
-            docker-compose up -d
+            docker compose pull
+            docker compose up floww-backend-migrations
+            docker compose up -d
             docker image prune -f

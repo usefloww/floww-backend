@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.deps.db import SessionDep
-from app.models import Webhook
+from app.models import IncomingWebhook
 
 router = APIRouter()
 
@@ -13,9 +13,9 @@ router = APIRouter()
 async def webhook_listener(request: Request, webhook_id: str, session: SessionDep):
     # Query webhook with its listeners
     result = await session.execute(
-        select(Webhook)
-        .options(selectinload(Webhook.listeners))
-        .where(Webhook.id == webhook_id)
+        select(IncomingWebhook)
+        .options(selectinload(IncomingWebhook.listeners))
+        .where(IncomingWebhook.id == webhook_id)
     )
     webhook = result.scalar_one_or_none()
 

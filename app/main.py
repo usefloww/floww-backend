@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from sqladmin import Admin
 
 from app.routes import health, webhooks, websocket, whoami, workflows
+from app.utils.logging import setup_logger
 
 
 def init_sentry():
@@ -26,6 +27,8 @@ def init_sentry():
 
 
 app = FastAPI()
+
+setup_logger(app)
 
 admin = Admin(app)
 

@@ -16,3 +16,7 @@ pydantic-settings>=2.8.1
 asyncpg==0.30.0
 pyjwt[crypto]==2.8.0
 httpx==0.27.0
+structlog==25.4.0
+asgi-correlation-id==4.3.4
+alembic==1.16.5
+greenlet==3.2.4
