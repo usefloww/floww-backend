@@ -4,12 +4,9 @@ import sentry_sdk
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from sqladmin import Admin
 
-from app.admin.admin_auth import AdminAuth
-from app.admin.admin_model_views import ALL_VIEWS
-from app.deps.db import AsyncSessionLocal
 from app.routes import admin_auth, health, webhooks, whoami, workflows
+from app.routes.admin import init_admin
 from app.utils.logging import setup_logger
 
 
@@ -33,14 +30,8 @@ app = FastAPI()
 
 setup_logger(app)
 
-admin = Admin(
-    app=app,
-    session_maker=AsyncSessionLocal,
-    authentication_backend=AdminAuth(),
-)
+init_admin(app)
 
-for view in ALL_VIEWS:
-    admin.add_view(view)
 
 api_router = APIRouter(prefix="/api")
 

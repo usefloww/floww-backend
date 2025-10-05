@@ -6,7 +6,8 @@
     "key": "floww-api-key-dev"
   },
   "admin": {
-    "enabled": true
+    "enabled": true,
+    "insecure": true
   },
   "client": {
     "token": {

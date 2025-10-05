@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     SESSION_SECRET_KEY: str = "floww-session-secret-change-in-production"
 
     # Centrifugo settings
-    CENTRIFUGO_HOST: str = "localhost"
-    CENTRIFUGO_PORT: int = 5001
+    CENTRIFUGO_HOST: str = "centrifugo"
+    CENTRIFUGO_PORT: int = 8000
     CENTRIFUGO_API_KEY: str = "floww-api-key-dev"
     CENTRIFUGO_JWT_SECRET: str = "floww-dev-jwt-secret-key-change-in-production"
 
