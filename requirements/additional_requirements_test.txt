@@ -3,3 +3,4 @@ pytest-mock
 pytest-random-order
 bandit
 ruff
+websocket-client

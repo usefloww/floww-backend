@@ -1,0 +1,38 @@
+{
+  "http_server": {
+    "port": "8000"
+  },
+  "http_api": {
+    "key": "floww-api-key-dev"
+  },
+  "admin": {
+    "enabled": true
+  },
+  "client": {
+    "token": {
+      "hmac_secret_key": "floww-dev-jwt-secret-key-change-in-production"
+    },
+    "allowed_origins": ["http://localhost:3000", "http://localhost:8000"],
+    "allow_anonymous_connect_without_token": false
+  },
+  "channel": {
+    "namespaces": [
+      {
+        "name": "workflow",
+        "allow_subscribe_for_client": true,
+        "allow_subscribe_for_anonymous": false,
+        "allow_publish_for_subscriber": false,
+        "allow_publish_for_client": false,
+        "allow_publish_for_anonymous": false,
+        "presence": true,
+        "allow_presence_for_subscriber": true,
+        "allow_presence_for_client": true,
+        "history_size": 50,
+        "history_ttl": "600s",
+        "allow_history_for_subscriber": true,
+        "allow_history_for_client": true,
+        "join_leave": true
+      }
+    ]
+  }
+}

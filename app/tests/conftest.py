@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.deps.db import get_async_db
-from app.entrypoint.api import app  # Replace with your actual FastAPI app
+from app.main import app  # Replace with your actual FastAPI app
 from app.models import Base  # Replace with your actual imports
 from app.settings import settings
 

@@ -6,6 +6,7 @@ import structlog
 from asgi_correlation_id import CorrelationIdMiddleware
 from asgi_correlation_id.context import correlation_id
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic_settings import BaseSettings
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from structlog.typing import Processor
@@ -96,15 +97,12 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         structlog.contextvars.clear_contextvars()
         request_id = correlation_id.get()
-        tenant_id = request.query_params.get("tenant_id")
-        structlog.contextvars.bind_contextvars(
-            request_id=request_id, tenant_id=tenant_id
-        )
+        structlog.contextvars.bind_contextvars(request_id=request_id)
 
         start_time = time.perf_counter()
         response = Response(status_code=500)
         try:
-            response = await call_next(request)
+            response: StreamingResponse = await call_next(request)
         except Exception:
             structlog.stdlib.get_logger("api.error").exception("Uncaught exception")
             raise

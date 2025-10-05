@@ -1,36 +1,14 @@
-from typing import Annotated, Optional
+from typing import Annotated
 
-import httpx
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.deps.db import SessionDep
 from app.models import User
-from app.services.user_service import get_or_create_user
-from app.settings import settings
+from app.utils.auth import get_user_from_token
 
 security = HTTPBearer()
-
-# Cache for WorkOS public keys
-_workos_public_keys: Optional[dict] = None
-
-
-issuer_url = f"{settings.WORKOS_API_URL}/user_management/{settings.WORKOS_CLIENT_ID}"
-jwks_url = f"{settings.WORKOS_API_URL}/sso/jwks/{settings.WORKOS_CLIENT_ID}"
-
-
-async def get_workos_public_keys() -> dict:
-    """Fetch WorkOS public keys for JWT validation."""
-    global _workos_public_keys
-
-    if _workos_public_keys is None:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(jwks_url)
-            response.raise_for_status()
-            _workos_public_keys = response.json()
-
-    return _workos_public_keys
 
 
 async def get_current_user(
@@ -46,47 +24,11 @@ async def get_current_user(
     )
 
     try:
-        # Get WorkOS public keys for JWT validation
-        jwks = await get_workos_public_keys()
-
-        # Decode JWT header to get key ID
-        unverified_header = jwt.get_unverified_header(credentials.credentials)
-        key_id = unverified_header.get("kid")
-
-        if not key_id:
-            raise credentials_exception
-
-        # Find the matching public key
-        public_key = None
-        for key in jwks.get("keys", []):
-            if key.get("kid") == key_id:
-                public_key = jwt.algorithms.RSAAlgorithm.from_jwk(key)
-                break
-
-        if not public_key:
-            raise credentials_exception
-
-        # Decode and validate JWT
-        payload = jwt.decode(
-            credentials.credentials,
-            public_key,
-            algorithms=[settings.JWT_ALGORITHM],
-            issuer=issuer_url,
-        )
-
-        # Extract user ID from JWT
-        workos_user_id: str = payload.get("sub")
-        if workos_user_id is None:
-            raise credentials_exception
-
+        user = await get_user_from_token(session, credentials.credentials)
+        return user
     except jwt.PyJWTError as e:
         print(f"JWT error: {e}")
         raise credentials_exception
-
-    # Get user from database
-    user = await get_or_create_user(session, workos_user_id)
-
-    return user
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]

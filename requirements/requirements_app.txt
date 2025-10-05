@@ -11,7 +11,7 @@ sentry-sdk[fastapi]==2.19.2
 debugpy==1.8.12
 prometheus-fastapi-instrumentator==7.0.0
 pyinstrument==4.6.2
-sqladmin==0.20.1
+sqladmin==0.21.0
 pydantic-settings>=2.8.1
 asyncpg==0.30.0
 pyjwt[crypto]==2.8.0
@@ -20,3 +20,4 @@ structlog==25.4.0
 asgi-correlation-id==4.3.4
 alembic==1.16.5
 greenlet==3.2.4
+itsdangerous==2.2.0

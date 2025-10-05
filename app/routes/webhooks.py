@@ -5,6 +5,7 @@ from sqlalchemy.orm import selectinload
 
 from app.deps.db import SessionDep
 from app.models import IncomingWebhook
+from app.services.centrifugo_service import centrifugo_service
 
 router = APIRouter()
 
@@ -22,6 +23,13 @@ async def webhook_listener(request: Request, webhook_id: str, session: SessionDe
     if not webhook:
         return JSONResponse(content={"error": "Webhook not found"}, status_code=404)
 
+    # Get webhook payload
+    webhook_data = (
+        await request.json()
+        if request.headers.get("content-type") == "application/json"
+        else {}
+    )
+
     # Print which listeners will be called
     print(f"Webhook {webhook_id} has {len(webhook.listeners)} listeners:")
     for listener in webhook.listeners:
@@ -29,10 +37,22 @@ async def webhook_listener(request: Request, webhook_id: str, session: SessionDe
             f"  - Listener {listener.id}: {listener.listener_type.value} for workflow {listener.workflow_id}"
         )
 
+    # Send notifications to all workflow channels via Centrifugo
+    notifications_sent = 0
+    for listener in webhook.listeners:
+        success = await centrifugo_service.notify_webhook_received(
+            workflow_id=listener.workflow_id,
+            webhook_id=webhook_id,
+            webhook_data=webhook_data,
+        )
+        if success:
+            notifications_sent += 1
+
     return JSONResponse(
         content={
             "webhook_id": webhook_id,
             "listeners_count": len(webhook.listeners),
+            "notifications_sent": notifications_sent,
             "listeners": [
                 {
                     "id": str(listener.id),

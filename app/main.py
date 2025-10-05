@@ -6,7 +6,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqladmin import Admin
 
-from app.routes import health, webhooks, websocket, whoami, workflows
+from app.admin.admin_auth import AdminAuth
+from app.admin.admin_model_views import ALL_VIEWS
+from app.deps.db import AsyncSessionLocal
+from app.routes import admin_auth, health, webhooks, whoami, workflows
 from app.utils.logging import setup_logger
 
 
@@ -30,7 +33,14 @@ app = FastAPI()
 
 setup_logger(app)
 
-admin = Admin(app)
+admin = Admin(
+    app=app,
+    session_maker=AsyncSessionLocal,
+    authentication_backend=AdminAuth(),
+)
+
+for view in ALL_VIEWS:
+    admin.add_view(view)
 
 api_router = APIRouter(prefix="/api")
 
@@ -55,5 +65,5 @@ api_router.include_router(health.router)
 api_router.include_router(workflows.router)
 api_router.include_router(whoami.router)
 app.include_router(webhooks.router)
-app.include_router(websocket.router)
+app.include_router(admin_auth.router)
 app.include_router(api_router)

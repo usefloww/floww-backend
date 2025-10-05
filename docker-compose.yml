@@ -9,6 +9,8 @@ services:
       - ./app:/home/appuser/app
     command: >
       python -X frozen_modules=off -m debugpy --listen 0.0.0.0:3100 -m uvicorn app.main:app --host 0.0.0.0 --reload
+    environment:
+      LOG_FORMAT: console
     ports:
       - "8000:8000"
       - "3100:3100"
@@ -31,7 +33,22 @@ services:
     container_name: floww-backend-valkey
     image: valkey/valkey:latest
     restart: always
-  
+
+  centrifugo:
+    container_name: floww-backend-centrifugo
+    image: centrifugo/centrifugo:v6
+    command: centrifugo -c /centrifugo/config.json
+    volumes:
+      - ./centrifugo.json:/centrifugo/config.json
+    ports:
+      - "5001:8000"  # WebSocket and HTTP API
+      - "8001:8001"  # Admin panel
+    restart: always
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
   migrations:
     container_name: "floww-backend-migrations"
     build:
