@@ -121,16 +121,30 @@ async def create_secret(
 
 @router.get("/namespace/{namespace_id}", response_model=list[SecretResponse])
 async def list_secrets(
-    namespace_id: UUID, current_user: CurrentUser, session: SessionDep
+    namespace_id: UUID,
+    current_user: CurrentUser,
+    session: SessionDep,
+    provider: Optional[str] = None,
+    name: Optional[str] = None,
 ):
-    """List all secrets in a namespace (without decrypted values)."""
+    """List all secrets in a namespace (without decrypted values).
+
+    Optionally filter by provider and/or name.
+    """
     # Check namespace access
     await check_namespace_access(session, namespace_id, current_user.id)
 
+    # Build query with filters
+    query = select(Secret).where(Secret.namespace_id == namespace_id)
+
+    if provider is not None:
+        query = query.where(Secret.provider == provider)
+
+    if name is not None:
+        query = query.where(Secret.name == name)
+
     # Query secrets
-    result = await session.execute(
-        select(Secret).where(Secret.namespace_id == namespace_id)
-    )
+    result = await session.execute(query)
     secrets = result.scalars().all()
 
     return [
@@ -144,45 +158,6 @@ async def list_secrets(
         )
         for secret in secrets
     ]
-
-
-@router.get("/namespace/{namespace_id}/name/{secret_name}", response_model=SecretWithValueResponse)
-async def get_secret_by_name(
-    namespace_id: UUID,
-    secret_name: str,
-    current_user: CurrentUser,
-    session: SessionDep,
-):
-    """Get a secret by namespace and name with its decrypted value."""
-    # Check namespace access
-    await check_namespace_access(session, namespace_id, current_user.id)
-
-    # Query the secret
-    result = await session.execute(
-        select(Secret).where(
-            Secret.namespace_id == namespace_id,
-            Secret.name == secret_name,
-        )
-    )
-    secret = result.scalar_one_or_none()
-
-    if not secret:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Secret not found"
-        )
-
-    # Decrypt the value
-    decrypted_value = decrypt_secret(secret.encrypted_value)
-
-    return SecretWithValueResponse(
-        id=secret.id,
-        namespace_id=secret.namespace_id,
-        name=secret.name,
-        provider=secret.provider,
-        value=decrypted_value,
-        created_at=secret.created_at.isoformat(),
-        updated_at=secret.updated_at.isoformat(),
-    )
 
 
 @router.get("/{secret_id}", response_model=SecretWithValueResponse)
