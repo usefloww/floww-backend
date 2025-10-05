@@ -65,5 +65,5 @@ COPY ./app /home/appuser/app
 COPY ./alembic.ini /home/appuser/alembic.ini
 WORKDIR /home/appuser
 
-CMD ["python", "-m", "gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000", "--workers", "2"]
+CMD ["python", "-m", "gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000", "--workers", "2", "--forwarded-allow-ips", "*", "--proxy-headers"]
 
