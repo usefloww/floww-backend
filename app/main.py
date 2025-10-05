@@ -5,7 +5,15 @@ from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.routes import admin_auth, health, secrets, webhooks, whoami, workflows, centrifugo
+from app.routes import (
+    admin_auth,
+    centrifugo,
+    health,
+    secrets,
+    webhooks,
+    whoami,
+    workflows,
+)
 from app.routes.admin import init_admin
 from app.utils.logging import setup_logger
 
