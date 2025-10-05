@@ -9,7 +9,25 @@ from app.deps.db import AsyncSessionLocal
 from app.settings import settings
 
 
+async def _check_admin_auth(request: Request):
+    """Check if user is authenticated as admin, return redirect response if not."""
+    admin_auth = AdminAuth()
+    auth_result = await admin_auth.authenticate(request)
+
+    # If auth_result is True, user is authenticated
+    if auth_result is True:
+        return None
+
+    # Otherwise, auth_result is a Response (redirect or error)
+    return auth_result
+
+
 async def _centrifugo_proxy(request: Request):
+    # Check authentication first
+    auth_response = await _check_admin_auth(request)
+    if auth_response is not None:
+        return auth_response
+
     async with httpx.AsyncClient() as client:
         # Construct the target URL
         target_url = f"http://{settings.CENTRIFUGO_HOST}:{settings.CENTRIFUGO_PORT}"
@@ -41,6 +59,11 @@ async def _centrifugo_proxy(request: Request):
 
 
 async def _links_page(request: Request):
+    # Check authentication first
+    auth_response = await _check_admin_auth(request)
+    if auth_response is not None:
+        return auth_response
+
     return Response(
         content="""
     <html>
