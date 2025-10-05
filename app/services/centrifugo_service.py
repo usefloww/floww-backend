@@ -3,7 +3,6 @@ from typing import Any, Dict
 from uuid import UUID
 
 import httpx
-import jwt
 from pydantic import BaseModel
 from structlog import get_logger
 
@@ -24,7 +23,6 @@ class CentrifugoService:
         self.api_key = settings.CENTRIFUGO_API_KEY
         self.host = settings.CENTRIFUGO_HOST
         self.port = settings.CENTRIFUGO_PORT
-        self.jwt_secret = settings.CENTRIFUGO_JWT_SECRET
 
         # HTTP client for API calls
         self.client = httpx.AsyncClient(
@@ -35,22 +33,6 @@ class CentrifugoService:
     def get_workflow_channel(self, workflow_id: UUID) -> str:
         """Get the channel name for a specific workflow"""
         return f"workflow:{str(workflow_id)}"
-
-    def generate_channel_token(
-        self, user_id: str, workflow_id: UUID, exp_minutes: int = 30
-    ) -> str:
-        """Generate a JWT token for channel access"""
-        channel = self.get_workflow_channel(workflow_id)
-
-        payload = {
-            "sub": user_id,
-            "exp": int(time.time()) + (exp_minutes * 60),
-            "iat": int(time.time()),
-            "channels": [channel],
-        }
-
-        token = jwt.encode(payload, self.jwt_secret, algorithm="HS256")
-        return token
 
     async def publish_to_channel(self, channel: str, data: Dict[str, Any]) -> bool:
         """Publish data to a Centrifugo channel via HTTP API"""

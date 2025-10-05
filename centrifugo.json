@@ -10,13 +10,25 @@
     "insecure": true
   },
   "client": {
-    "token": {
-      "hmac_secret_key": "floww-dev-jwt-secret-key-change-in-production"
+    "proxy": {
+      "connect": {
+        "enabled": true,
+        "endpoint": "http://app:8000/centrifugo/connect",
+        "timeout": "5s",
+        "http_headers": ["Authorization"]
+      }
     },
     "allowed_origins": ["http://localhost:3000", "http://localhost:8000"],
-    "allow_anonymous_connect_without_token": false
+    "allow_anonymous_connect_without_token": true
   },
   "channel": {
+    "proxy": {
+      "subscribe": {
+        "endpoint": "http://app:8000/centrifugo/subscribe",
+        "timeout": "5s",
+        "http_headers": ["Authorization"]
+      }
+    },
     "namespaces": [
       {
         "name": "workflow",

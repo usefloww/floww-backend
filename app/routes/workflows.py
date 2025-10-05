@@ -1,12 +1,11 @@
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep
 from app.models import NamespaceMember, Workflow
-from app.services.centrifugo_service import centrifugo_service
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -97,39 +96,3 @@ async def list_workflows(current_user: CurrentUser, session: SessionDep):
         "total": len(workflows),
         "user_id": str(current_user.id),
     }
-
-
-@router.post("/{workflow_id}/channel-token")
-async def get_workflow_channel_token(
-    workflow_id: str, current_user: CurrentUser, session: SessionDep
-):
-    """Get a JWT token for accessing a workflow's real-time channel."""
-    # Check if user has access to this workflow
-    has_access = await user_has_workflow_access(
-        session, str(current_user.id), workflow_id
-    )
-
-    if not has_access:
-        raise HTTPException(status_code=403, detail="Access denied to this workflow")
-
-    # Generate JWT token for the workflow channel
-    try:
-        token = centrifugo_service.generate_channel_token(
-            user_id=str(current_user.id),
-            workflow_id=workflow_id,
-            exp_minutes=30,  # Token expires in 30 minutes
-        )
-
-        channel = centrifugo_service.get_workflow_channel(workflow_id)
-
-        return {
-            "token": token,
-            "channel": channel,
-            "expires_in": 1800,  # 30 minutes in seconds
-            "user_id": str(current_user.id),
-            "workflow_id": workflow_id,
-        }
-
-    except Exception as e:
-        logger.error(f"Failed to generate channel token: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate channel token")
