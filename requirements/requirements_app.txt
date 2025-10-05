@@ -21,3 +21,4 @@ asgi-correlation-id==4.3.4
 alembic==1.16.5
 greenlet==3.2.4
 itsdangerous==2.2.0
+cryptography==44.0.0

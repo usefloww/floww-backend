@@ -169,6 +169,9 @@ class Namespace(Base):
     workflows: Mapped[list["Workflow"]] = relationship(
         back_populates="namespace", cascade="all, delete-orphan"
     )
+    secrets: Mapped[list["Secret"]] = relationship(
+        back_populates="namespace", cascade="all, delete-orphan"
+    )
 
     @property
     def namespace_owner(self) -> Union["User", "Organization", None]:
@@ -339,3 +342,29 @@ class WebhookListener(Base):
     # Relationships
     webhook: Mapped["IncomingWebhook"] = relationship(back_populates="listeners")
     workflow: Mapped["Workflow"] = relationship(back_populates="webhook_listeners")
+
+
+class Secret(Base):
+    __tablename__ = "secrets"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    namespace_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("namespaces.id", ondelete="CASCADE")
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    provider: Mapped[str] = mapped_column(String(255), nullable=False)
+    encrypted_value: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    namespace: Mapped["Namespace"] = relationship(back_populates="secrets")
+
+    __table_args__ = (
+        UniqueConstraint("namespace_id", "name", name="uq_namespace_secret"),
+        Index("idx_secrets_namespace", "namespace_id"),
+    )

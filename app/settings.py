@@ -19,5 +19,8 @@ class Settings(BaseSettings):
     CENTRIFUGO_API_KEY: str = "floww-api-key-dev"
     CENTRIFUGO_JWT_SECRET: str = "floww-dev-jwt-secret-key-change-in-production"
 
+    # Secret encryption key (must be a valid Fernet key - 32 url-safe base64-encoded bytes)
+    ENCRYPTION_KEY: str = "OTLHgX6E8_3k-c6rHBsbHDKnuPGtmD1ycNip9CgfiFk="
+
 
 settings = Settings()
