@@ -69,6 +69,6 @@ jobs:
           script: |
             cd /home/ec2-user/infrastructure/services/floww-backend
             docker compose pull
-            docker compose up floww-backend-migrations
+            docker compose up migrations
             docker compose up -d
             docker image prune -f
