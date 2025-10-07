@@ -51,7 +51,6 @@ def get_model_icon(model_name: str) -> str:
         "Workflow": "fa-solid fa-diagram-project",
         "WorkflowDeployment": "fa-solid fa-rocket",
         "IncomingWebhook": "fa-solid fa-blog",
-        "WebhookListener": "fa-solid fa-ear-listen",
     }
     return icon_map.get(model_name, "fa-solid fa-table")
 

@@ -30,11 +30,6 @@ class WorkflowDeploymentStatus(Enum):
     FAILED = "failed"
 
 
-class WebhookListenerType(Enum):
-    PUBLISHED_WORKFLOW = "published_workflow"
-    LOCAL_WORKFLOW = "local_workflow"
-
-
 class OrganizationRole(Enum):
     OWNER = "owner"
     ADMIN = "admin"
@@ -262,7 +257,7 @@ class Workflow(Base):
     deployments: Mapped[list["WorkflowDeployment"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
     )
-    webhook_listeners: Mapped[list["WebhookListener"]] = relationship(
+    incoming_webhooks: Mapped[list["IncomingWebhook"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
     )
 
@@ -316,32 +311,12 @@ class IncomingWebhook(Base):
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
-
-    # Relationships
-    listeners: Mapped[list["WebhookListener"]] = relationship(
-        back_populates="webhook", cascade="all, delete-orphan"
-    )
-
-
-class WebhookListener(Base):
-    __tablename__ = "incoming_webhook_listeners"
-
-    id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
-    )
-    webhook_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("incoming_webhooks.id", ondelete="CASCADE")
-    )
     workflow_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("workflows.id", ondelete="CASCADE")
     )
-    listener_type: Mapped[WebhookListenerType] = mapped_column(
-        SQLEnum(WebhookListenerType), nullable=False
-    )
 
     # Relationships
-    webhook: Mapped["IncomingWebhook"] = relationship(back_populates="listeners")
-    workflow: Mapped["Workflow"] = relationship(back_populates="webhook_listeners")
+    workflow: Mapped["Workflow"] = relationship(back_populates="incoming_webhooks")
 
 
 class Secret(Base):

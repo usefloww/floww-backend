@@ -15,12 +15,16 @@ The backend uses Centrifugo v6 for real-time WebSocket communication with workfl
 - `CENTRIFUGO_JWT_SECRET`: Random string (32+ chars) for HMAC signing of client JWT tokens
 
 **API Flow:**
-1. Client requests channel token via `POST /api/workflows/{id}/channel-token`
-2. Backend validates user access to workflow and generates JWT token with 30-minute expiration
-3. Client connects to Centrifugo WebSocket using the token to subscribe to `workflow:{id}` channel
+1. Client tries to open connection to centrifugo
+2. Authorization header is send to backend at `/centrifugo/connect` and connection is granted if JWT is valid
+3. Subscriptions are requested to `workflow:{workflow_id}` and `/centrifugo/subscribe` is called to see if user should be able to do so.
 4. Backend publishes workflow events (webhook received, execution started/completed/failed) to channels via HTTP API
 5. Subscribed clients receive real-time updates for their authorized workflows
-6. When JWT expires, client must request new token and reconnect (no automatic refresh)
+
+**Dashboard**
+
+The centrifugo dashboard is proxies through the backend such that it can benefit from the same authentication.
+It is available at `/admin/centrifugo`.
 
 
 ## Admin Interface

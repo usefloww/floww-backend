@@ -58,8 +58,6 @@ services:
     command: "python -m alembic upgrade head"
     env_file:
       - .env
-    profiles:
-      - migrations
     restart: no
 
 

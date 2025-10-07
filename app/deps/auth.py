@@ -1,6 +1,7 @@
 from typing import Annotated
 
 import jwt
+import structlog
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -25,6 +26,7 @@ async def get_current_user(
 
     try:
         user = await get_user_from_token(session, credentials.credentials)
+        structlog.contextvars.bind_contextvars(user_id=user.id)
         return user
     except jwt.PyJWTError as e:
         print(f"JWT error: {e}")

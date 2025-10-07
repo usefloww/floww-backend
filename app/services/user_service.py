@@ -1,7 +1,9 @@
+from uuid import UUID
+
 from sqlalchemy import select
 
 from app.deps.db import SessionDep
-from app.models import Namespace, User
+from app.models import Namespace, NamespaceMember, User, Workflow
 
 
 async def get_or_create_user(session: SessionDep, workos_user_id: str) -> User:
@@ -20,3 +22,17 @@ async def get_or_create_user(session: SessionDep, workos_user_id: str) -> User:
         session.add(workspace)
         await session.commit()
     return user
+
+
+async def user_has_workflow_access(
+    session: SessionDep, user_id: UUID, workflow_id: UUID
+) -> bool:
+    """Check if user has access to a workflow via namespace membership."""
+    result = await session.execute(
+        select(Workflow).where(
+            Workflow.id == workflow_id
+            and Workflow.namespace.has(NamespaceMember.user_id == user_id)
+        )
+    )
+    workflow = result.scalar_one_or_none()
+    return workflow is not None

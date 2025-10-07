@@ -9,6 +9,8 @@ from app.routes import (
     admin_auth,
     centrifugo,
     health,
+    namespaces,
+    runtimes,
     secrets,
     webhooks,
     whoami,
@@ -64,6 +66,8 @@ api_router.include_router(health.router)
 api_router.include_router(workflows.router)
 api_router.include_router(whoami.router)
 api_router.include_router(secrets.router)
+api_router.include_router(runtimes.router)
+api_router.include_router(namespaces.router)
 app.include_router(webhooks.router)
 app.include_router(admin_auth.router)
 app.include_router(centrifugo.router)
