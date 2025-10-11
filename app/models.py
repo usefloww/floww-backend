@@ -284,6 +284,17 @@ class WorkflowDeployment(Base):
     deployed_by_id: Mapped[Optional[UUID]] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    user_code: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False)
+    """
+    {
+        "files": {
+            "main.ts": "...",
+            "utils.ts": "...",
+            ...
+        },
+        "entrypoint": "main.ts"
+    }
+    """
     deployed_at: Mapped[datetime] = mapped_column(server_default=func.now())
     status: Mapped[WorkflowDeploymentStatus] = mapped_column(
         SQLEnum(WorkflowDeploymentStatus),

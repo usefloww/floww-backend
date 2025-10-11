@@ -4,103 +4,34 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import or_, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy import select
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep
-from app.models import Namespace, NamespaceMember, Workflow
+from app.models import Namespace, Workflow
+from app.services.access_service import (
+    get_user_accessible_workflows_query,
+    user_has_namespace_access,
+)
+from app.utils.response_helpers import (
+    create_creation_response,
+    create_workflows_response,
+)
 
 logger = structlog.stdlib.get_logger(__name__)
 
 router = APIRouter(prefix="/workflows", tags=["Workflows"])
 
 
-async def user_has_workflow_access(
-    session: SessionDep, user_id: str, workflow_id: str
-) -> bool:
-    """Check if user has access to a workflow via namespace membership or ownership."""
-    # Query workflow with namespace information
-    result = await session.execute(
-        select(Workflow)
-        .options(selectinload(Workflow.namespace))
-        .where(Workflow.id == workflow_id)
-    )
-    workflow = result.scalar_one_or_none()
-
-    if not workflow:
-        return False
-
-    # Check if user is the creator
-    if workflow.created_by_id and str(workflow.created_by_id) == user_id:
-        return True
-
-    # Check if user owns the namespace
-    if (
-        workflow.namespace.user_owner_id
-        and str(workflow.namespace.user_owner_id) == user_id
-    ):
-        return True
-
-    # Check if user is a member of the namespace
-    member_result = await session.execute(
-        select(NamespaceMember).where(
-            NamespaceMember.namespace_id == workflow.namespace_id,
-            NamespaceMember.user_id == user_id,
-        )
-    )
-    member = member_result.scalar_one_or_none()
-
-    return member is not None
-
-
 @router.get("")
 async def list_workflows(current_user: CurrentUser, session: SessionDep):
     """List workflows accessible to the authenticated user."""
-    # Query workflows where user has access via namespace
-    result = await session.execute(
-        select(Workflow)
-        .options(selectinload(Workflow.namespace))
-        .join(Workflow.namespace)
-        .outerjoin(
-            NamespaceMember, NamespaceMember.namespace_id == Workflow.namespace_id
-        )
-        .where(
-            or_(
-                # User owns the namespace
-                Workflow.namespace.has(user_owner_id=current_user.id),
-                # User created the workflow
-                Workflow.created_by_id == current_user.id,
-                # User is a member of the namespace
-                NamespaceMember.user_id == current_user.id,
-            )
-        )
-        .distinct()
-    )
+    # Use centralized query builder
+    query = get_user_accessible_workflows_query(session, current_user.id)
+    result = await session.execute(query)
     workflows = result.scalars().all()
 
-    return {
-        "workflows": [
-            {
-                "id": str(workflow.id),
-                "name": workflow.name,
-                "description": workflow.description,
-                "namespace_id": str(workflow.namespace_id),
-                "namespace_name": workflow.namespace.name
-                if workflow.namespace
-                else None,
-                "created_at": workflow.created_at.isoformat()
-                if workflow.created_at
-                else None,
-                "updated_at": workflow.updated_at.isoformat()
-                if workflow.updated_at
-                else None,
-            }
-            for workflow in workflows
-        ],
-        "total": len(workflows),
-        "user_id": str(current_user.id),
-    }
+    return create_workflows_response(workflows, current_user)
 
 
 class WorkflowCreate(BaseModel):
@@ -124,20 +55,9 @@ async def create_workflow(
         raise HTTPException(status_code=404, detail="Namespace not found")
 
     # Check if user has access to this namespace
-    has_access = (
-        namespace.user_owner_id == current_user.id
-        or
-        # TODO: Add organization member check
-        await session.execute(
-            select(NamespaceMember).where(
-                NamespaceMember.namespace_id == workflow_data.namespace_id,
-                NamespaceMember.user_id == current_user.id,
-            )
-        ).scalar_one_or_none()
-        is not None
-    )
-
-    if not has_access:
+    if not await user_has_namespace_access(
+        session, current_user.id, workflow_data.namespace_id
+    ):
         raise HTTPException(status_code=403, detail="Access denied to namespace")
 
     # Create the workflow
@@ -156,11 +76,10 @@ async def create_workflow(
         "Created new workflow", workflow_id=str(workflow.id), name=workflow.name
     )
 
-    return {
-        "id": str(workflow.id),
-        "name": workflow.name,
-        "description": workflow.description,
-        "namespace_id": str(workflow.namespace_id),
-        "created_by_id": str(workflow.created_by_id),
-        "created_at": workflow.created_at.isoformat() if workflow.created_at else None,
-    }
+    return create_creation_response(
+        workflow,
+        name=workflow.name,
+        description=workflow.description,
+        namespace_id=str(workflow.namespace_id),
+        created_by_id=str(workflow.created_by_id),
+    )

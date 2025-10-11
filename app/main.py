@@ -14,6 +14,7 @@ from app.routes import (
     secrets,
     webhooks,
     whoami,
+    workflow_deployments,
     workflows,
 )
 from app.routes.admin import init_admin
@@ -68,6 +69,7 @@ api_router.include_router(whoami.router)
 api_router.include_router(secrets.router)
 api_router.include_router(runtimes.router)
 api_router.include_router(namespaces.router)
+api_router.include_router(workflow_deployments.router)
 app.include_router(webhooks.router)
 app.include_router(admin_auth.router)
 app.include_router(centrifugo.router)

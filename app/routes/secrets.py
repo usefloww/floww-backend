@@ -8,7 +8,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep
-from app.models import Namespace, NamespaceMember, Secret
+from app.models import Secret
+from app.services.access_service import check_namespace_access
 from app.utils.encryption import decrypt_secret, encrypt_secret
 
 router = APIRouter(prefix="/secrets", tags=["Secrets"])
@@ -41,41 +42,6 @@ class SecretResponse(BaseModel):
 
 class SecretWithValueResponse(SecretResponse):
     value: str
-
-
-async def check_namespace_access(
-    session: SessionDep, namespace_id: UUID, user_id: UUID
-) -> Namespace:
-    """Check if user has access to the namespace and return it."""
-    result = await session.execute(
-        select(Namespace).where(Namespace.id == namespace_id)
-    )
-    namespace = result.scalar_one_or_none()
-
-    if not namespace:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Namespace not found"
-        )
-
-    # Check if user owns the namespace or is a member
-    if namespace.user_owner_id == user_id:
-        return namespace
-
-    if namespace.organization_owner_id:
-        # Check if user is a member of the namespace
-        member_result = await session.execute(
-            select(NamespaceMember).where(
-                NamespaceMember.namespace_id == namespace_id,
-                NamespaceMember.user_id == user_id,
-            )
-        )
-        if member_result.scalar_one_or_none():
-            return namespace
-
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="You don't have access to this namespace",
-    )
 
 
 @router.post("/", response_model=SecretResponse, status_code=status.HTTP_201_CREATED)
