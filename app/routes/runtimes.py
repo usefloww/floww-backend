@@ -5,7 +5,7 @@ import httpx
 import structlog
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep
@@ -80,9 +80,17 @@ async def create_runtime_only(
 ):
     """Create a new runtime without deployment"""
 
-    # Check if runtime with this hash already exists
+    # Check if runtime with this hash OR name+version already exists
     existing_runtime_result = await session.execute(
-        select(Runtime).where(Runtime.hash == runtime_data.hash)
+        select(Runtime).where(
+            or_(
+                Runtime.hash == runtime_data.hash,
+                and_(
+                    Runtime.name == runtime_data.name,
+                    Runtime.version == runtime_data.version,
+                ),
+            )
+        )
     )
     existing_runtime = existing_runtime_result.scalar_one_or_none()
 
@@ -90,7 +98,11 @@ async def create_runtime_only(
         # Reuse existing runtime
         runtime = existing_runtime
         logger.info(
-            "Reusing existing runtime", runtime_id=str(runtime.id), hash=runtime.hash
+            "Reusing existing runtime",
+            runtime_id=str(runtime.id),
+            hash=runtime.hash,
+            name=runtime.name,
+            version=runtime.version,
         )
         reused_existing = True
     else:
@@ -105,7 +117,11 @@ async def create_runtime_only(
         await session.commit()
         await session.refresh(runtime)
         logger.info(
-            "Created new runtime", runtime_id=str(runtime.id), hash=runtime.hash
+            "Created new runtime",
+            runtime_id=str(runtime.id),
+            hash=runtime.hash,
+            name=runtime.name,
+            version=runtime.version,
         )
         reused_existing = False
 
@@ -134,9 +150,17 @@ async def create_runtime(
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    # Check if runtime with this hash already exists
+    # Check if runtime with this hash OR name+version already exists
     existing_runtime_result = await session.execute(
-        select(Runtime).where(Runtime.hash == runtime_data.hash)
+        select(Runtime).where(
+            or_(
+                Runtime.hash == runtime_data.hash,
+                and_(
+                    Runtime.name == runtime_data.name,
+                    Runtime.version == runtime_data.version,
+                ),
+            )
+        )
     )
     existing_runtime = existing_runtime_result.scalar_one_or_none()
 
