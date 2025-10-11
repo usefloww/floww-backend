@@ -61,9 +61,6 @@ class User(Base):
     owned_namespaces: Mapped[list["Namespace"]] = relationship(
         "Namespace", foreign_keys="Namespace.user_owner_id", back_populates="user_owner"
     )
-    namespace_memberships: Mapped[list["NamespaceMember"]] = relationship(
-        back_populates="user"
-    )
     organization_memberships: Mapped[list["OrganizationMember"]] = relationship(
         back_populates="user"
     )
@@ -158,9 +155,6 @@ class Namespace(Base):
         foreign_keys=[organization_owner_id],
         back_populates="owned_namespaces",
     )
-    members: Mapped[list["NamespaceMember"]] = relationship(
-        back_populates="namespace", cascade="all, delete-orphan"
-    )
     workflows: Mapped[list["Workflow"]] = relationship(
         back_populates="namespace", cascade="all, delete-orphan"
     )
@@ -179,32 +173,6 @@ class Namespace(Base):
         ),
         Index("idx_namespaces_user_owner", "user_owner_id"),
         Index("idx_namespaces_organization_owner", "organization_owner_id"),
-    )
-
-
-class NamespaceMember(Base):
-    __tablename__ = "namespace_members"
-
-    id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
-    )
-    namespace_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("namespaces.id", ondelete="CASCADE")
-    )
-    user_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
-    )
-    role: Mapped[NamespaceRole] = mapped_column(SQLEnum(NamespaceRole), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-
-    # Relationships
-    namespace: Mapped["Namespace"] = relationship(back_populates="members")
-    user: Mapped["User"] = relationship(back_populates="namespace_memberships")
-
-    __table_args__ = (
-        UniqueConstraint("namespace_id", "user_id", name="uq_namespace_user"),
-        Index("idx_namespace_members_namespace", "namespace_id"),
-        Index("idx_namespace_members_user", "user_id"),
     )
 
 

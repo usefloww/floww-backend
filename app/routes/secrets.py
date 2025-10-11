@@ -3,14 +3,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep
-from app.models import Secret
-from app.services.access_service import check_namespace_access
+from app.models import Namespace, Secret
 from app.utils.encryption import decrypt_secret, encrypt_secret
+from app.utils.query_helpers import UserAccessibleQuery
 
 router = APIRouter(prefix="/secrets", tags=["Secrets"])
 
@@ -50,7 +49,16 @@ async def create_secret(
 ):
     """Create a new secret in a namespace."""
     # Check namespace access
-    await check_namespace_access(session, secret_data.namespace_id, current_user.id)
+    namespace_query = (
+        UserAccessibleQuery(current_user.id)
+        .namespaces()
+        .where(Namespace.id == secret_data.namespace_id)
+    )
+    namespace_result = await session.execute(namespace_query)
+    namespace = namespace_result.scalar_one_or_none()
+
+    if not namespace:
+        raise HTTPException(status_code=400, detail="Namespace not found")
 
     # Encrypt the secret value
     encrypted_value = encrypt_secret(secret_data.value)
@@ -97,11 +105,12 @@ async def list_secrets(
 
     Optionally filter by provider and/or name.
     """
-    # Check namespace access
-    await check_namespace_access(session, namespace_id, current_user.id)
-
-    # Build query with filters
-    query = select(Secret).where(Secret.namespace_id == namespace_id)
+    query = (
+        UserAccessibleQuery(current_user.id)
+        .secrets()
+        .where(Secret.namespace_id == namespace_id)
+    )
+    query = query.where(Secret.namespace_id == namespace_id)
 
     if provider is not None:
         query = query.where(Secret.provider == provider)
@@ -129,17 +138,14 @@ async def list_secrets(
 @router.get("/{secret_id}", response_model=SecretWithValueResponse)
 async def get_secret(secret_id: UUID, current_user: CurrentUser, session: SessionDep):
     """Get a specific secret with its decrypted value."""
-    # Query the secret
-    result = await session.execute(select(Secret).where(Secret.id == secret_id))
+    query = UserAccessibleQuery(current_user.id).secrets().where(Secret.id == secret_id)
+    result = await session.execute(query)
     secret = result.scalar_one_or_none()
 
     if not secret:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Secret not found"
         )
-
-    # Check namespace access
-    await check_namespace_access(session, secret.namespace_id, current_user.id)
 
     # Decrypt the value
     decrypted_value = decrypt_secret(secret.encrypted_value)
@@ -164,16 +170,14 @@ async def update_secret(
 ):
     """Update a secret's provider or value."""
     # Query the secret
-    result = await session.execute(select(Secret).where(Secret.id == secret_id))
+    query = UserAccessibleQuery(current_user.id).secrets().where(Secret.id == secret_id)
+    result = await session.execute(query)
     secret = result.scalar_one_or_none()
 
     if not secret:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Secret not found"
         )
-
-    # Check namespace access
-    await check_namespace_access(session, secret.namespace_id, current_user.id)
 
     # Update fields
     if secret_update.provider is not None:
@@ -200,17 +204,15 @@ async def delete_secret(
     secret_id: UUID, current_user: CurrentUser, session: SessionDep
 ):
     """Delete a secret."""
-    # Query the secret
-    result = await session.execute(select(Secret).where(Secret.id == secret_id))
+
+    query = UserAccessibleQuery(current_user.id).secrets().where(Secret.id == secret_id)
+    result = await session.execute(query)
     secret = result.scalar_one_or_none()
 
     if not secret:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Secret not found"
         )
-
-    # Check namespace access
-    await check_namespace_access(session, secret.namespace_id, current_user.id)
 
     await session.delete(secret)
     await session.commit()

@@ -1,21 +1,22 @@
 import pytest
-from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.deps.db import get_async_db
-from app.main import app  # Replace with your actual FastAPI app
 from app.models import Base  # Replace with your actual imports
 from app.settings import settings
+
+pytest_plugins = [
+    "app.tests.fixtures_db",
+    "app.tests.fixtures_clients",
+]
 
 
 def get_test_database_url():
     """
     Create a test database URL with a separate test database name.
     """
-    test_db_name = f"{settings.DB_NAME}_test"
-    return f"postgresql+asyncpg://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{test_db_name}"
+    return settings.DATABASE_URL + "_test"
 
 
 def get_admin_database_url():
@@ -23,7 +24,7 @@ def get_admin_database_url():
     Create a database URL for admin operations (creating/dropping test database).
     Uses the default postgres database for admin operations.
     """
-    return f"postgresql+asyncpg://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/postgres"
+    return "/".join(get_test_database_url().split("/")[:-1]) + "/postgres"
 
 
 @pytest.fixture(scope="session")
@@ -31,7 +32,7 @@ async def setup_test_database():
     """
     Create the test database before running tests and drop it after.
     """
-    test_db_name = f"{settings.DB_NAME}_test"
+    test_db_name = get_test_database_url().split("/")[-1]
     admin_engine = create_async_engine(
         get_admin_database_url(), poolclass=NullPool, isolation_level="AUTOCOMMIT"
     )
@@ -102,18 +103,3 @@ async def session(db_engine):
             finally:
                 await session.rollback()
                 await session.close()
-
-
-@pytest.fixture(scope="function")
-async def client(session: AsyncSession):
-    """
-    Provide a test client with the async DB session dependency overridden.
-    """
-
-    async def override_get_db():
-        yield session
-
-    app.dependency_overrides[get_async_db] = override_get_db
-
-    async with AsyncClient(app=app, base_url="http://localhost") as ac:
-        yield ac

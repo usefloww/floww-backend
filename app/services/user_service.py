@@ -14,9 +14,9 @@ async def get_or_create_user(session: SessionDep, workos_user_id: str) -> User:
         session.add(user)
         await session.flush()
 
-        workspace = Namespace(
+        namespace = Namespace(
             user_owner_id=user.id, name=str(user.id), display_name=str(user.id)
         )
-        session.add(workspace)
+        session.add(namespace)
         await session.commit()
     return user

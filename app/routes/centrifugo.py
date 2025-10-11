@@ -6,7 +6,8 @@ from pydantic import BaseModel
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep
-from app.services.access_service import user_has_workflow_access
+from app.models import Workflow
+from app.utils.query_helpers import UserAccessibleQuery
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -114,7 +115,13 @@ async def subscribe_proxy(
     # Extract workflow_id from channel
     workflow_id = request.channel.replace("workflow:", "")
 
-    if not await user_has_workflow_access(session, user.id, workflow_id):
+    workflows_query = (
+        UserAccessibleQuery(user.id).workflows().where(Workflow.id == workflow_id)
+    )
+    workflows_result = await session.execute(workflows_query)
+    workflow = workflows_result.scalar_one_or_none()
+
+    if not workflow:
         logger.warning(
             "Subscription to workflow denied",
             extra={

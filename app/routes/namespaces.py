@@ -1,10 +1,9 @@
 import structlog
 from fastapi import APIRouter
-from sqlalchemy import or_, select
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep
-from app.models import Namespace, NamespaceMember, OrganizationMember
+from app.utils.query_helpers import UserAccessibleQuery
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -15,26 +14,8 @@ router = APIRouter(prefix="/namespaces", tags=["Namespaces"])
 async def list_namespaces(current_user: CurrentUser, session: SessionDep):
     """List namespaces accessible to the authenticated user."""
     # Query namespaces where user has access
-    result = await session.execute(
-        select(Namespace).where(
-            or_(
-                # User owns the namespace directly
-                Namespace.user_owner_id == current_user.id,
-                # User is a member of the namespace
-                Namespace.id.in_(
-                    select(NamespaceMember.namespace_id).where(
-                        NamespaceMember.user_id == current_user.id
-                    )
-                ),
-                # User is a member of organization that owns the namespace
-                Namespace.organization_owner_id.in_(
-                    select(OrganizationMember.organization_id).where(
-                        OrganizationMember.user_id == current_user.id
-                    )
-                ),
-            )
-        )
-    )
+    query = UserAccessibleQuery(current_user.id).namespaces()
+    result = await session.execute(query)
     namespaces = result.scalars().all()
 
     return {

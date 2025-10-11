@@ -1,0 +1,50 @@
+{
+    "yaml.schemas": {
+      "https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/ci.json": "/skillengine-api-project/gitlab-ci/*"
+    },
+    "files.exclude": {
+      "**/.git": true,
+      "**/.svn": true,
+      "**/.hg": true,
+      "**/CVS": true,
+      "**/.DS_Store": true,
+      "**/Thumbs.db": true,
+      "**/.pytest_cache": true,
+      "**/.mypy_cache": true,
+      "**/__pycache__": true,
+      "**/.venv": true,
+      "**/.ruff_cache": true
+    },
+    // Setup
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "python.analysis.extraPaths": [
+      "src"
+    ],
+    "[python]": {
+      "editor.rulers": [
+        88
+      ],
+      "editor.codeActionsOnSave": {
+        "source.organizeImports": "never",
+        "source.fixAll": "never"
+      },
+      "diffEditor.ignoreTrimWhitespace": false,
+      "gitlens.codeLens.symbolScopes": [
+        "!Module"
+      ],
+      "editor.formatOnSave": true,
+      "editor.formatOnSaveMode": "file",
+      "editor.defaultFormatter": "charliermarsh.ruff"
+    },
+    "python.analysis.autoFormatStrings": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "python.envFile": "${workspaceFolder}/.vscode/.env",
+    // == Testing
+    // == Unit tests ==
+    "python.testing.cwd": "${workspaceFolder}",
+    "python.testing.pytestArgs": [
+      "-s", "app"
+    ],
+    "python.testing.autoTestDiscoverOnSaveEnabled": true
+  }

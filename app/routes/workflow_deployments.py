@@ -7,20 +7,14 @@ from pydantic import BaseModel
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep
-from app.models import WorkflowDeployment, WorkflowDeploymentStatus
-from app.services.access_service import (
-    get_user_accessible_deployments_query,
-    user_has_workflow_access,
-)
-from app.utils.query_helpers import (
-    apply_workflow_filter,
-    get_runtime_or_404,
-    get_workflow_or_404,
-)
+from app.models import Runtime, Workflow, WorkflowDeployment, WorkflowDeploymentStatus
+from app.utils.query_helpers import UserAccessibleQuery
 from app.utils.response_helpers import (
     create_deployments_response,
     serialize_workflow_deployment_detailed,
 )
+
+logger = structlog.stdlib.get_logger(__name__)
 
 router = APIRouter(prefix="/workflow_deployments", tags=["Workflow Deployments"])
 
@@ -31,20 +25,14 @@ async def list_workflow_deployments(
 ):
     """List workflow deployments accessible to the authenticated user."""
 
-    # Use centralized query builder
-    query = get_user_accessible_deployments_query(session, current_user.id)
+    query = UserAccessibleQuery(current_user.id).deployments()
+    if workflow_id:
+        query = query.where(WorkflowDeployment.workflow_id == workflow_id)
 
-    # Add workflow filter if specified
-    query = apply_workflow_filter(query, workflow_id)
-
-    # Execute query
     result = await session.execute(query)
     deployments = result.scalars().all()
 
-    return create_deployments_response(deployments, current_user)
-
-
-logger = structlog.stdlib.get_logger(__name__)
+    return create_deployments_response(list(deployments), current_user)
 
 
 class WorkflowDeploymentUserCode(BaseModel):
@@ -67,14 +55,25 @@ async def create_workflow_deployment(
     """Create a new workflow deployment."""
 
     # Verify user has access to the workflow
-    if not await user_has_workflow_access(
-        session, current_user.id, workflow_deployment_data.workflow_id
-    ):
-        raise HTTPException(status_code=403, detail="Access denied to workflow")
+    workflow_query = (
+        UserAccessibleQuery(current_user.id)
+        .workflows()
+        .where(Workflow.id == workflow_deployment_data.workflow_id)
+    )
+    workflow_result = await session.execute(workflow_query)
+    workflow = workflow_result.scalar_one_or_none()
+    if not workflow:
+        raise HTTPException(status_code=400, detail="Workflow not found")
 
-    # Verify workflow and runtime exist (using centralized helpers)
-    await get_workflow_or_404(session, workflow_deployment_data.workflow_id)
-    await get_runtime_or_404(session, workflow_deployment_data.runtime_id)
+    runtime_query = (
+        UserAccessibleQuery(current_user.id)
+        .runtimes()
+        .where(Runtime.id == workflow_deployment_data.runtime_id)
+    )
+    runtime_result = await session.execute(runtime_query)
+    runtime = runtime_result.scalar_one_or_none()
+    if not runtime:
+        raise HTTPException(status_code=400, detail="Runtime not found")
 
     # Create the workflow deployment
     workflow_deployment = WorkflowDeployment(
@@ -91,6 +90,10 @@ async def create_workflow_deployment(
     session.add(workflow_deployment)
     await session.commit()
     await session.refresh(workflow_deployment)
+
+    # Manually set the relationships since we already have the objects
+    workflow_deployment.workflow = workflow
+    workflow_deployment.runtime = runtime
 
     structlog.get_logger().info(
         "Created new workflow deployment",

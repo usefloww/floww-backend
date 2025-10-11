@@ -21,7 +21,7 @@ def get_searchable_columns(model: Type[Base]) -> list[str]:
         # Include fields ending in _id or containing 'name'
         if column_name.endswith("_id") or "name" in column_name.lower():
             # Only include string-based columns for search
-            if hasattr(column.type, "python_type") and column.type.python_type == str:
+            if hasattr(column.type, "python_type") and column.type.python_type is str:
                 searchable.append(column_name)
             # Also include String columns without python_type check
             elif str(column.type).startswith("VARCHAR") or str(column.type).startswith(
@@ -46,7 +46,6 @@ def get_model_icon(model_name: str) -> str:
         "Organization": "fa-solid fa-building",
         "OrganizationMember": "fa-solid fa-users",
         "Namespace": "fa-solid fa-folder",
-        "NamespaceMember": "fa-solid fa-user-group",
         "Runtime": "fa-solid fa-server",
         "Workflow": "fa-solid fa-diagram-project",
         "WorkflowDeployment": "fa-solid fa-rocket",

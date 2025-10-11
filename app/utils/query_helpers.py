@@ -1,12 +1,73 @@
-from typing import Optional, Union
+from typing import Union
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 from app.deps.db import SessionDep
-from app.models import Runtime, Workflow, WorkflowDeployment
+from app.models import (
+    Namespace,
+    OrganizationMember,
+    Runtime,
+    Secret,
+    Workflow,
+    WorkflowDeployment,
+)
+
+
+class UserAccessibleQuery:
+    def __init__(self, user_id: UUID):
+        self.user_id = user_id
+
+    def namespaces(self):
+        return select(Namespace).where(
+            or_(
+                Namespace.user_owner_id == str(self.user_id),
+                Namespace.organization_owner.has(
+                    OrganizationMember.user_id == str(self.user_id)
+                ),
+            )
+        )
+
+    def workflows(self):
+        return select(Workflow).where(
+            Workflow.namespace.has(
+                or_(
+                    Namespace.user_owner_id == str(self.user_id),
+                    Namespace.organization_owner.has(
+                        OrganizationMember.user_id == str(self.user_id)
+                    ),
+                )
+            )
+        )
+
+    def deployments(self):
+        return select(WorkflowDeployment).where(
+            WorkflowDeployment.workflow.has(
+                or_(
+                    Namespace.user_owner_id == str(self.user_id),
+                    Namespace.organization_owner.has(
+                        OrganizationMember.user_id == str(self.user_id)
+                    ),
+                )
+            )
+        )
+
+    def secrets(self):
+        return select(Secret).where(
+            Secret.namespace.has(
+                or_(
+                    Namespace.user_owner_id == str(self.user_id),
+                    Namespace.organization_owner.has(
+                        OrganizationMember.user_id == str(self.user_id)
+                    ),
+                )
+            )
+        )
+
+    def runtimes(self):
+        return select(Runtime).where()
 
 
 async def get_workflow_or_404(
@@ -58,13 +119,6 @@ async def get_deployment_or_404(
         raise HTTPException(status_code=404, detail="Deployment not found")
 
     return deployment
-
-
-def apply_workflow_filter(query, workflow_id: Optional[Union[str, UUID]]):
-    """Apply workflow ID filter to a query if provided."""
-    if workflow_id:
-        return query.where(WorkflowDeployment.workflow_id == str(workflow_id))
-    return query
 
 
 def get_workflow_with_namespace_options():
