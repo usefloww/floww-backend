@@ -16,7 +16,8 @@ from app.models import (
     Runtime,
     RuntimeCreationStatus,
 )
-from app.utils.aws_ecr import check_ecr_image_exists
+from app.settings import settings
+from app.utils.aws_ecr import get_image_uri
 from app.utils.aws_lambda import deploy_lambda_function, get_lambda_deploy_status
 
 logger = structlog.stdlib.get_logger(__name__)
@@ -26,7 +27,7 @@ router = APIRouter(prefix="/runtimes", tags=["Runtimes"])
 
 
 class RuntimeConfig(BaseModel):
-    image_uri: str
+    image_hash: str
 
     @property
     def hash_uuid(self) -> uuid.UUID:
@@ -37,18 +38,18 @@ class RuntimeConfig(BaseModel):
 
 
 class RuntimeCreate(BaseModel):
-    image_uri: str
     config: RuntimeConfig
 
 
 class PushTokenRequest(BaseModel):
-    image_name: str
-    tag: str
+    image_hash: str
 
 
 class PushTokenResponse(BaseModel):
     password: str
     expires_in: int
+    registry_url: str
+    image_tag: str
 
 
 @router.post("/push_token")
@@ -60,28 +61,36 @@ async def get_push_token(
     """Get a push token from ECR proxy for pushing Docker images"""
 
     # Check if image already exists in ECR
-    if check_ecr_image_exists(request.image_name, request.tag):
+    image_uri = get_image_uri(settings.ECR_REGISTRY_URL, request.image_hash)
+    if image_uri is not None:
         logger.info(
-            "Image already exists in ECR, refusing push token",
-            image_name=request.image_name,
-            tag=request.tag,
+            "Image hash already exists in ECR, refusing push token",
+            image_hash=request.image_hash,
         )
         raise HTTPException(status_code=409, detail="Image already exists in registry")
 
     # ECR proxy endpoint
-    ecr_proxy_url = "https://registry.flow.toondn.app/api/token"
-
-    payload = {"image_name": request.image_name, "tag": request.tag, "action": "push"}
+    payload = {
+        "image_name": "trigger-lambda",
+        "tag": request.image_hash,
+        "action": "push",
+    }
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(ecr_proxy_url, json=payload)
+            response = await client.post(
+                settings.ECR_PROXY_URL + "/api/token",
+                json=payload,
+            )
             response.raise_for_status()
 
             token_data = response.json()
             return PushTokenResponse(
                 password=token_data["password"],
                 expires_in=token_data.get("expires_in", 3600),
+                image_tag=request.image_hash,
+                registry_url=settings.ECR_PROXY_URL.replace("https://", "")
+                + "/trigger-lambda",
             )
     except httpx.HTTPError as e:
         logger.error("Failed to get push token from ECR proxy", error=str(e))
@@ -109,12 +118,20 @@ async def create_runtime(
     existing_runtime = existing_runtime_result.scalar_one_or_none()
 
     if existing_runtime:
-        return {
-            "id": str(existing_runtime.id),
-            "config": existing_runtime.config,
-            "creation_status": existing_runtime.creation_status.value,
-            "creation_logs": existing_runtime.creation_logs,
-        }
+        raise HTTPException(
+            409,
+            {
+                "message": "Runtime already exists",
+                "runtime_id": str(existing_runtime.id),
+            },
+        )
+
+    image_uri = get_image_uri(
+        repository_name=settings.ECR_REGISTRY_URL, tag=runtime_data.config.image_hash
+    )
+
+    if image_uri is None:
+        raise HTTPException(400, "Image does not exist")
 
     runtime = Runtime(
         config_hash=config_hash,
@@ -124,33 +141,21 @@ async def create_runtime(
     )
     session.add(runtime)
     await session.flush()
-    await session.commit()
     await session.refresh(runtime)
 
-    # Trigger Lambda deployment
-    deploy_result = deploy_lambda_function(str(runtime.id), runtime_data.image_uri)
+    deploy_lambda_function(
+        runtime_id=str(runtime.id),
+        image_uri=image_uri,
+    )
 
-    # Log deployment initiation
     log_entry = {
         "timestamp": str(datetime.now(timezone.utc)),
         "message": "Lambda deployment initiated",
         "level": "info",
-        "deploy_result": deploy_result,
     }
 
     current_logs = runtime.creation_logs or []
     runtime.creation_logs = current_logs + [log_entry]
-
-    # Update status if deployment failed immediately
-    if not deploy_result.get("success", False):
-        runtime.creation_status = RuntimeCreationStatus.FAILED
-        error_log = {
-            "timestamp": str(datetime.now(timezone.utc)),
-            "message": f"Lambda deployment failed: {deploy_result.get('error_message', 'Unknown error')}",
-            "level": "error",
-        }
-        current_logs = runtime.creation_logs or []
-        runtime.creation_logs = current_logs + [error_log]
 
     await session.commit()
     await session.refresh(runtime)
@@ -180,9 +185,12 @@ async def update_runtime_status_background(runtime_id: UUID):
         # Check Lambda status
         lambda_status = get_lambda_deploy_status(str(runtime_id))
 
+        print(lambda_status)
+
         # Update runtime status and logs if needed
         if lambda_status["success"]:
-            new_status = RuntimeCreationStatus(lambda_status["status"])
+            print(lambda_status["status"])
+            new_status = RuntimeCreationStatus(lambda_status["status"].lower())
 
             # Only update if status changed
             if runtime.creation_status != new_status:
@@ -197,6 +205,10 @@ async def update_runtime_status_background(runtime_id: UUID):
                     "last_update_status": lambda_status.get("last_update_status"),
                 }
 
+                # Add additional logs if available
+                if lambda_status.get("logs"):
+                    log_entry["lambda_logs"] = lambda_status["logs"]
+
                 current_logs = runtime.creation_logs or []
                 runtime.creation_logs = current_logs + [log_entry]
 
@@ -208,7 +220,7 @@ async def update_runtime_status_background(runtime_id: UUID):
 
                 log_entry = {
                     "timestamp": str(datetime.now(timezone.utc)),
-                    "message": f"Lambda check failed: {lambda_status.get('error_message', 'Unknown error')}",
+                    "message": f"Lambda check failed: {lambda_status.get('logs', 'Unknown error')}",
                     "level": "error",
                 }
 

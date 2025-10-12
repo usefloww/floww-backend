@@ -185,7 +185,7 @@ class Runtime(Base):
     config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     """
     {
-        "image_uri": "...",  # sha256:xxx
+        "image_hash": "...",  # sha256:xxx
     }
     """
     config_hash: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)

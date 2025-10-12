@@ -15,46 +15,36 @@ ecr_client = boto3.client(
 )
 
 
-def check_ecr_image_exists(repository_name: str, tag: str) -> bool:
+def get_image_uri(repository_name: str, tag: str) -> str | None:
     """
-    Check if an image with the specified tag exists in the ECR repository.
-
-    Args:
-        repository_name: The name of the ECR repository
-        tag: The image tag to check
-
-    Returns:
-        True if the image exists, False otherwise
+    Return full image URI (including sha256 digest) for a tag in ECR, or None if not found.
+    Example:
+      501046919403.dkr.ecr.us-east-1.amazonaws.com/trigger-lambda@sha256:abcd...
     """
     try:
-        response = ecr_client.describe_images(
-            repositoryName=repository_name, imageIds=[{"imageTag": tag}]
+        resp = ecr_client.describe_images(
+            repositoryName="trigger-lambda", imageIds=[{"imageTag": tag}]
         )
-        # If we get a response with imageDetails, the image exists
-        return len(response.get("imageDetails", [])) > 0
+        details = resp.get("imageDetails", [])
+        if not details:
+            return None
+
+        image = details[0]
+        digest = image["imageDigest"]
+
+        print("repostory_name", repository_name)
+
+        return f"{repository_name}@{digest}"
+
     except ClientError as e:
-        error_code = e.response["Error"]["Code"]
-        if error_code == "ImageNotFoundException":
-            # Image doesn't exist
-            return False
-        elif error_code == "RepositoryNotFoundException":
-            # Repository doesn't exist, so image doesn't exist
-            return False
-        else:
-            # Other errors should be logged and raised
-            logger.error(
-                "Failed to check ECR image existence",
-                repository=repository_name,
-                tag=tag,
-                error_code=error_code,
-                error_message=e.response["Error"]["Message"],
-            )
-            raise
-    except Exception as e:
+        print(e)
+        code = e.response["Error"]["Code"]
+        if code in ("ImageNotFoundException", "RepositoryNotFoundException"):
+            return None
         logger.error(
-            "Unexpected error checking ECR image existence",
-            repository=repository_name,
-            tag=tag,
-            error=str(e),
+            "failed to get image uri", repo=repository_name, tag=tag, code=code
         )
+        raise
+    except Exception as e:
+        logger.error("unexpected error", repo=repository_name, tag=tag, error=str(e))
         raise

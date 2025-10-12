@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     AWS_REGION: str = "us-east-1"
 
     LAMBDA_EXECUTION_ROLE_ARN: str = "arn:aws:iam::501046919403:role/LambdaRole"
+    ECR_REGISTRY_URL: str = (
+        "501046919403.dkr.ecr.us-east-1.amazonaws.com/trigger-lambda"
+    )
+    ECR_PROXY_URL: str = "https://registry.flow.toondn.app"
 
 
 settings = Settings()
