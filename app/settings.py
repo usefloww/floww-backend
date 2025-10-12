@@ -22,5 +22,10 @@ class Settings(BaseSettings):
     # Secret encryption key (must be a valid Fernet key - 32 url-safe base64-encoded bytes)
     ENCRYPTION_KEY: str = "OTLHgX6E8_3k-c6rHBsbHDKnuPGtmD1ycNip9CgfiFk="
 
+    # AWS Credentials
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_REGION: str = "us-east-1"
+
 
 settings = Settings()

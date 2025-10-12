@@ -4,8 +4,15 @@ import boto3
 import structlog
 from botocore.exceptions import ClientError
 
+from app.settings import settings
+
 logger = structlog.stdlib.get_logger(__name__)
-lambda_client = boto3.client("lambda")
+lambda_client = boto3.client(
+    "lambda",
+    region_name=settings.AWS_REGION,
+    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+)
 
 
 def deploy_lambda_function(runtime_id: str, image_uri: str) -> Dict[str, Any]:
