@@ -4,6 +4,7 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import selectinload
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep
@@ -28,6 +29,9 @@ async def list_workflow_deployments(
     query = UserAccessibleQuery(current_user.id).deployments()
     if workflow_id:
         query = query.where(WorkflowDeployment.workflow_id == workflow_id)
+
+    # Add eager loading to prevent MissingGreenlet error when accessing deployment.workflow
+    query = query.options(selectinload(WorkflowDeployment.workflow))
 
     result = await session.execute(query)
     deployments = result.scalars().all()
@@ -88,7 +92,7 @@ async def create_workflow_deployment(
     )
 
     session.add(workflow_deployment)
-    await session.commit()
+    await session.flush()
     await session.refresh(workflow_deployment)
 
     # Manually set the relationships since we already have the objects

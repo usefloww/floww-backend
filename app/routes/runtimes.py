@@ -157,7 +157,7 @@ async def create_runtime(
     current_logs = runtime.creation_logs or []
     runtime.creation_logs = current_logs + [log_entry]
 
-    await session.commit()
+    await session.flush()
     await session.refresh(runtime)
 
     return {
@@ -212,7 +212,7 @@ async def update_runtime_status_background(runtime_id: UUID):
                 current_logs = runtime.creation_logs or []
                 runtime.creation_logs = current_logs + [log_entry]
 
-                await session.commit()
+                await session.flush()
         else:
             # Lambda check failed, update to FAILED if not already
             if runtime.creation_status != RuntimeCreationStatus.FAILED:
@@ -227,7 +227,7 @@ async def update_runtime_status_background(runtime_id: UUID):
                 current_logs = runtime.creation_logs or []
                 runtime.creation_logs = current_logs + [log_entry]
 
-                await session.commit()
+                await session.flush()
 
 
 @router.get("/{runtime_id}")

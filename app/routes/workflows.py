@@ -4,6 +4,7 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import selectinload
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep
@@ -22,6 +23,8 @@ router = APIRouter(prefix="/workflows", tags=["Workflows"])
 @router.get("")
 async def list_workflows(current_user: CurrentUser, session: SessionDep):
     query = UserAccessibleQuery(current_user.id).workflows()
+    # Add eager loading to prevent MissingGreenlet error when accessing workflow.namespace
+    query = query.options(selectinload(Workflow.namespace))
     result = await session.execute(query)
     workflows = result.scalars().all()
 
@@ -60,7 +63,7 @@ async def create_workflow(
     )
 
     session.add(workflow)
-    await session.commit()
+    await session.flush()
     await session.refresh(workflow)
 
     logger.info(

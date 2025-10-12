@@ -59,7 +59,7 @@ async def create_organization(
     )
 
     session.add(membership)
-    await session.commit()
+    await session.flush()
     await session.refresh(organization)
 
     logger.info(
@@ -112,7 +112,7 @@ async def update_organization(
     if organization_data.display_name is not None:
         organization.display_name = organization_data.display_name
 
-    await session.commit()
+    await session.flush()
     await session.refresh(organization)
 
     logger.info(
@@ -172,7 +172,7 @@ async def delete_organization(
         )
 
     await session.delete(organization)
-    await session.commit()
+    await session.flush()
 
     logger.info(
         "Deleted organization",

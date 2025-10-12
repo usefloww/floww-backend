@@ -94,7 +94,7 @@ async def session(db_engine):
         async with connection.begin():
             session = async_sessionmaker(
                 bind=connection,
-                expire_on_commit=False,
+                expire_on_commit=True,
                 class_=AsyncSession,
             )()
 

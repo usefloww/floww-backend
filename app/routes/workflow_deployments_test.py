@@ -15,7 +15,7 @@ async def workflow_1(client_a: UserClient, session: AsyncSession):
         created_by_id=client_a.user.id,
     )
     session.add(workflow)
-    await session.commit()
+    await session.flush()
     await session.refresh(workflow)
     return workflow
 
@@ -28,7 +28,7 @@ async def workflow_2(client_a: UserClient, session: AsyncSession):
         created_by_id=client_a.user.id,
     )
     session.add(workflow)
-    await session.commit()
+    await session.flush()
     await session.refresh(workflow)
     return workflow
 
@@ -40,7 +40,7 @@ async def runtime(session: AsyncSession):
         config_hash=uuid.uuid4(),
     )
     session.add(runtime)
-    await session.commit()
+    await session.flush()
     await session.refresh(runtime)
     return runtime
 

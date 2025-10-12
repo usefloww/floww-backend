@@ -1,7 +1,7 @@
 from app.tests.fixtures_clients import UserClient
 
 
-async def test_create_and_retrieve_workflow(client_a: UserClient):
+async def test_create_and_retrieve_workflow(client_a: UserClient, session):
     workflow_data = {
         "name": "My Test Workflow",
         "namespace_id": str(client_a.personal_namespace.id),

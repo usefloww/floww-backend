@@ -1,7 +1,6 @@
 import uuid
 from unittest.mock import patch
 
-import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Runtime, RuntimeCreationStatus
@@ -106,7 +105,7 @@ async def test_get_runtime_basic(client_a: UserClient, session: AsyncSession):
         ],
     )
     session.add(runtime)
-    await session.commit()
+    await session.flush()
     await session.refresh(runtime)
 
     # Get the runtime
@@ -120,7 +119,6 @@ async def test_get_runtime_basic(client_a: UserClient, session: AsyncSession):
     assert len(runtime_data["creation_logs"]) == 1
 
 
-@pytest.mark.asyncio
 async def test_get_runtime_triggers_background_update(
     client_a: UserClient, session: AsyncSession
 ):
@@ -138,7 +136,7 @@ async def test_get_runtime_triggers_background_update(
         ],
     )
     session.add(runtime)
-    await session.commit()
+    await session.flush()
     await session.refresh(runtime)
 
     # Get the runtime - this should trigger background status check

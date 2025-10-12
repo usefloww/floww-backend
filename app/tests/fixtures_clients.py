@@ -17,6 +17,17 @@ class UserClient(AsyncClient):
     personal_namespace: Namespace
 
 
+def _client_args(session):
+    async def commit(response):
+        session.expunge_all()
+
+    return {
+        "app": app,
+        "base_url": "http://localhost",
+        "event_hooks": {"response": [commit]},
+    }
+
+
 async def _get_personal_namespace(session: AsyncSession, user: User) -> Namespace:
     personal_namespace_query = select(Namespace).where(
         Namespace.user_owner_id == user.id
@@ -61,23 +72,25 @@ async def dependency_overrides(session: AsyncSession):
 async def client(session: AsyncSession, dependency_overrides):
     """Base test client with DB and auth overrides."""
 
-    async with AsyncClient(app=app, base_url="http://localhost") as ac:
+    async with AsyncClient(**_client_args(session)) as ac:
         yield ac
 
 
 @pytest.fixture(scope="function")
 async def client_a(session, dependency_overrides):
-    async with AsyncClient(app=app, base_url="http://localhost") as ac:
+    async with AsyncClient(**_client_args(session)) as ac:
         ac.user = await get_or_create_user(session, "test_user_a")
         ac.personal_namespace = await _get_personal_namespace(session, ac.user)
+
         ac.headers["Authorization"] = "Bearer test_user_a"
         yield ac
 
 
 @pytest.fixture(scope="function")
 async def client_b(session, dependency_overrides):
-    async with AsyncClient(app=app, base_url="http://localhost") as ac:
+    async with AsyncClient(**_client_args(session)) as ac:
         ac.user = await get_or_create_user(session, "test_user_b")
         ac.personal_namespace = await _get_personal_namespace(session, ac.user)
+
         ac.headers["Authorization"] = "Bearer test_user_b"
         yield ac

@@ -18,5 +18,5 @@ async def get_or_create_user(session: SessionDep, workos_user_id: str) -> User:
             user_owner_id=user.id, name=str(user.id), display_name=str(user.id)
         )
         session.add(namespace)
-        await session.commit()
+        await session.flush()
     return user

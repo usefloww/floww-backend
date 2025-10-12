@@ -74,7 +74,7 @@ async def create_secret(
     session.add(secret)
 
     try:
-        await session.commit()
+        await session.flush()
         await session.refresh(secret)
     except IntegrityError:
         await session.rollback()
@@ -186,7 +186,7 @@ async def update_secret(
     if secret_update.value is not None:
         secret.encrypted_value = encrypt_secret(secret_update.value)
 
-    await session.commit()
+    await session.flush()
     await session.refresh(secret)
 
     return SecretResponse(
@@ -215,6 +215,6 @@ async def delete_secret(
         )
 
     await session.delete(secret)
-    await session.commit()
+    await session.flush()
 
     return None
