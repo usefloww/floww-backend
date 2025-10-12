@@ -43,13 +43,6 @@ class OrganizationRole(Enum):
     MEMBER = "member"
 
 
-class NamespaceRole(Enum):
-    OWNER = "owner"
-    ADMIN = "admin"
-    WRITE = "write"
-    READ = "read"
-
-
 class User(Base):
     __tablename__ = "users"
 
