@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.deps.auth import CurrentUser
-from app.deps.db import SessionDep
+from app.deps.db import SessionDep, TransactionSessionDep
 from app.models import (
     Runtime,
     RuntimeCreationStatus,
@@ -106,7 +106,7 @@ async def get_push_token(
 async def create_runtime(
     runtime_data: RuntimeCreate,
     current_user: CurrentUser,
-    session: SessionDep,
+    session: TransactionSessionDep,
 ):
     """Create a new runtime"""
 
