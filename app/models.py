@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Optional, Union
@@ -27,6 +28,12 @@ class Base(DeclarativeBase):
 class WorkflowDeploymentStatus(Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
+    FAILED = "failed"
+
+
+class RuntimeCreationStatus(Enum):
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
     FAILED = "failed"
 
 
@@ -182,20 +189,36 @@ class Runtime(Base):
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    version: Mapped[str] = mapped_column(String(50), nullable=False)
-    hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    """
+    {
+        "image_uri": "...",  # sha256:xxx
+    }
+    """
+    config_hash: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    creation_status: Mapped[RuntimeCreationStatus] = mapped_column(
+        SQLEnum(RuntimeCreationStatus),
+        nullable=False,
+        default=RuntimeCreationStatus.IN_PROGRESS,
+    )
+    creation_logs: Mapped[Optional[list[dict]]] = mapped_column(JSONB, nullable=True)
+    """
+    [
+        {
+            "timestamp": "...",
+            "message": "...",
+            "level": "...",
+        },
+    ]
+    """
 
     # Relationships
     deployments: Mapped[list["WorkflowDeployment"]] = relationship(
         back_populates="runtime"
     )
 
-    __table_args__ = (
-        UniqueConstraint("name", "version", name="uq_runtime_name_version"),
-    )
+    __table_args__ = (UniqueConstraint("config_hash", name="uq_runtime_config_hash"),)
 
 
 class Workflow(Base):

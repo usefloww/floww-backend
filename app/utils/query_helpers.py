@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.deps.db import SessionDep
 from app.models import (
     Namespace,
+    Organization,
     OrganizationMember,
     Runtime,
     Secret,
@@ -69,6 +70,11 @@ class UserAccessibleQuery:
     def runtimes(self):
         return select(Runtime).where()
 
+    def organizations(self):
+        return select(Organization).where(
+            Organization.members.any(OrganizationMember.user_id == str(self.user_id))
+        )
+
 
 async def get_workflow_or_404(
     session: SessionDep, workflow_id: Union[str, UUID]
@@ -119,6 +125,23 @@ async def get_deployment_or_404(
         raise HTTPException(status_code=404, detail="Deployment not found")
 
     return deployment
+
+
+async def get_organization_or_404(
+    session: SessionDep, organization_id: Union[str, UUID]
+) -> Organization:
+    """Get an organization by ID or raise 404 if not found."""
+    result = await session.execute(
+        select(Organization)
+        .options(selectinload(Organization.members))
+        .where(Organization.id == str(organization_id))
+    )
+    organization = result.scalar_one_or_none()
+
+    if not organization:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    return organization
 
 
 def get_workflow_with_namespace_options():

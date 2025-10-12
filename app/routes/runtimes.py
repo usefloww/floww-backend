@@ -1,36 +1,42 @@
-from typing import Optional
+import hashlib
+import json
+import uuid
+from datetime import datetime, timezone
 from uuid import UUID
 
 import httpx
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep
-from app.models import Runtime, Workflow, WorkflowDeployment, WorkflowDeploymentStatus
+from app.models import (
+    Runtime,
+    RuntimeCreationStatus,
+)
+from app.utils.aws_lambda import deploy_lambda_function, get_lambda_deploy_status
 
 logger = structlog.stdlib.get_logger(__name__)
 
 router = APIRouter(prefix="/runtimes", tags=["Runtimes"])
 
 
+class RuntimeConfig(BaseModel):
+    image_uri: str
+
+    @property
+    def hash_uuid(self) -> uuid.UUID:
+        config_string = json.dumps(self.model_dump(), sort_keys=True)
+        hash_bytes = hashlib.sha256(config_string.encode()).digest()[:16]
+
+        return uuid.UUID(bytes=hash_bytes)
+
+
 class RuntimeCreate(BaseModel):
     image_uri: str
-    hash: str
-    name: str
-    version: str
-    config: Optional[dict] = None
-    workflow_id: UUID
-
-
-class RuntimeOnlyCreate(BaseModel):
-    image_uri: str
-    hash: str
-    name: str
-    version: str
-    config: Optional[dict] = None
+    config: RuntimeConfig
 
 
 class PushTokenRequest(BaseModel):
@@ -45,7 +51,9 @@ class PushTokenResponse(BaseModel):
 
 @router.post("/push_token")
 async def get_push_token(
-    request: PushTokenRequest, current_user: CurrentUser, session: SessionDep
+    request: PushTokenRequest,
+    current_user: CurrentUser,
+    session: SessionDep,
 ) -> PushTokenResponse:
     """Get a push token from ECR proxy for pushing Docker images"""
 
@@ -67,142 +75,159 @@ async def get_push_token(
     except httpx.HTTPError as e:
         logger.error("Failed to get push token from ECR proxy", error=str(e))
         raise HTTPException(
-            status_code=502, detail="Failed to get push token from registry"
+            status_code=503, detail="Failed to get push token from registry"
         )
     except Exception as e:
         logger.error("Unexpected error getting push token", error=str(e))
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/only")
-async def create_runtime_only(
-    runtime_data: RuntimeOnlyCreate, current_user: CurrentUser, session: SessionDep
+@router.post("")
+async def create_runtime(
+    runtime_data: RuntimeCreate,
+    current_user: CurrentUser,
+    session: SessionDep,
 ):
-    """Create a new runtime without deployment"""
+    """Create a new runtime"""
 
-    # Check if runtime with this hash OR name+version already exists
+    config_hash = runtime_data.config.hash_uuid
+
     existing_runtime_result = await session.execute(
-        select(Runtime).where(
-            or_(
-                Runtime.hash == runtime_data.hash,
-                and_(
-                    Runtime.name == runtime_data.name,
-                    Runtime.version == runtime_data.version,
-                ),
-            )
-        )
+        select(Runtime).where(Runtime.config_hash == config_hash)
     )
     existing_runtime = existing_runtime_result.scalar_one_or_none()
 
     if existing_runtime:
-        # Reuse existing runtime
-        runtime = existing_runtime
-        logger.info(
-            "Reusing existing runtime",
-            runtime_id=str(runtime.id),
-            hash=runtime.hash,
-            name=runtime.name,
-            version=runtime.version,
-        )
-        reused_existing = True
-    else:
-        # Create new runtime
-        runtime = Runtime(
-            name=runtime_data.name,
-            version=runtime_data.version,
-            hash=runtime_data.hash,
-            config=runtime_data.config,
-        )
-        session.add(runtime)
-        await session.commit()
-        await session.refresh(runtime)
-        logger.info(
-            "Created new runtime",
-            runtime_id=str(runtime.id),
-            hash=runtime.hash,
-            name=runtime.name,
-            version=runtime.version,
-        )
-        reused_existing = False
+        return {
+            "id": str(existing_runtime.id),
+            "config": existing_runtime.config,
+            "creation_status": existing_runtime.creation_status.value,
+            "creation_logs": existing_runtime.creation_logs,
+        }
+
+    runtime = Runtime(
+        config_hash=config_hash,
+        config=runtime_data.config.model_dump(),
+        creation_status=RuntimeCreationStatus.IN_PROGRESS,
+        creation_logs=[],
+    )
+    session.add(runtime)
+    await session.flush()
+    await session.commit()
+    await session.refresh(runtime)
+
+    # Trigger Lambda deployment
+    deploy_result = deploy_lambda_function(str(runtime.id), runtime_data.image_uri)
+
+    # Log deployment initiation
+    log_entry = {
+        "timestamp": str(datetime.now(timezone.utc)),
+        "message": "Lambda deployment initiated",
+        "level": "info",
+        "deploy_result": deploy_result,
+    }
+
+    current_logs = runtime.creation_logs or []
+    runtime.creation_logs = current_logs + [log_entry]
+
+    # Update status if deployment failed immediately
+    if not deploy_result.get("success", False):
+        runtime.creation_status = RuntimeCreationStatus.FAILED
+        error_log = {
+            "timestamp": str(datetime.now(timezone.utc)),
+            "message": f"Lambda deployment failed: {deploy_result.get('error_message', 'Unknown error')}",
+            "level": "error",
+        }
+        current_logs = runtime.creation_logs or []
+        runtime.creation_logs = current_logs + [error_log]
+
+    await session.commit()
+    await session.refresh(runtime)
 
     return {
-        "runtime_id": str(runtime.id),
-        "name": runtime.name,
-        "version": runtime.version,
-        "hash": runtime.hash,
-        "created_at": runtime.created_at.isoformat(),
-        "reused_existing": reused_existing,
+        "id": str(runtime.id),
+        "config": runtime.config,
+        "creation_status": runtime.creation_status.value,
+        "creation_logs": runtime.creation_logs,
     }
 
 
-@router.post("")
-async def create_runtime(
-    runtime_data: RuntimeCreate, current_user: CurrentUser, session: SessionDep
+async def update_runtime_status_background(runtime_id: UUID):
+    """Background task to check and update runtime status"""
+    from app.deps.db import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        # Get the runtime from DB
+        runtime_result = await session.execute(
+            select(Runtime).where(Runtime.id == runtime_id)
+        )
+        runtime = runtime_result.scalar_one_or_none()
+
+        if not runtime or runtime.creation_status != RuntimeCreationStatus.IN_PROGRESS:
+            return
+
+        # Check Lambda status
+        lambda_status = get_lambda_deploy_status(str(runtime_id))
+
+        # Update runtime status and logs if needed
+        if lambda_status["success"]:
+            new_status = RuntimeCreationStatus(lambda_status["status"])
+
+            # Only update if status changed
+            if runtime.creation_status != new_status:
+                runtime.creation_status = new_status
+
+                # Add log entry
+                log_entry = {
+                    "timestamp": str(datetime.now(timezone.utc)),
+                    "message": f"Status updated to {new_status.value}",
+                    "level": "info",
+                    "lambda_state": lambda_status.get("lambda_state"),
+                    "last_update_status": lambda_status.get("last_update_status"),
+                }
+
+                current_logs = runtime.creation_logs or []
+                runtime.creation_logs = current_logs + [log_entry]
+
+                await session.commit()
+        else:
+            # Lambda check failed, update to FAILED if not already
+            if runtime.creation_status != RuntimeCreationStatus.FAILED:
+                runtime.creation_status = RuntimeCreationStatus.FAILED
+
+                log_entry = {
+                    "timestamp": str(datetime.now(timezone.utc)),
+                    "message": f"Lambda check failed: {lambda_status.get('error_message', 'Unknown error')}",
+                    "level": "error",
+                }
+
+                current_logs = runtime.creation_logs or []
+                runtime.creation_logs = current_logs + [log_entry]
+
+                await session.commit()
+
+
+@router.get("/{runtime_id}")
+async def get_runtime(
+    runtime_id: UUID, session: SessionDep, background_tasks: BackgroundTasks
 ):
-    """Create a new runtime and deployment (DEPRECATED - use /runtimes/only + /workflow_deployments)"""
+    """Get a runtime and check status in background if IN_PROGRESS"""
 
-    # Verify user has access to the workflow
-    workflow_result = await session.execute(
-        select(Workflow).where(Workflow.id == runtime_data.workflow_id)
+    runtime_result = await session.execute(
+        select(Runtime).where(Runtime.id == runtime_id)
     )
-    workflow = workflow_result.scalar_one_or_none()
+    runtime = runtime_result.scalar_one_or_none()
 
-    if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+    if not runtime:
+        raise HTTPException(status_code=404, detail="Runtime not found")
 
-    # Check if runtime with this hash OR name+version already exists
-    existing_runtime_result = await session.execute(
-        select(Runtime).where(
-            or_(
-                Runtime.hash == runtime_data.hash,
-                and_(
-                    Runtime.name == runtime_data.name,
-                    Runtime.version == runtime_data.version,
-                ),
-            )
-        )
-    )
-    existing_runtime = existing_runtime_result.scalar_one_or_none()
-
-    if existing_runtime:
-        # Reuse existing runtime
-        runtime = existing_runtime
-        logger.info(
-            "Reusing existing runtime", runtime_id=str(runtime.id), hash=runtime.hash
-        )
-    else:
-        # Create new runtime
-        runtime = Runtime(
-            name=runtime_data.name,
-            version=runtime_data.version,
-            hash=runtime_data.hash,
-            config=runtime_data.config,
-        )
-        session.add(runtime)
-        await session.flush()  # Get the runtime ID
-        logger.info(
-            "Created new runtime", runtime_id=str(runtime.id), hash=runtime.hash
-        )
-
-    # Create new deployment (deprecated behavior)
-    deployment = WorkflowDeployment(
-        workflow_id=runtime_data.workflow_id,
-        runtime_id=runtime.id,
-        deployed_by_id=current_user.id,
-        user_code={
-            "files": {},
-            "entrypoint": "main.ts",
-        },  # Empty code for backward compatibility
-        status=WorkflowDeploymentStatus.ACTIVE,
-    )
-    session.add(deployment)
-
-    await session.commit()
+    # If runtime is IN_PROGRESS, trigger background status check
+    if runtime.creation_status == RuntimeCreationStatus.IN_PROGRESS:
+        background_tasks.add_task(update_runtime_status_background, runtime_id)
 
     return {
-        "runtime_id": str(runtime.id),
-        "deployment_id": str(deployment.id),
-        "status": deployment.status.value,
-        "deployed_at": deployment.deployed_at.isoformat(),
-        "reused_existing": existing_runtime is not None,
+        "id": str(runtime.id),
+        "config": runtime.config,
+        "creation_status": runtime.creation_status.value,
+        "creation_logs": runtime.creation_logs,
     }

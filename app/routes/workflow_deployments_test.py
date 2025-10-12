@@ -1,28 +1,59 @@
+import uuid
+
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Runtime, Workflow
 from app.tests.fixtures_clients import UserClient
 
 
-async def test_create_and_retrieve_deployment(
-    client_a: UserClient, session: AsyncSession
-):
+@pytest.fixture(scope="function")
+async def workflow_1(client_a: UserClient, session: AsyncSession):
     workflow = Workflow(
-        name="Test Workflow",
+        name="Test Workflow 1",
         namespace_id=client_a.personal_namespace.id,
         created_by_id=client_a.user.id,
     )
     session.add(workflow)
-
-    runtime = Runtime(name="Python Runtime", version="3.11", hash="abc123")
-    session.add(runtime)
     await session.commit()
     await session.refresh(workflow)
-    await session.refresh(runtime)
+    return workflow
 
+
+@pytest.fixture(scope="function")
+async def workflow_2(client_a: UserClient, session: AsyncSession):
+    workflow = Workflow(
+        name="Test Workflow 2",
+        namespace_id=client_a.personal_namespace.id,
+        created_by_id=client_a.user.id,
+    )
+    session.add(workflow)
+    await session.commit()
+    await session.refresh(workflow)
+    return workflow
+
+
+@pytest.fixture(scope="function")
+async def runtime(session: AsyncSession):
+    runtime = Runtime(
+        config={"image_uri": "test-image:latest"},
+        config_hash=uuid.uuid4(),
+    )
+    session.add(runtime)
+    await session.commit()
+    await session.refresh(runtime)
+    return runtime
+
+
+async def test_create_and_retrieve_deployment(
+    client_a: UserClient,
+    session: AsyncSession,
+    workflow_1: Workflow,
+    runtime: Runtime,
+):
     # Test: Create deployment
     deployment_data = {
-        "workflow_id": str(workflow.id),
+        "workflow_id": str(workflow_1.id),
         "runtime_id": str(runtime.id),
         "code": {
             "files": {"main.py": "print('Hello, World!')"},
@@ -33,7 +64,7 @@ async def test_create_and_retrieve_deployment(
     assert response.status_code == 200
 
     created_deployment = response.json()
-    assert created_deployment["workflow_id"] == str(workflow.id)
+    assert created_deployment["workflow_id"] == str(workflow_1.id)
     assert created_deployment["runtime_id"] == str(runtime.id)
 
     # Test: Retrieve deployments and verify it appears
@@ -45,24 +76,13 @@ async def test_create_and_retrieve_deployment(
 
 
 async def test_deployment_with_complex_code(
-    client_a: UserClient, session: AsyncSession
+    client_a: UserClient,
+    session: AsyncSession,
+    workflow_1: Workflow,
+    runtime: Runtime,
 ):
-    workflow = Workflow(
-        name="Complex Workflow",
-        namespace_id=client_a.personal_namespace.id,
-        created_by_id=client_a.user.id,
-    )
-    session.add(workflow)
-
-    runtime = Runtime(name="Node Runtime", version="18", hash="def456")
-    session.add(runtime)
-    await session.commit()
-    await session.refresh(workflow)
-    await session.refresh(runtime)
-
-    # Test: Create deployment with multiple files
     deployment_data = {
-        "workflow_id": str(workflow.id),
+        "workflow_id": str(workflow_1.id),
         "runtime_id": str(runtime.id),
         "code": {
             "files": {
@@ -82,31 +102,15 @@ async def test_deployment_with_complex_code(
 
 
 async def test_filter_deployments_by_workflow(
-    client_a: UserClient, session: AsyncSession
+    client_a: UserClient,
+    session: AsyncSession,
+    workflow_1: Workflow,
+    workflow_2: Workflow,
+    runtime: Runtime,
 ):
-    workflow1 = Workflow(
-        name="Workflow One",
-        namespace_id=client_a.personal_namespace.id,
-        created_by_id=client_a.user.id,
-    )
-    workflow2 = Workflow(
-        name="Workflow Two",
-        namespace_id=client_a.personal_namespace.id,
-        created_by_id=client_a.user.id,
-    )
-    session.add(workflow1)
-    session.add(workflow2)
-
-    runtime = Runtime(name="Filter Runtime", version="1.0", hash="filter123")
-    session.add(runtime)
-    await session.commit()
-    await session.refresh(workflow1)
-    await session.refresh(workflow2)
-    await session.refresh(runtime)
-
     # Create deployment for workflow1
     deployment_data1 = {
-        "workflow_id": str(workflow1.id),
+        "workflow_id": str(workflow_1.id),
         "runtime_id": str(runtime.id),
         "code": {"files": {"main.py": "print('workflow1')"}, "entrypoint": "main.py"},
     }
@@ -115,7 +119,7 @@ async def test_filter_deployments_by_workflow(
 
     # Create deployment for workflow2
     deployment_data2 = {
-        "workflow_id": str(workflow2.id),
+        "workflow_id": str(workflow_2.id),
         "runtime_id": str(runtime.id),
         "code": {"files": {"main.py": "print('workflow2')"}, "entrypoint": "main.py"},
     }
@@ -124,7 +128,7 @@ async def test_filter_deployments_by_workflow(
 
     # Test: Filter by workflow1 - should get 1 deployment
     response = await client_a.get(
-        f"/api/workflow_deployments?workflow_id={workflow1.id}"
+        f"/api/workflow_deployments?workflow_id={workflow_1.id}"
     )
     assert response.status_code == 200
     deployments = response.json()["deployments"]
@@ -138,24 +142,11 @@ async def test_filter_deployments_by_workflow(
 
 
 async def test_deployment_includes_metadata(
-    client_a: UserClient, session: AsyncSession
+    client_a: UserClient, session: AsyncSession, workflow_1: Workflow, runtime: Runtime
 ):
-    workflow = Workflow(
-        name="Meta Workflow",
-        namespace_id=client_a.personal_namespace.id,
-        created_by_id=client_a.user.id,
-    )
-    session.add(workflow)
-
-    runtime = Runtime(name="Meta Runtime", version="1.0", hash="meta123")
-    session.add(runtime)
-    await session.commit()
-    await session.refresh(workflow)
-    await session.refresh(runtime)
-
     # Create deployment
     deployment_data = {
-        "workflow_id": str(workflow.id),
+        "workflow_id": str(workflow_1.id),
         "runtime_id": str(runtime.id),
         "code": {"files": {"app.py": "print('metadata test')"}, "entrypoint": "app.py"},
     }

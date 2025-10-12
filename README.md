@@ -36,3 +36,10 @@ The admin interface is available at `/admin` and uses WorkOS OAuth for authentic
 - OAuth flow: `/auth/login` → WorkOS → `/auth/callback` → redirect to original page
 - Admin access requires user id to be in the approved admin list (checked via JWT)
 - Non-admin users receive 403 response even with valid authentication
+
+
+## Deployment creation
+
+1. Upload image if not exists
+2. Create runtime if not exists
+3. Create deployment, can only be done with a ready runtime

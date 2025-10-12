@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
-from app.models import User, Workflow, WorkflowDeployment
+from app.models import Organization, User, Workflow, WorkflowDeployment
 
 
 def create_paginated_response(
@@ -20,6 +20,21 @@ def create_paginated_response(
         response["user_id"] = str(user_id)
 
     return response
+
+
+def serialize_organization(organization: Organization) -> Dict[str, Any]:
+    """Serialize an organization to a standard response format."""
+    return {
+        "id": str(organization.id),
+        "name": organization.name,
+        "display_name": organization.display_name,
+        "created_at": organization.created_at.isoformat()
+        if organization.created_at
+        else None,
+        "updated_at": organization.updated_at.isoformat()
+        if organization.updated_at
+        else None,
+    }
 
 
 def serialize_workflow(workflow: Workflow) -> Dict[str, Any]:
@@ -42,7 +57,6 @@ def serialize_workflow_deployment(deployment: WorkflowDeployment) -> Dict[str, A
         "workflow_id": str(deployment.workflow_id),
         "workflow_name": deployment.workflow.name if deployment.workflow else None,
         "runtime_id": str(deployment.runtime_id),
-        "runtime_name": deployment.runtime.name if deployment.runtime else None,
         "deployed_by_id": str(deployment.deployed_by_id)
         if deployment.deployed_by_id
         else None,
@@ -83,6 +97,20 @@ def create_deployments_response(
         user_id=str(user.id),
         deployments=[
             serialize_workflow_deployment(deployment) for deployment in deployments
+        ],
+    )
+
+
+def create_organizations_response(
+    organizations: List[Organization], user: User
+) -> Dict[str, Any]:
+    """Create a standardized organizations list response."""
+    return create_paginated_response(
+        items=[serialize_organization(organization) for organization in organizations],
+        total=len(organizations),
+        user_id=str(user.id),
+        organizations=[
+            serialize_organization(organization) for organization in organizations
         ],
     )
 

@@ -7,6 +7,7 @@ generate-migrations:
 
 test-unit files:
     #!/bin/bash
+    source .venv/bin/activate
     export DATABASE_URL=postgresql+asyncpg://admin:secret@localhost:5432/postgres
 
     for file in {{files}}; do
