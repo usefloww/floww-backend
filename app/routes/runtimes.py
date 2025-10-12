@@ -16,9 +16,11 @@ from app.models import (
     Runtime,
     RuntimeCreationStatus,
 )
+from app.utils.aws_ecr import check_ecr_image_exists
 from app.utils.aws_lambda import deploy_lambda_function, get_lambda_deploy_status
 
 logger = structlog.stdlib.get_logger(__name__)
+
 
 router = APIRouter(prefix="/runtimes", tags=["Runtimes"])
 
@@ -56,6 +58,15 @@ async def get_push_token(
     session: SessionDep,
 ) -> PushTokenResponse:
     """Get a push token from ECR proxy for pushing Docker images"""
+
+    # Check if image already exists in ECR
+    if check_ecr_image_exists(request.image_name, request.tag):
+        logger.info(
+            "Image already exists in ECR, refusing push token",
+            image_name=request.image_name,
+            tag=request.tag,
+        )
+        raise HTTPException(status_code=409, detail="Image already exists in registry")
 
     # ECR proxy endpoint
     ecr_proxy_url = "https://registry.flow.toondn.app/api/token"

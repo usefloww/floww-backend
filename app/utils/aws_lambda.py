@@ -44,7 +44,7 @@ def deploy_lambda_function(runtime_id: str, image_uri: str) -> Dict[str, Any]:
             # Create new function
             response = lambda_client.create_function(
                 FunctionName=function_name,
-                Role="arn:aws:iam::YOUR_ACCOUNT:role/lambda-execution-role",  # TODO: Make configurable
+                Role=settings.LAMBDA_EXECUTION_ROLE_ARN,
                 Code={"ImageUri": image_uri},
                 PackageType="Image",
                 Timeout=30,
