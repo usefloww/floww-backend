@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.deps.auth import CurrentUser
-from app.deps.db import SessionDep
+from app.deps.db import SessionDep, TransactionSessionDep
 from app.models import Organization, OrganizationMember, OrganizationRole
 from app.utils.query_helpers import UserAccessibleQuery, get_organization_or_404
 from app.utils.response_helpers import (
@@ -38,7 +38,7 @@ class OrganizationCreate(BaseModel):
 async def create_organization(
     organization_data: OrganizationCreate,
     current_user: CurrentUser,
-    session: SessionDep,
+    session: TransactionSessionDep,
 ):
     """Create a new organization."""
 
@@ -86,7 +86,7 @@ async def update_organization(
     organization_id: UUID,
     organization_data: OrganizationUpdate,
     current_user: CurrentUser,
-    session: SessionDep,
+    session: TransactionSessionDep,
 ):
     """Update an organization."""
 
@@ -153,7 +153,9 @@ async def get_organization(
 
 @router.delete("/{organization_id}")
 async def delete_organization(
-    organization_id: UUID, current_user: CurrentUser, session: SessionDep
+    organization_id: UUID,
+    current_user: CurrentUser,
+    session: TransactionSessionDep,
 ):
     """Delete an organization."""
 

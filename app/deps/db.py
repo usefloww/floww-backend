@@ -21,7 +21,23 @@ AsyncSessionLocal = async_sessionmaker(
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
-        yield session
+        try:
+            yield session
+        finally:
+            await session.close()
+
+
+async def get_committed_db() -> AsyncGenerator[AsyncSession, None]:
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_async_db)]
+TransactionSessionDep = Annotated[AsyncSession, Depends(get_committed_db)]

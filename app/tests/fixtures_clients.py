@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps.auth import get_current_user
-from app.deps.db import get_async_db
+from app.deps.db import get_async_db, get_committed_db
 from app.main import app
 from app.models import Namespace, User
 from app.services.user_service import get_or_create_user
@@ -63,6 +63,7 @@ async def dependency_overrides(session: AsyncSession):
         yield session
 
     app.dependency_overrides[get_async_db] = override_get_db
+    app.dependency_overrides[get_committed_db] = override_get_db
     app.dependency_overrides[get_current_user] = mock_get_current_user
     yield
     app.dependency_overrides.clear()

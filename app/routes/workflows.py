@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
 
 from app.deps.auth import CurrentUser
-from app.deps.db import SessionDep
+from app.deps.db import SessionDep, TransactionSessionDep
 from app.models import Namespace, Workflow
 from app.utils.query_helpers import UserAccessibleQuery
 from app.utils.response_helpers import (
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/workflows", tags=["Workflows"])
 @router.get("")
 async def list_workflows(current_user: CurrentUser, session: SessionDep):
     query = UserAccessibleQuery(current_user.id).workflows()
-    # Add eager loading to prevent MissingGreenlet error when accessing workflow.namespace
+
     query = query.options(selectinload(Workflow.namespace))
     result = await session.execute(query)
     workflows = result.scalars().all()
@@ -39,7 +39,9 @@ class WorkflowCreate(BaseModel):
 
 @router.post("")
 async def create_workflow(
-    workflow_data: WorkflowCreate, current_user: CurrentUser, session: SessionDep
+    workflow_data: WorkflowCreate,
+    current_user: CurrentUser,
+    session: TransactionSessionDep,
 ):
     """Create a new workflow."""
 
@@ -69,6 +71,33 @@ async def create_workflow(
     logger.info(
         "Created new workflow", workflow_id=str(workflow.id), name=workflow.name
     )
+
+    return create_creation_response(
+        workflow,
+        name=workflow.name,
+        description=workflow.description,
+        namespace_id=str(workflow.namespace_id),
+        created_by_id=str(workflow.created_by_id),
+    )
+
+
+@router.get("/{workflow_id}")
+async def get_workflow(
+    workflow_id: UUID, current_user: CurrentUser, session: SessionDep
+):
+    """Get a specific workflow."""
+
+    query = (
+        UserAccessibleQuery(current_user.id)
+        .workflows()
+        .where(Workflow.id == workflow_id)
+        .options(selectinload(Workflow.namespace))
+    )
+    result = await session.execute(query)
+    workflow = result.scalar_one_or_none()
+
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
 
     return create_creation_response(
         workflow,

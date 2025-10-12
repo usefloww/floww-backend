@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
 
 from app.deps.auth import CurrentUser
-from app.deps.db import SessionDep
+from app.deps.db import SessionDep, TransactionSessionDep
 from app.models import Runtime, Workflow, WorkflowDeployment, WorkflowDeploymentStatus
 from app.utils.query_helpers import UserAccessibleQuery
 from app.utils.response_helpers import (
@@ -54,7 +54,7 @@ class WorkflowDeploymentCreate(BaseModel):
 async def create_workflow_deployment(
     workflow_deployment_data: WorkflowDeploymentCreate,
     current_user: CurrentUser,
-    session: SessionDep,
+    session: TransactionSessionDep,
 ):
     """Create a new workflow deployment."""
 

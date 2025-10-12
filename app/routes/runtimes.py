@@ -185,11 +185,8 @@ async def update_runtime_status_background(runtime_id: UUID):
         # Check Lambda status
         lambda_status = get_lambda_deploy_status(str(runtime_id))
 
-        print(lambda_status)
-
         # Update runtime status and logs if needed
         if lambda_status["success"]:
-            print(lambda_status["status"])
             new_status = RuntimeCreationStatus(lambda_status["status"].lower())
 
             # Only update if status changed
@@ -212,7 +209,7 @@ async def update_runtime_status_background(runtime_id: UUID):
                 current_logs = runtime.creation_logs or []
                 runtime.creation_logs = current_logs + [log_entry]
 
-                await session.flush()
+                await session.commit()
         else:
             # Lambda check failed, update to FAILED if not already
             if runtime.creation_status != RuntimeCreationStatus.FAILED:
@@ -227,12 +224,14 @@ async def update_runtime_status_background(runtime_id: UUID):
                 current_logs = runtime.creation_logs or []
                 runtime.creation_logs = current_logs + [log_entry]
 
-                await session.flush()
+                await session.commit()
 
 
 @router.get("/{runtime_id}")
 async def get_runtime(
-    runtime_id: UUID, session: SessionDep, background_tasks: BackgroundTasks
+    runtime_id: UUID,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
 ):
     """Get a runtime and check status in background if IN_PROGRESS"""
 

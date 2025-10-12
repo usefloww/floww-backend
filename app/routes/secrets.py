@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
 from app.deps.auth import CurrentUser
-from app.deps.db import SessionDep
+from app.deps.db import SessionDep, TransactionSessionDep
 from app.models import Namespace, Secret
 from app.utils.encryption import decrypt_secret, encrypt_secret
 from app.utils.query_helpers import UserAccessibleQuery
@@ -45,7 +45,9 @@ class SecretWithValueResponse(SecretResponse):
 
 @router.post("/", response_model=SecretResponse, status_code=status.HTTP_201_CREATED)
 async def create_secret(
-    secret_data: SecretCreate, current_user: CurrentUser, session: SessionDep
+    secret_data: SecretCreate,
+    current_user: CurrentUser,
+    session: TransactionSessionDep,
 ):
     """Create a new secret in a namespace."""
     # Check namespace access
@@ -166,7 +168,7 @@ async def update_secret(
     secret_id: UUID,
     secret_update: SecretUpdate,
     current_user: CurrentUser,
-    session: SessionDep,
+    session: TransactionSessionDep,
 ):
     """Update a secret's provider or value."""
     # Query the secret
@@ -201,7 +203,9 @@ async def update_secret(
 
 @router.delete("/{secret_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_secret(
-    secret_id: UUID, current_user: CurrentUser, session: SessionDep
+    secret_id: UUID,
+    current_user: CurrentUser,
+    session: TransactionSessionDep,
 ):
     """Delete a secret."""
 
