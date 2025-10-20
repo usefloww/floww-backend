@@ -6,11 +6,9 @@ async def test_list_namespaces_returns_correct_structure(client_a: UserClient):
     assert response.status_code == 200
 
     data = response.json()
-    assert "namespaces" in data
+    assert "results" in data
     assert "total" in data
-    assert "user_id" in data
-    assert isinstance(data["namespaces"], list)
-    assert data["user_id"] == str(client_a.user.id)
+    assert isinstance(data["results"], list)
 
 
 async def test_list_namespaces_includes_personal_namespace(client_a: UserClient):
@@ -18,7 +16,7 @@ async def test_list_namespaces_includes_personal_namespace(client_a: UserClient)
     assert response.status_code == 200
 
     data = response.json()
-    namespaces = data["namespaces"]
+    namespaces = data["results"]
     assert len(namespaces) >= 1
 
     # Verify personal namespace is included
@@ -33,7 +31,7 @@ async def test_namespace_data_structure_validation(client_a: UserClient):
     assert response.status_code == 200
 
     data = response.json()
-    namespaces = data["namespaces"]
+    namespaces = data["results"]
 
     if len(namespaces) > 0:
         namespace = namespaces[0]
@@ -50,12 +48,12 @@ async def test_namespaces_access_control_between_users(
     # Get namespaces for user A
     response_a = await client_a.get("/api/namespaces")
     assert response_a.status_code == 200
-    namespaces_a = response_a.json()["namespaces"]
+    namespaces_a = response_a.json()["results"]
 
     # Get namespaces for user B
     response_b = await client_b.get("/api/namespaces")
     assert response_b.status_code == 200
-    namespaces_b = response_b.json()["namespaces"]
+    namespaces_b = response_b.json()["results"]
 
     # Users should not share personal namespace access
     a_personal_namespaces = [
@@ -80,4 +78,4 @@ async def test_namespace_total_count_matches_list_length(client_a: UserClient):
     assert response.status_code == 200
 
     data = response.json()
-    assert data["total"] == len(data["namespaces"])
+    assert data["total"] == len(data["results"])

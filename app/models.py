@@ -338,3 +338,26 @@ class Secret(Base):
         UniqueConstraint("namespace_id", "name", name="uq_namespace_secret"),
         Index("idx_secrets_namespace", "namespace_id"),
     )
+
+
+# class Resource(Base):
+#     __tablename__ = "resources"
+
+#     id: Mapped[UUID] = mapped_column(
+#         PGUUID(as_uuid=True), primary_key=True, default=uuid4
+#     )
+#     workflow_id: Mapped[UUID] = mapped_column(
+#         PGUUID(as_uuid=True),
+#         # workflow should not be deleted to ensure proper cleanup of resources
+#         ForeignKey("workflows.id", ondelete="RESTRICT"),
+#     )
+#     secret_id: Mapped[UUID] = mapped_column(
+#         PGUUID(as_uuid=True), ForeignKey("secret.id", ondelete="SET_NULL")
+#     )
+#     resource_type: Mapped[str] = mapped_column(Text(), nullable=False)
+#     input: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=False)
+#     state: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+#     # Relationships
+#     workflow: Mapped["Workflow"] = relationship(back_populates="resources")
+#     secret: Mapped[Secret] = relationship(back_populates="resources")

@@ -17,7 +17,7 @@ async def test_create_and_retrieve_organization(client_a: UserClient):
     response = await client_a.get("/api/organizations")
     assert response.status_code == 200
 
-    organizations = response.json()["organizations"]
+    organizations = response.json()["results"]
     assert len(organizations) == 1
     assert organizations[0]["name"] == "test-org"
 
@@ -27,10 +27,8 @@ async def test_list_organizations_returns_correct_structure(client_a: UserClient
     assert response.status_code == 200
 
     data = response.json()
-    assert "organizations" in data
-    assert "total" in data
-    assert "user_id" in data
-    assert isinstance(data["organizations"], list)
+    assert "results" in data
+    assert isinstance(data["results"], list)
 
 
 async def test_organization_creation_includes_metadata(client_a: UserClient):
@@ -61,7 +59,7 @@ async def test_organizations_are_isolated_between_users(
     response = await client_a.get("/api/organizations")
     assert response.status_code == 200
 
-    organizations = response.json()["organizations"]
+    organizations = response.json()["results"]
     assert len(organizations) == 1
     assert organizations[0]["name"] == "user-a-org"
 
@@ -69,7 +67,7 @@ async def test_organizations_are_isolated_between_users(
     response = await client_b.get("/api/organizations")
     assert response.status_code == 200
 
-    organizations = response.json()["organizations"]
+    organizations = response.json()["results"]
     assert len(organizations) == 0
 
 
@@ -86,7 +84,7 @@ async def test_update_and_delete_organization(client_a: UserClient):
 
     # Update organization
     update_data = {"display_name": "Updated Organization"}
-    response = await client_a.put(
+    response = await client_a.patch(
         f"/api/organizations/{organization_id}", json=update_data
     )
     assert response.status_code == 200

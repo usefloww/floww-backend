@@ -19,7 +19,7 @@ async def list_namespaces(current_user: CurrentUser, session: SessionDep):
     namespaces = result.scalars().all()
 
     return {
-        "namespaces": [
+        "results": [
             {
                 "id": str(namespace.id),
                 "name": namespace.name,
@@ -34,5 +34,4 @@ async def list_namespaces(current_user: CurrentUser, session: SessionDep):
             for namespace in namespaces
         ],
         "total": len(namespaces),
-        "user_id": str(current_user.id),
     }
