@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -41,3 +41,4 @@ class ResourceI(ABC, Generic[I, S, P]):
 class ProviderI(ABC):
     name: str
     setup_steps: list[ProviderSetupStep]
+    model: Type[BaseModel]

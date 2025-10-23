@@ -6,12 +6,18 @@ from app.services.providers.provider_setup import (
     ProviderSetupStepValue,
 )
 from app.services.providers.provider_utils import (
+    ProviderI,
     ResourceI,
 )
 
 
 #### Provider ####
-class GitlabProvider:
+class GitlabProviderState(BaseModel):
+    url: str
+    token: str
+
+
+class GitlabProvider(ProviderI):
     name: str = "gitlab"
     setup_steps: list[ProviderSetupStep] = [
         ProviderSetupStepValue(
@@ -26,6 +32,7 @@ class GitlabProvider:
             alias="token",
         ),
     ]
+    model = GitlabProviderState
 
 
 #### Resources ####

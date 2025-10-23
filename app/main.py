@@ -11,6 +11,8 @@ from app.routes import (
     health,
     namespaces,
     organizations,
+    provider_types,
+    providers,
     runtimes,
     secrets,
     webhooks,
@@ -70,6 +72,8 @@ api_router.include_router(whoami.router)
 api_router.include_router(secrets.router)
 api_router.include_router(runtimes.router)
 api_router.include_router(namespaces.router)
+api_router.include_router(providers.router)
+api_router.include_router(provider_types.router)
 api_router.include_router(workflow_deployments.router)
 api_router.include_router(organizations.router)
 app.include_router(webhooks.router)

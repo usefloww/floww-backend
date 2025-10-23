@@ -161,6 +161,9 @@ class Namespace(Base):
     secrets: Mapped[list["Secret"]] = relationship(
         back_populates="namespace", cascade="all, delete-orphan"
     )
+    providers: Mapped[list["Provider"]] = relationship(
+        back_populates="namespace", cascade="all, delete-orphan"
+    )
 
     @property
     def namespace_owner(self) -> Union["User", "Organization", None]:
@@ -340,24 +343,18 @@ class Secret(Base):
     )
 
 
-# class Resource(Base):
-#     __tablename__ = "resources"
+class Provider(Base):
+    __tablename__ = "providers"
 
-#     id: Mapped[UUID] = mapped_column(
-#         PGUUID(as_uuid=True), primary_key=True, default=uuid4
-#     )
-#     workflow_id: Mapped[UUID] = mapped_column(
-#         PGUUID(as_uuid=True),
-#         # workflow should not be deleted to ensure proper cleanup of resources
-#         ForeignKey("workflows.id", ondelete="RESTRICT"),
-#     )
-#     secret_id: Mapped[UUID] = mapped_column(
-#         PGUUID(as_uuid=True), ForeignKey("secret.id", ondelete="SET_NULL")
-#     )
-#     resource_type: Mapped[str] = mapped_column(Text(), nullable=False)
-#     input: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=False)
-#     state: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    namespace_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("namespaces.id", ondelete="CASCADE")
+    )
+    type: Mapped[str] = mapped_column(Text(), nullable=False)
+    alias: Mapped[str] = mapped_column(Text(), nullable=False)
+    encrypted_config: Mapped[str] = mapped_column(Text, nullable=False)
 
-#     # Relationships
-#     workflow: Mapped["Workflow"] = relationship(back_populates="resources")
-#     secret: Mapped[Secret] = relationship(back_populates="resources")
+    # Relationships
+    namespace: Mapped["Namespace"] = relationship(back_populates="providers")

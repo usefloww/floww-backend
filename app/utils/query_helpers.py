@@ -10,6 +10,7 @@ from app.models import (
     Namespace,
     Organization,
     OrganizationMember,
+    Provider,
     Runtime,
     Secret,
     Workflow,
@@ -58,6 +59,18 @@ class UserAccessibleQuery:
     def secrets(self):
         return select(Secret).where(
             Secret.namespace.has(
+                or_(
+                    Namespace.user_owner_id == str(self.user_id),
+                    Namespace.organization_owner.has(
+                        OrganizationMember.user_id == str(self.user_id)
+                    ),
+                )
+            )
+        )
+
+    def providers(self):
+        return select(Provider).where(
+            Provider.namespace.has(
                 or_(
                     Namespace.user_owner_id == str(self.user_id),
                     Namespace.organization_owner.has(

@@ -56,7 +56,7 @@ async def list_workflows(current_user: CurrentUser, session: SessionDep):
     """List workflows accessible to the authenticated user."""
     helper = helper_factory(current_user, session)
     result = await helper.list_response()
-    return {"workflows": result.results}
+    return result
 
 
 @router.post("")
