@@ -33,5 +33,8 @@ class Settings(BaseSettings):
     )
     ECR_PROXY_URL: str = "https://registry.flow.toondn.app"
 
+    # Public API URL for webhook callbacks
+    PUBLIC_API_URL: str = "https://api.flow.toondn.app"
+
 
 settings = Settings()

@@ -69,3 +69,37 @@ def get_lambda_deploy_status(runtime_id: str):
 
     except Exception as e:
         return {"success": False, "status": "FAILED", "logs": str(e)}
+
+
+def invoke_lambda_async(runtime_id: str, event_payload: dict):
+    """Invoke a Lambda function asynchronously (fire-and-forget)."""
+    import json
+
+    function_name = f"floww-runtime-{runtime_id}"
+
+    try:
+        response = lambda_client.invoke(
+            FunctionName=function_name,
+            InvocationType="Event",  # Async invocation
+            Payload=json.dumps(event_payload),
+        )
+        logger.info(
+            "Lambda invoked asynchronously",
+            function_name=function_name,
+            status_code=response["StatusCode"],
+        )
+        return {"success": True, "status_code": response["StatusCode"]}
+    except ClientError as e:
+        logger.error(
+            "Failed to invoke Lambda",
+            function_name=function_name,
+            error=str(e),
+        )
+        return {"success": False, "error": str(e)}
+    except Exception as e:
+        logger.error(
+            "Unexpected error invoking Lambda",
+            function_name=function_name,
+            error=str(e),
+        )
+        return {"success": False, "error": str(e)}

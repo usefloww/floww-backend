@@ -8,13 +8,27 @@ from pydantic import BaseModel
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep, TransactionSessionDep
-from app.models import Runtime, Workflow, WorkflowDeployment, WorkflowDeploymentStatus
+from app.models import (
+    IncomingWebhook,
+    Runtime,
+    Workflow,
+    WorkflowDeployment,
+    WorkflowDeploymentStatus,
+)
 from app.services.crud_helpers import CrudHelper
+from app.settings import settings
 from app.utils.query_helpers import UserAccessibleQuery
 
 logger = structlog.stdlib.get_logger(__name__)
 
 router = APIRouter(prefix="/workflow_deployments", tags=["Workflow Deployments"])
+
+
+class WebhookInfo(BaseModel):
+    id: UUID
+    url: str
+    path: Optional[str] = None
+    method: Optional[str] = None
 
 
 class WorkflowDeploymentRead(BaseModel):
@@ -26,6 +40,7 @@ class WorkflowDeploymentRead(BaseModel):
     status: WorkflowDeploymentStatus
     deployed_at: datetime
     note: Optional[str] = None
+    webhooks: Optional[list[WebhookInfo]] = None
 
 
 class WorkflowDeploymentUserCode(BaseModel):
@@ -33,10 +48,19 @@ class WorkflowDeploymentUserCode(BaseModel):
     entrypoint: str
 
 
+class TriggerMetadata(BaseModel):
+    type: str  # "webhook", "cron", "realtime"
+    path: Optional[str] = None  # For webhook triggers
+    method: Optional[str] = None  # For webhook triggers
+    expression: Optional[str] = None  # For cron triggers
+    channel: Optional[str] = None  # For realtime triggers
+
+
 class WorkflowDeploymentCreate(BaseModel):
     workflow_id: UUID
     runtime_id: UUID
     code: WorkflowDeploymentUserCode
+    triggers: Optional[list[TriggerMetadata]] = None
 
 
 class WorkflowDeploymentUpdate(BaseModel):
@@ -120,15 +144,62 @@ async def create_workflow_deployment(
     await session.flush()
     await session.refresh(workflow_deployment)
 
+    # Create IncomingWebhook records for webhook triggers
+    webhooks_info = []
+    if data.triggers:
+        # Get base URL from settings
+        base_url = settings.PUBLIC_API_URL
+
+        for trigger in data.triggers:
+            if trigger.type == "webhook":
+                # Create IncomingWebhook record
+                incoming_webhook = IncomingWebhook(
+                    workflow_id=data.workflow_id,
+                )
+                session.add(incoming_webhook)
+                await session.flush()
+                await session.refresh(incoming_webhook)
+
+                # Build webhook URL
+                webhook_url = f"{base_url}/webhooks/{incoming_webhook.id}"
+
+                webhooks_info.append(
+                    WebhookInfo(
+                        id=incoming_webhook.id,
+                        url=webhook_url,
+                        path=trigger.path,
+                        method=trigger.method,
+                    )
+                )
+
+                logger.info(
+                    "Created incoming webhook",
+                    webhook_id=str(incoming_webhook.id),
+                    workflow_id=str(data.workflow_id),
+                    path=trigger.path,
+                )
+
     logger.info(
         "Created new workflow deployment",
         deployment_id=str(workflow_deployment.id),
         workflow_id=str(workflow_deployment.workflow_id),
+        webhooks_count=len(webhooks_info),
     )
 
-    return WorkflowDeploymentRead.model_validate(
-        workflow_deployment, from_attributes=True
-    )
+    # Build response
+    deployment_dict = {
+        "id": workflow_deployment.id,
+        "workflow_id": workflow_deployment.workflow_id,
+        "runtime_id": workflow_deployment.runtime_id,
+        "deployed_by_id": workflow_deployment.deployed_by_id,
+        "user_code": workflow_deployment.user_code,
+        "status": workflow_deployment.status,
+        "deployed_at": workflow_deployment.deployed_at,
+        "note": workflow_deployment.note,
+        "webhooks": webhooks_info,
+    }
+
+    return WorkflowDeploymentRead.model_validate(deployment_dict)
 
 
 @router.get("/{deployment_id}")
