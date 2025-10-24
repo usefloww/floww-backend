@@ -235,6 +235,20 @@ class Workflow(Base):
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
     )
+    triggers_metadata: Mapped[Optional[list[dict]]] = mapped_column(JSONB, nullable=True)
+    """
+    [
+        {
+            "type": "webhook",
+            "path": "/api/users",
+            "method": "POST"
+        },
+        {
+            "type": "cron",
+            "expression": "0 0 * * *"
+        }
+    ]
+    """
 
     # Relationships
     namespace: Mapped["Namespace"] = relationship(back_populates="workflows")
@@ -312,9 +326,15 @@ class IncomingWebhook(Base):
     workflow_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("workflows.id", ondelete="CASCADE")
     )
+    path: Mapped[str] = mapped_column(Text, nullable=False)
+    method: Mapped[str] = mapped_column(Text, nullable=False, server_default="POST")
 
     # Relationships
     workflow: Mapped["Workflow"] = relationship(back_populates="incoming_webhooks")
+
+    __table_args__ = (
+        UniqueConstraint("path", "method", name="uq_incoming_webhook_path_method"),
+    )
 
 
 class Secret(Base):

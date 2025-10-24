@@ -12,13 +12,20 @@ router = APIRouter()
 logger = structlog.stdlib.get_logger(__name__)
 
 
-@router.post("/webhooks/{webhook_id}")
-async def webhook_listener(request: Request, webhook_id: str, session: SessionDep):
-    # Query webhook with its workflow
+@router.post("/webhook/{path:path}")
+@router.get("/webhook/{path:path}")
+@router.put("/webhook/{path:path}")
+@router.delete("/webhook/{path:path}")
+async def webhook_listener(request: Request, path: str, session: SessionDep):
+    # Reconstruct full path with leading slash
+    full_path = f"/webhook/{path}"
+
+    # Query webhook by path and method
     result = await session.execute(
         select(IncomingWebhook)
         .options(selectinload(IncomingWebhook.workflow))
-        .where(IncomingWebhook.id == webhook_id)
+        .where(IncomingWebhook.path == full_path)
+        .where(IncomingWebhook.method == request.method)
     )
     webhook = result.scalar_one_or_none()
 
@@ -45,7 +52,8 @@ async def webhook_listener(request: Request, webhook_id: str, session: SessionDe
     if not deployment:
         logger.warning(
             "No active deployment found for webhook",
-            webhook_id=webhook_id,
+            path=full_path,
+            method=request.method,
             workflow_id=str(webhook.workflow_id),
         )
         return JSONResponse(
@@ -57,8 +65,7 @@ async def webhook_listener(request: Request, webhook_id: str, session: SessionDe
     event_payload = {
         "userCode": deployment.user_code.get("files", {}),
         "triggerType": "webhook",
-        "path": request.url.path.replace(f"/webhooks/{webhook_id}", "")
-        or "/webhook",
+        "path": full_path,
         "method": request.method,
         "headers": dict(request.headers),
         "body": webhook_data,

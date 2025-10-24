@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import structlog
 from fastapi import APIRouter, HTTPException
@@ -144,6 +144,20 @@ async def create_workflow_deployment(
     await session.flush()
     await session.refresh(workflow_deployment)
 
+    # Update workflow with triggers metadata
+    if data.triggers:
+        workflow.triggers_metadata = [
+            {
+                "type": trigger.type,
+                **({"path": trigger.path} if trigger.path else {}),
+                **({"method": trigger.method} if trigger.method else {}),
+                **({"expression": trigger.expression} if trigger.expression else {}),
+                **({"channel": trigger.channel} if trigger.channel else {}),
+            }
+            for trigger in data.triggers
+        ]
+        session.add(workflow)
+
     # Create IncomingWebhook records for webhook triggers
     webhooks_info = []
     if data.triggers:
@@ -152,32 +166,48 @@ async def create_workflow_deployment(
 
         for trigger in data.triggers:
             if trigger.type == "webhook":
-                # Create IncomingWebhook record
-                incoming_webhook = IncomingWebhook(
-                    workflow_id=data.workflow_id,
-                )
-                session.add(incoming_webhook)
-                await session.flush()
-                await session.refresh(incoming_webhook)
+                # Generate path if not provided (for provider webhooks)
+                webhook_path = trigger.path if trigger.path else f"/webhook/{uuid4()}"
+                webhook_method = trigger.method if trigger.method else "POST"
 
-                # Build webhook URL
-                webhook_url = f"{base_url}/webhooks/{incoming_webhook.id}"
-
-                webhooks_info.append(
-                    WebhookInfo(
-                        id=incoming_webhook.id,
-                        url=webhook_url,
-                        path=trigger.path,
-                        method=trigger.method,
+                # Create or update IncomingWebhook record
+                try:
+                    incoming_webhook = IncomingWebhook(
+                        workflow_id=data.workflow_id,
+                        path=webhook_path,
+                        method=webhook_method,
                     )
-                )
+                    session.add(incoming_webhook)
+                    await session.flush()
+                    await session.refresh(incoming_webhook)
 
-                logger.info(
-                    "Created incoming webhook",
-                    webhook_id=str(incoming_webhook.id),
-                    workflow_id=str(data.workflow_id),
-                    path=trigger.path,
-                )
+                    # Build webhook URL
+                    webhook_url = f"{base_url}{webhook_path}"
+
+                    webhooks_info.append(
+                        WebhookInfo(
+                            id=incoming_webhook.id,
+                            url=webhook_url,
+                            path=webhook_path,
+                            method=webhook_method,
+                        )
+                    )
+
+                    logger.info(
+                        "Created incoming webhook",
+                        webhook_id=str(incoming_webhook.id),
+                        workflow_id=str(data.workflow_id),
+                        path=webhook_path,
+                        method=webhook_method,
+                    )
+                except Exception as e:
+                    # Handle unique constraint violation
+                    if "uq_incoming_webhook_path_method" in str(e):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Webhook path {webhook_path} with method {webhook_method} already exists",
+                        )
+                    raise
 
     logger.info(
         "Created new workflow deployment",
