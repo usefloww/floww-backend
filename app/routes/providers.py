@@ -88,7 +88,7 @@ async def list_providers(current_user: CurrentUser, session: SessionDep):
     """List providers accessible to the authenticated user."""
     helper = helper_factory(current_user, session)
     result = await helper.list_response()
-    return {"providers": result.results}
+    return result
 
 
 @router.post("")

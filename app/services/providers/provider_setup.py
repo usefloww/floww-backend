@@ -18,6 +18,7 @@ class ProviderSetupStepValue(ProviderSetupStep):
     description: str
     alias: str
     default: Optional[str] = None
+    placeholder: Optional[str] = None
     required: bool = True
 
 
@@ -27,6 +28,7 @@ class ProviderSetupStepSecret(ProviderSetupStep):
     title: str
     description: str
     alias: str
+    placeholder: Optional[str] = None
     required: bool = True
 
 

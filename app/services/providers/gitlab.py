@@ -30,6 +30,7 @@ class GitlabProvider(ProviderI):
             title="Access Token",
             description="Personal access token",
             alias="token",
+            placeholder="glpat-xxxxxxxxxxxxxxxxxxxx",
         ),
     ]
     model = GitlabProviderState
