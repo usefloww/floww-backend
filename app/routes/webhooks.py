@@ -4,7 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.deps.db import SessionDep
-from app.models import IncomingWebhook, WorkflowDeployment, WorkflowDeploymentStatus
+from app.models import IncomingWebhook, Trigger, WorkflowDeployment, WorkflowDeploymentStatus
+from app.services.centrifugo_service import centrifugo_service
 from app.utils.aws_lambda import invoke_lambda_async
 import structlog
 
@@ -20,10 +21,13 @@ async def webhook_listener(request: Request, path: str, session: SessionDep):
     # Normalize path to always have leading slash
     normalized_path = f"/{path}" if not path.startswith("/") else path
 
-    # Query webhook by path and method
+    # Query webhook by path and method (with trigger relationship for metadata)
     result = await session.execute(
         select(IncomingWebhook)
-        .options(selectinload(IncomingWebhook.workflow))
+        .options(
+            selectinload(IncomingWebhook.workflow),
+            selectinload(IncomingWebhook.trigger).selectinload(Trigger.provider)
+        )
         .where(IncomingWebhook.path == normalized_path)
         .where(IncomingWebhook.method == request.method)
     )
@@ -38,6 +42,28 @@ async def webhook_listener(request: Request, path: str, session: SessionDep):
         if request.headers.get("content-type") == "application/json"
         else {}
     )
+
+    # Publish to dev channel (fire-and-forget for local development)
+    # If no dev session is active, Centrifugo drops the message automatically
+    if webhook.trigger:
+        trigger_metadata = {
+            "provider_type": webhook.trigger.provider.type,
+            "provider_alias": webhook.trigger.provider.alias,
+            "trigger_type": webhook.trigger.trigger_type,
+            "input": webhook.trigger.input,
+        }
+
+        await centrifugo_service.publish_dev_webhook_event(
+            workflow_id=webhook.workflow_id,
+            trigger_metadata=trigger_metadata,
+            webhook_data={
+                "path": normalized_path,
+                "method": request.method,
+                "headers": dict(request.headers),
+                "body": webhook_data,
+                "query": dict(request.query_params),
+            },
+        )
 
     # Find active deployment for this workflow
     deployment_result = await session.execute(

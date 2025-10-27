@@ -134,6 +134,30 @@ class CentrifugoService:
             payload={"execution_id": execution_id, "error": error},
         )
 
+    async def publish_dev_webhook_event(
+        self, workflow_id: UUID, trigger_metadata: Dict[str, Any], webhook_data: Dict[str, Any]
+    ) -> None:
+        """
+        Publish webhook event to dev channel for local development.
+
+        This is fire-and-forget - if no dev session is active (no subscribers),
+        Centrifugo will drop the message. This keeps webhook handling fast.
+        """
+        channel = f"dev:workflow:{str(workflow_id)}"
+
+        event_data = {
+            "type": "webhook",
+            "path": webhook_data.get("path"),
+            "method": webhook_data.get("method"),
+            "headers": webhook_data.get("headers", {}),
+            "body": webhook_data.get("body", {}),
+            "query": webhook_data.get("query", {}),
+            "trigger_metadata": trigger_metadata,
+        }
+
+        # Fire and forget - don't wait for response
+        await self.publish_to_channel(channel, event_data)
+
     async def close(self):
         """Close the HTTP client"""
         await self.client.aclose()

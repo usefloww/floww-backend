@@ -15,7 +15,7 @@ from app.services.providers.provider_utils import (
 #### Provider ####
 class GitlabProviderState(BaseModel):
     url: str
-    token: str
+    accessToken: str
 
 
 class GitlabProvider(ProviderI):
@@ -30,7 +30,7 @@ class GitlabProvider(ProviderI):
         ProviderSetupStepSecret(
             title="Access Token",
             description="Personal access token",
-            alias="token",
+            alias="accessToken",
             placeholder="glpat-xxxxxxxxxxxxxxxxxxxx",
         ),
     ]
@@ -57,7 +57,7 @@ class OnMergeRequestComment(
     ) -> OnMergeRequestCommentState:
         """Create a GitLab webhook for merge request comments."""
         headers = {
-            "PRIVATE-TOKEN": provider.token,
+            "PRIVATE-TOKEN": provider.accessToken,
             "Content-Type": "application/json",
         }
 
@@ -107,7 +107,7 @@ class OnMergeRequestComment(
     ) -> None:
         """Delete a GitLab webhook."""
         headers = {
-            "PRIVATE-TOKEN": provider.token,
+            "PRIVATE-TOKEN": provider.accessToken,
         }
 
         async with httpx.AsyncClient() as client:
@@ -134,7 +134,7 @@ class OnMergeRequestComment(
     ) -> OnMergeRequestCommentState:
         """Verify webhook still exists and return current state."""
         headers = {
-            "PRIVATE-TOKEN": provider.token,
+            "PRIVATE-TOKEN": provider.accessToken,
         }
 
         async with httpx.AsyncClient() as client:
