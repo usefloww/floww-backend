@@ -10,13 +10,13 @@ S = TypeVar("S", bound=BaseModel)
 P = TypeVar("P")
 
 
-class ResourceState(BaseModel):
+class TriggerState(BaseModel):
     webhooks: list[str]
     schedules: list[str]
     data: Any
 
 
-class ResourceI(ABC, Generic[I, S, P]):
+class TriggerI(ABC, Generic[I, S, P]):
     @classmethod
     def input_schema(cls):
         return cls.__orig_bases__[0].__args__[0]

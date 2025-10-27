@@ -7,7 +7,7 @@ from app.services.providers.provider_setup import (
 )
 from app.services.providers.provider_utils import (
     ProviderI,
-    ResourceI,
+    TriggerI,
 )
 
 
@@ -36,7 +36,7 @@ class GitlabProvider(ProviderI):
     model = GitlabProviderState
 
 
-#### Resources ####
+#### Triggers ####
 class GitlabProjectHookInput(BaseModel):
     pass
 
@@ -46,7 +46,7 @@ class GitlabProjectHookState(BaseModel):
 
 
 class GitlabProjectHook(
-    ResourceI[GitlabProjectHookInput, GitlabProjectHookState, GitlabProvider]
+    TriggerI[GitlabProjectHookInput, GitlabProjectHookState, GitlabProvider]
 ):
     def create(self, provider, input):
         return GitlabProjectHookState()

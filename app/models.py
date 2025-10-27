@@ -235,7 +235,9 @@ class Workflow(Base):
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
     )
-    triggers_metadata: Mapped[Optional[list[dict]]] = mapped_column(JSONB, nullable=True)
+    triggers_metadata: Mapped[Optional[list[dict]]] = mapped_column(
+        JSONB, nullable=True
+    )
     """
     [
         {
@@ -256,9 +258,6 @@ class Workflow(Base):
         back_populates="created_workflows"
     )
     deployments: Mapped[list["WorkflowDeployment"]] = relationship(
-        back_populates="workflow", cascade="all, delete-orphan"
-    )
-    incoming_webhooks: Mapped[list["IncomingWebhook"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
     )
 
@@ -318,22 +317,75 @@ class WorkflowDeployment(Base):
 
 
 class IncomingWebhook(Base):
+    """
+    Used to execute triggers based on an incoming webhooks
+
+    Ex: new calendar events gets created which sends out webhook
+    """
+
     __tablename__ = "incoming_webhooks"
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
-    workflow_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("workflows.id", ondelete="CASCADE")
+    trigger_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("triggers.id", ondelete="CASCADE")
     )
     path: Mapped[str] = mapped_column(Text, nullable=False)
     method: Mapped[str] = mapped_column(Text, nullable=False, server_default="POST")
 
     # Relationships
-    workflow: Mapped["Workflow"] = relationship(back_populates="incoming_webhooks")
+    trigger: Mapped["Workflow"] = relationship(back_populates="incoming_webhooks")
 
-    __table_args__ = (
-        UniqueConstraint("path", "method", name="uq_incoming_webhook_path_method"),
+
+class RecurringTask(Base):
+    """
+    Used to execute triggers for this that don't have a webhooks
+
+    Ex: check new calendar events every 5 minutes because the provider doesn't support webhook
+    """
+
+    __tablename__ = "recurring_tasks"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    trigger_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("triggers.id", ondelete="CASCADE")
+    )
+
+    # Relationships
+    trigger: Mapped["Workflow"] = relationship(back_populates="recurring_tasks")
+
+
+class Trigger(Base):
+    __tablename__ = "triggers"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    workflow_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        # workflow should not be deleted to ensure proper cleanup of resources
+        ForeignKey("workflows.id", ondelete="RESTRICT"),
+    )
+    provider_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        # provider should not be deleted to ensure proper cleanup of resources
+        ForeignKey("providers.id", ondelete="RESTRICT"),
+    )
+    trigger_type: Mapped[str] = mapped_column(Text(), nullable=False)
+    input: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=False)
+    state: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+    # Relationships
+    workflow: Mapped["Workflow"] = relationship(back_populates="triggers")
+    provider: Mapped["Workflow"] = relationship(back_populates="triggers")
+    incoming_webhooks: Mapped[list["IncomingWebhook"]] = relationship(
+        back_populates="trigger", cascade="all, delete-orphan"
+    )
+    recurring_tasks: Mapped[list["RecurringTask"]] = relationship(
+        back_populates="trigger", cascade="all, delete-orphan"
     )
 
 
@@ -378,3 +430,4 @@ class Provider(Base):
 
     # Relationships
     namespace: Mapped["Namespace"] = relationship(back_populates="providers")
+    triggers: Mapped[list["Trigger"]] = relationship(back_populates="trigger")
