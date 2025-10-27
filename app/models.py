@@ -260,6 +260,9 @@ class Workflow(Base):
     deployments: Mapped[list["WorkflowDeployment"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
     )
+    triggers: Mapped[list["Trigger"]] = relationship(
+        back_populates="workflow", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("namespace_id", "name", name="uq_namespace_workflow"),
@@ -335,7 +338,7 @@ class IncomingWebhook(Base):
     method: Mapped[str] = mapped_column(Text, nullable=False, server_default="POST")
 
     # Relationships
-    trigger: Mapped["Workflow"] = relationship(back_populates="incoming_webhooks")
+    trigger: Mapped["Trigger"] = relationship(back_populates="incoming_webhooks")
 
 
 class RecurringTask(Base):
@@ -355,7 +358,7 @@ class RecurringTask(Base):
     )
 
     # Relationships
-    trigger: Mapped["Workflow"] = relationship(back_populates="recurring_tasks")
+    trigger: Mapped["Trigger"] = relationship(back_populates="recurring_tasks")
 
 
 class Trigger(Base):
@@ -380,7 +383,7 @@ class Trigger(Base):
 
     # Relationships
     workflow: Mapped["Workflow"] = relationship(back_populates="triggers")
-    provider: Mapped["Workflow"] = relationship(back_populates="triggers")
+    provider: Mapped["Provider"] = relationship(back_populates="triggers")
     incoming_webhooks: Mapped[list["IncomingWebhook"]] = relationship(
         back_populates="trigger", cascade="all, delete-orphan"
     )
@@ -430,4 +433,4 @@ class Provider(Base):
 
     # Relationships
     namespace: Mapped["Namespace"] = relationship(back_populates="providers")
-    triggers: Mapped[list["Trigger"]] = relationship(back_populates="trigger")
+    triggers: Mapped[list["Trigger"]] = relationship(back_populates="provider")
