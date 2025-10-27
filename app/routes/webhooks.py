@@ -1,13 +1,18 @@
+import structlog
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.deps.db import SessionDep
-from app.models import IncomingWebhook, Trigger, WorkflowDeployment, WorkflowDeploymentStatus
+from app.models import (
+    IncomingWebhook,
+    Trigger,
+    WorkflowDeployment,
+    WorkflowDeploymentStatus,
+)
 from app.services.centrifugo_service import centrifugo_service
 from app.utils.aws_lambda import invoke_lambda_async
-import structlog
 
 router = APIRouter()
 logger = structlog.stdlib.get_logger(__name__)
@@ -25,8 +30,8 @@ async def webhook_listener(request: Request, path: str, session: SessionDep):
     result = await session.execute(
         select(IncomingWebhook)
         .options(
-            selectinload(IncomingWebhook.workflow),
-            selectinload(IncomingWebhook.trigger).selectinload(Trigger.provider)
+            selectinload(IncomingWebhook.trigger).selectinload(Trigger.provider),
+            selectinload(IncomingWebhook.trigger).selectinload(Trigger.workflow),
         )
         .where(IncomingWebhook.path == normalized_path)
         .where(IncomingWebhook.method == request.method)
@@ -54,7 +59,7 @@ async def webhook_listener(request: Request, path: str, session: SessionDep):
         }
 
         await centrifugo_service.publish_dev_webhook_event(
-            workflow_id=webhook.workflow_id,
+            workflow_id=webhook.trigger.workflow_id,
             trigger_metadata=trigger_metadata,
             webhook_data={
                 "path": normalized_path,
@@ -68,7 +73,7 @@ async def webhook_listener(request: Request, path: str, session: SessionDep):
     # Find active deployment for this workflow
     deployment_result = await session.execute(
         select(WorkflowDeployment)
-        .where(WorkflowDeployment.workflow_id == webhook.workflow_id)
+        .where(WorkflowDeployment.workflow_id == webhook.trigger.workflow_id)
         .where(WorkflowDeployment.status == WorkflowDeploymentStatus.ACTIVE)
         .order_by(WorkflowDeployment.deployed_at.desc())
         .limit(1)
@@ -80,7 +85,7 @@ async def webhook_listener(request: Request, path: str, session: SessionDep):
             "No active deployment found for webhook",
             path=normalized_path,
             method=request.method,
-            workflow_id=str(webhook.workflow_id),
+            workflow_id=str(webhook.trigger.workflow_id),
         )
         return JSONResponse(
             content={"error": "No active deployment found"},
@@ -119,14 +124,14 @@ async def webhook_listener(request: Request, path: str, session: SessionDep):
     logger.info(
         "Webhook invoked Lambda",
         webhook_id=str(webhook.id),
-        workflow_id=str(webhook.workflow_id),
+        workflow_id=str(webhook.trigger.workflow_id),
         runtime_id=str(deployment.runtime_id),
     )
 
     return JSONResponse(
         content={
             "webhook_id": str(webhook.id),
-            "workflow_id": str(webhook.workflow_id),
+            "workflow_id": str(webhook.trigger.workflow_id),
             "status": "invoked",
         }
     )
