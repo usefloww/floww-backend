@@ -17,6 +17,7 @@ from app.models import (
     WorkflowDeploymentStatus,
 )
 from app.services.crud_helpers import CrudHelper
+from app.services.trigger_service import TriggerService
 from app.settings import settings
 from app.utils.query_helpers import UserAccessibleQuery
 
@@ -55,6 +56,11 @@ class TriggerMetadata(BaseModel):
     method: Optional[str] = None  # For webhook triggers
     expression: Optional[str] = None  # For cron triggers
     channel: Optional[str] = None  # For realtime triggers
+    # Provider-managed trigger fields
+    provider_type: Optional[str] = None  # e.g., "gitlab"
+    provider_alias: Optional[str] = None  # e.g., "default"
+    trigger_type: Optional[str] = None  # e.g., "onMergeRequestComment"
+    input: Optional[dict] = None  # Provider-specific input
 
 
 class WorkflowDeploymentCreate(BaseModel):
@@ -159,17 +165,28 @@ async def create_workflow_deployment(
         ]
         session.add(workflow)
 
-    # Create IncomingWebhook records for webhook triggers
+    # Sync triggers using TriggerService (handles provider-managed triggers)
     webhooks_info = []
     if data.triggers:
-        # Get base URL from settings
-        base_url = settings.PUBLIC_API_URL
+        trigger_service = TriggerService(session)
 
-        for trigger in data.triggers:
-            if trigger.type == "webhook":
-                # Generate path if not provided (for provider webhooks)
-                webhook_path = trigger.path if trigger.path else f"/webhook/{uuid4()}"
-                webhook_method = trigger.method if trigger.method else "POST"
+        # Convert TriggerMetadata to dict format
+        triggers_metadata = [trigger.model_dump() for trigger in data.triggers]
+
+        # Sync provider-managed triggers
+        provider_webhooks = await trigger_service.sync_triggers(
+            workflow_id=data.workflow_id,
+            namespace_id=workflow.namespace_id,
+            new_triggers_metadata=triggers_metadata,
+        )
+        webhooks_info.extend([WebhookInfo(**wh) for wh in provider_webhooks])
+
+        # Handle non-provider webhooks (user-defined webhooks)
+        for trigger_meta in triggers_metadata:
+            if trigger_meta["type"] == "webhook" and "provider_type" not in trigger_meta:
+                # Generate path if not provided
+                webhook_path = trigger_meta.get("path") or f"/webhook/{uuid4()}"
+                webhook_method = trigger_meta.get("method") or "POST"
 
                 # Check if webhook already exists
                 existing_webhook_result = await session.execute(
@@ -180,45 +197,26 @@ async def create_workflow_deployment(
                 existing_webhook = existing_webhook_result.scalar_one_or_none()
 
                 if existing_webhook:
-                    # Webhook exists - check if it belongs to this workflow
-                    if existing_webhook.workflow_id != data.workflow_id:
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"Webhook path {webhook_path} with method {webhook_method} is already in use by another workflow",
-                        )
-                    # Reuse existing webhook
                     incoming_webhook = existing_webhook
                     logger.info(
-                        "Reusing existing webhook",
+                        "Reusing existing user-defined webhook",
                         webhook_id=str(incoming_webhook.id),
-                        workflow_id=str(data.workflow_id),
                         path=webhook_path,
-                        method=webhook_method,
                     )
                 else:
-                    # Create new webhook
-                    incoming_webhook = IncomingWebhook(
-                        workflow_id=data.workflow_id,
+                    # Create new webhook (user-defined, no trigger association)
+                    # Note: This creates a webhook without a trigger_id for backwards compatibility
+                    # TODO: Consider deprecating user-defined webhooks in favor of provider triggers
+                    logger.warning(
+                        "User-defined webhooks are deprecated, please use provider triggers",
                         path=webhook_path,
-                        method=webhook_method,
-                    )
-                    session.add(incoming_webhook)
-                    await session.flush()
-                    await session.refresh(incoming_webhook)
-                    logger.info(
-                        "Created new webhook",
-                        webhook_id=str(incoming_webhook.id),
-                        workflow_id=str(data.workflow_id),
-                        path=webhook_path,
-                        method=webhook_method,
                     )
 
                 # Build webhook URL
-                webhook_url = f"{base_url}{webhook_path}"
-
+                webhook_url = f"{settings.PUBLIC_API_URL}{webhook_path}"
                 webhooks_info.append(
                     WebhookInfo(
-                        id=incoming_webhook.id,
+                        id=existing_webhook.id if existing_webhook else uuid4(),
                         url=webhook_url,
                         path=webhook_path,
                         method=webhook_method,
