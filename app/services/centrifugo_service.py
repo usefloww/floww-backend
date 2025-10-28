@@ -135,7 +135,10 @@ class CentrifugoService:
         )
 
     async def publish_dev_webhook_event(
-        self, workflow_id: UUID, trigger_metadata: Dict[str, Any], webhook_data: Dict[str, Any]
+        self,
+        workflow_id: UUID,
+        trigger_metadata: Dict[str, Any],
+        webhook_data: Dict[str, Any],
     ) -> None:
         """
         Publish webhook event to dev channel for local development.
@@ -143,7 +146,7 @@ class CentrifugoService:
         This is fire-and-forget - if no dev session is active (no subscribers),
         Centrifugo will drop the message. This keeps webhook handling fast.
         """
-        channel = f"dev:workflow:{str(workflow_id)}"
+        channel = f"workflow:{str(workflow_id)}"
 
         event_data = {
             "type": "webhook",
