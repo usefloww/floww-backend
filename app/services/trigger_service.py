@@ -6,8 +6,10 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import IncomingWebhook, Provider, Trigger, Workflow
-from app.services.providers.gitlab import GITLAB_TRIGGER_TYPES, GitlabProviderState
+from app.models import IncomingWebhook, Provider, Trigger
+from app.services.providers.implementations.gitlab import (
+    GITLAB_TRIGGER_TYPES,
+)
 from app.services.providers.provider_registry import PROVIDER_TYPES_MAP
 from app.settings import settings
 from app.utils.encryption import decrypt_secret
@@ -42,7 +44,8 @@ class TriggerService:
 
         # Parse new triggers metadata (only provider-managed triggers)
         new_triggers = [
-            t for t in new_triggers_metadata
+            t
+            for t in new_triggers_metadata
             if "provider_type" in t and "provider_alias" in t
         ]
 
@@ -116,12 +119,14 @@ class TriggerService:
             incoming_webhook = incoming_webhook_result.scalar_one_or_none()
             if incoming_webhook:
                 webhook_url = f"{settings.PUBLIC_API_URL}{incoming_webhook.path}"
-                webhooks_info.append({
-                    "id": incoming_webhook.id,
-                    "url": webhook_url,
-                    "path": incoming_webhook.path,
-                    "method": incoming_webhook.method,
-                })
+                webhooks_info.append(
+                    {
+                        "id": incoming_webhook.id,
+                        "url": webhook_url,
+                        "path": incoming_webhook.path,
+                        "method": incoming_webhook.method,
+                    }
+                )
 
         await self.session.flush()
         return webhooks_info
@@ -164,6 +169,7 @@ class TriggerService:
 
         # Generate webhook URL
         from uuid import uuid4
+
         webhook_path = f"/webhook/{uuid4()}"
         webhook_url = f"{settings.PUBLIC_API_URL}{webhook_path}"
 
@@ -242,7 +248,9 @@ class TriggerService:
         trigger_state = trigger_state_class(**trigger.state)
 
         try:
-            await trigger_handler().destroy(provider_state, trigger_input, trigger_state)
+            await trigger_handler().destroy(
+                provider_state, trigger_input, trigger_state
+            )
         except Exception as e:
             logger.error(
                 "Failed to destroy trigger",

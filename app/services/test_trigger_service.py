@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
-from app.models import IncomingWebhook, Provider, Trigger, Workflow
+from app.models import IncomingWebhook, Provider, Trigger
 from app.services.trigger_service import TriggerService
 from app.utils.encryption import encrypt_secret
 
@@ -23,16 +23,15 @@ async def test_sync_triggers_create_new_gitlab_trigger(session):
         namespace_id=namespace_id,
         type="gitlab",
         alias="default",
-        encrypted_config=encrypt_secret(json.dumps({
-            "url": "https://gitlab.com",
-            "token": "test-token"
-        }))
+        encrypted_config=encrypt_secret(
+            json.dumps({"url": "https://gitlab.com", "token": "test-token"})
+        ),
     )
     session.add(provider)
     await session.flush()
 
     # Mock the GitLab API calls
-    with patch('httpx.AsyncClient') as mock_client:
+    with patch("httpx.AsyncClient") as mock_client:
         mock_response = AsyncMock()
         mock_response.json.return_value = {"id": 12345}
         mock_response.raise_for_status = MagicMock()
@@ -48,7 +47,7 @@ async def test_sync_triggers_create_new_gitlab_trigger(session):
                 "provider_type": "gitlab",
                 "provider_alias": "default",
                 "trigger_type": "onMergeRequestComment",
-                "input": {"projectId": "123456"}
+                "input": {"projectId": "123456"},
             }
         ]
 
@@ -57,7 +56,7 @@ async def test_sync_triggers_create_new_gitlab_trigger(session):
         webhooks_info = await trigger_service.sync_triggers(
             workflow_id=workflow_id,
             namespace_id=namespace_id,
-            new_triggers_metadata=triggers_metadata
+            new_triggers_metadata=triggers_metadata,
         )
 
         # Verify webhook info returned
@@ -97,10 +96,9 @@ async def test_sync_triggers_remove_old_trigger(session):
         namespace_id=namespace_id,
         type="gitlab",
         alias="default",
-        encrypted_config=encrypt_secret(json.dumps({
-            "url": "https://gitlab.com",
-            "token": "test-token"
-        }))
+        encrypted_config=encrypt_secret(
+            json.dumps({"url": "https://gitlab.com", "token": "test-token"})
+        ),
     )
     session.add(provider)
     await session.flush()
@@ -112,22 +110,19 @@ async def test_sync_triggers_remove_old_trigger(session):
         provider_id=provider.id,
         trigger_type="onMergeRequestComment",
         input={"projectId": "123456"},
-        state={"webhook_id": 12345, "project_id": "123456"}
+        state={"webhook_id": 12345, "project_id": "123456"},
     )
     session.add(trigger)
 
     # Create associated webhook
     incoming_webhook = IncomingWebhook(
-        id=uuid4(),
-        trigger_id=trigger.id,
-        path="/webhook/test",
-        method="POST"
+        id=uuid4(), trigger_id=trigger.id, path="/webhook/test", method="POST"
     )
     session.add(incoming_webhook)
     await session.flush()
 
     # Mock GitLab API delete call
-    with patch('httpx.AsyncClient') as mock_client:
+    with patch("httpx.AsyncClient") as mock_client:
         mock_response = AsyncMock()
         mock_response.raise_for_status = MagicMock()
 
@@ -138,18 +133,14 @@ async def test_sync_triggers_remove_old_trigger(session):
         # Execute with empty triggers (removing all)
         trigger_service = TriggerService(session)
         webhooks_info = await trigger_service.sync_triggers(
-            workflow_id=workflow_id,
-            namespace_id=namespace_id,
-            new_triggers_metadata=[]
+            workflow_id=workflow_id, namespace_id=namespace_id, new_triggers_metadata=[]
         )
 
         # Verify no webhooks returned
         assert len(webhooks_info) == 0
 
         # Verify trigger deleted
-        result = await session.execute(
-            select(Trigger).where(Trigger.id == trigger.id)
-        )
+        result = await session.execute(select(Trigger).where(Trigger.id == trigger.id))
         assert result.scalar_one_or_none() is None
 
         # Verify GitLab API was called to delete webhook
@@ -168,10 +159,9 @@ async def test_sync_triggers_keep_unchanged_trigger(session):
         namespace_id=namespace_id,
         type="gitlab",
         alias="default",
-        encrypted_config=encrypt_secret(json.dumps({
-            "url": "https://gitlab.com",
-            "token": "test-token"
-        }))
+        encrypted_config=encrypt_secret(
+            json.dumps({"url": "https://gitlab.com", "token": "test-token"})
+        ),
     )
     session.add(provider)
     await session.flush()
@@ -183,22 +173,19 @@ async def test_sync_triggers_keep_unchanged_trigger(session):
         provider_id=provider.id,
         trigger_type="onMergeRequestComment",
         input={"projectId": "123456"},
-        state={"webhook_id": 12345, "project_id": "123456"}
+        state={"webhook_id": 12345, "project_id": "123456"},
     )
     session.add(trigger)
 
     # Create associated webhook
     incoming_webhook = IncomingWebhook(
-        id=uuid4(),
-        trigger_id=trigger.id,
-        path="/webhook/test",
-        method="POST"
+        id=uuid4(), trigger_id=trigger.id, path="/webhook/test", method="POST"
     )
     session.add(incoming_webhook)
     await session.flush()
 
     # Mock GitLab API get call (for refresh)
-    with patch('httpx.AsyncClient') as mock_client:
+    with patch("httpx.AsyncClient") as mock_client:
         mock_response = AsyncMock()
         mock_response.json.return_value = {"id": 12345}
         mock_response.raise_for_status = MagicMock()
@@ -218,18 +205,16 @@ async def test_sync_triggers_keep_unchanged_trigger(session):
                     "provider_type": "gitlab",
                     "provider_alias": "default",
                     "trigger_type": "onMergeRequestComment",
-                    "input": {"projectId": "123456"}
+                    "input": {"projectId": "123456"},
                 }
-            ]
+            ],
         )
 
         # Verify webhook info returned
         assert len(webhooks_info) == 1
 
         # Verify trigger still exists with same ID
-        result = await session.execute(
-            select(Trigger).where(Trigger.id == trigger.id)
-        )
+        result = await session.execute(select(Trigger).where(Trigger.id == trigger.id))
         assert result.scalar_one() is not None
 
         # Verify GitLab API was called to refresh (GET)
@@ -248,16 +233,15 @@ async def test_sync_triggers_handles_group_webhooks(session):
         namespace_id=namespace_id,
         type="gitlab",
         alias="default",
-        encrypted_config=encrypt_secret(json.dumps({
-            "url": "https://gitlab.com",
-            "token": "test-token"
-        }))
+        encrypted_config=encrypt_secret(
+            json.dumps({"url": "https://gitlab.com", "token": "test-token"})
+        ),
     )
     session.add(provider)
     await session.flush()
 
     # Mock GitLab API calls for group webhook
-    with patch('httpx.AsyncClient') as mock_client:
+    with patch("httpx.AsyncClient") as mock_client:
         mock_response = AsyncMock()
         mock_response.json.return_value = {"id": 99999}
         mock_response.raise_for_status = MagicMock()
@@ -273,7 +257,7 @@ async def test_sync_triggers_handles_group_webhooks(session):
                 "provider_type": "gitlab",
                 "provider_alias": "default",
                 "trigger_type": "onMergeRequestComment",
-                "input": {"groupId": "my-group"}
+                "input": {"groupId": "my-group"},
             }
         ]
 
@@ -282,7 +266,7 @@ async def test_sync_triggers_handles_group_webhooks(session):
         webhooks_info = await trigger_service.sync_triggers(
             workflow_id=workflow_id,
             namespace_id=namespace_id,
-            new_triggers_metadata=triggers_metadata
+            new_triggers_metadata=triggers_metadata,
         )
 
         # Verify webhook created
@@ -310,7 +294,7 @@ async def test_sync_triggers_provider_not_found(session):
             "provider_type": "gitlab",
             "provider_alias": "nonexistent",
             "trigger_type": "onMergeRequestComment",
-            "input": {"projectId": "123456"}
+            "input": {"projectId": "123456"},
         }
     ]
 
@@ -320,5 +304,5 @@ async def test_sync_triggers_provider_not_found(session):
         await trigger_service.sync_triggers(
             workflow_id=workflow_id,
             namespace_id=namespace_id,
-            new_triggers_metadata=triggers_metadata
+            new_triggers_metadata=triggers_metadata,
         )

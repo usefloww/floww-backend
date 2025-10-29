@@ -53,7 +53,10 @@ class OnMergeRequestComment(
     TriggerI[OnMergeRequestCommentInput, OnMergeRequestCommentState, GitlabProvider]
 ):
     async def create(
-        self, provider: GitlabProviderState, input: OnMergeRequestCommentInput, webhook_url: str
+        self,
+        provider: GitlabProviderState,
+        input: OnMergeRequestCommentInput,
+        webhook_url: str,
     ) -> OnMergeRequestCommentState:
         """Create a GitLab webhook for merge request comments."""
         headers = {

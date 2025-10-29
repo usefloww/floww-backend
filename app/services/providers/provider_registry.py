@@ -1,7 +1,9 @@
-from app.services.providers.gitlab import GitlabProvider
+from app.services.providers.implementations.gitlab import GitlabProvider
+from app.services.providers.implementations.slack import SlackProvider
 
 ALL_PROVIDER_TYPES = [
     GitlabProvider,
+    SlackProvider,
 ]
 
 

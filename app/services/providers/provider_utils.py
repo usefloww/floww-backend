@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from app.services.providers.provider_setup import ProviderSetupStep
 
-I = TypeVar("I", bound=BaseModel)
+I = TypeVar("I", bound=BaseModel)  # noqa: E741
 S = TypeVar("S", bound=BaseModel)
 P = TypeVar("P")
 

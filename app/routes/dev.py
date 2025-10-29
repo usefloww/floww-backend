@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.deps.auth import CurrentUser
-from app.deps.db import SessionDep, TransactionSessionDep
+from app.deps.db import TransactionSessionDep
 from app.models import Workflow
 from app.services.trigger_service import TriggerService
 from app.utils.query_helpers import UserAccessibleQuery
@@ -72,6 +72,4 @@ async def sync_dev_triggers(
         user_id=str(current_user.id),
     )
 
-    return DevTriggerSyncResponse(
-        webhooks=[WebhookInfo(**wh) for wh in webhooks_info]
-    )
+    return DevTriggerSyncResponse(webhooks=[WebhookInfo(**wh) for wh in webhooks_info])
