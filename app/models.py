@@ -24,7 +24,7 @@ from sqlalchemy.sql import func
 
 class Base(DeclarativeBase):
     def __repr__(self) -> str:
-        return self._repr(id=self.id)
+        return self._repr(id=str(self.id))
 
     def _repr(self, **fields: dict[str, Any]) -> str:
         """
@@ -95,7 +95,7 @@ class User(Base):
 
     def __repr__(self):
         return self._repr(
-            id=self.id, email=self.email, workos_user_id=self.workos_user_id
+            id=str(self.id), email=self.email, workos_user_id=self.workos_user_id
         )
 
 
@@ -122,6 +122,9 @@ class Organization(Base):
     owned_namespaces: Mapped[list["Namespace"]] = relationship(
         back_populates="organization_owner"
     )
+
+    def __repr__(self):
+        return self._repr(id=str(self.id), name=self.name)
 
 
 class OrganizationMember(Base):
@@ -464,3 +467,8 @@ class Provider(Base):
     # Relationships
     namespace: Mapped["Namespace"] = relationship(back_populates="providers")
     triggers: Mapped[list["Trigger"]] = relationship(back_populates="provider")
+
+    def __repr__(self):
+        return self._repr(
+            id=str(self.id), namespace=self.namespace, type=self.type, alias=self.alias
+        )

@@ -18,66 +18,38 @@ from app.models import (
 )
 
 
+def _namespace_filter(user_id):
+    return or_(
+        Namespace.user_owner_id == str(user_id),
+        Namespace.organization_owner.has(OrganizationMember.user_id == str(user_id)),
+    )
+
+
 class UserAccessibleQuery:
     def __init__(self, user_id: UUID):
         self.user_id = user_id
 
     def namespaces(self):
-        return select(Namespace).where(
-            or_(
-                Namespace.user_owner_id == str(self.user_id),
-                Namespace.organization_owner.has(
-                    OrganizationMember.user_id == str(self.user_id)
-                ),
-            )
-        )
+        return select(Namespace).where(_namespace_filter(self.user_id))
 
     def workflows(self):
         return select(Workflow).where(
-            Workflow.namespace.has(
-                or_(
-                    Namespace.user_owner_id == str(self.user_id),
-                    Namespace.organization_owner.has(
-                        OrganizationMember.user_id == str(self.user_id)
-                    ),
-                )
-            )
+            Workflow.namespace.has(_namespace_filter(self.user_id))
         )
 
     def deployments(self):
         return select(WorkflowDeployment).where(
-            WorkflowDeployment.workflow.has(
-                or_(
-                    Namespace.user_owner_id == str(self.user_id),
-                    Namespace.organization_owner.has(
-                        OrganizationMember.user_id == str(self.user_id)
-                    ),
-                )
-            )
+            WorkflowDeployment.workflow.has(_namespace_filter(self.user_id))
         )
 
     def secrets(self):
         return select(Secret).where(
-            Secret.namespace.has(
-                or_(
-                    Namespace.user_owner_id == str(self.user_id),
-                    Namespace.organization_owner.has(
-                        OrganizationMember.user_id == str(self.user_id)
-                    ),
-                )
-            )
+            Secret.namespace.has(_namespace_filter(self.user_id))
         )
 
     def providers(self):
         return select(Provider).where(
-            Provider.namespace.has(
-                or_(
-                    Namespace.user_owner_id == str(self.user_id),
-                    Namespace.organization_owner.has(
-                        OrganizationMember.user_id == str(self.user_id)
-                    ),
-                )
-            )
+            Provider.namespace.has(_namespace_filter(self.user_id))
         )
 
     def runtimes(self):
