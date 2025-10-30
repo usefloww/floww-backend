@@ -7,7 +7,6 @@ class Settings(BaseSettings):
     WORKOS_CLIENT_ID: str = "client_01K6QQP8Q721ZX1YM1PBV3EWMR"
     WORKOS_CLIENT_SECRET: str = ""  # Required for OAuth flow
     WORKOS_API_URL: str = "https://api.workos.com"
-    WORKOS_REDIRECT_URI: str = "http://localhost:8000/auth/callback"
     JWT_ALGORITHM: str = "RS256"
 
     # Session settings

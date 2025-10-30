@@ -70,9 +70,11 @@ async def admin_login(
     signed_state = session_serializer.dumps(state_data)
 
     # Build WorkOS authorization URL
+    host = request.headers.get("host")
+    scheme = "http" if host and "localhost" in host else "https"
     auth_params = {
         "client_id": settings.WORKOS_CLIENT_ID,
-        "redirect_uri": settings.WORKOS_REDIRECT_URI,
+        "redirect_uri": f"{scheme}://{host}/auth/callback",
         "response_type": "code",
         "state": signed_state,
         "scope": "profile email",
