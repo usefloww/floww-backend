@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/rubenh/code/flows/flows-app/sdk/src/cli/auth/**)",
+      "Read(//Users/rubenh/code/flows/flows-app/sdk/src/cli/config/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

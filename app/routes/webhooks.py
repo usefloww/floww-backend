@@ -48,6 +48,75 @@ async def webhook_listener(request: Request, path: str, session: SessionDep):
         else {}
     )
 
+    # Handle Slack URL verification challenge
+    # When configuring Event Subscriptions in Slack, Slack sends a challenge
+    # that must be echoed back to verify the webhook URL
+    if (
+        webhook.trigger
+        and webhook.trigger.provider.type == "slack"
+        and webhook_data.get("type") == "url_verification"
+    ):
+        challenge = webhook_data.get("challenge")
+        if challenge:
+            logger.info(
+                "Responding to Slack URL verification challenge",
+                webhook_id=str(webhook.id),
+            )
+            return JSONResponse(content={"challenge": challenge})
+
+    # Filter Slack message events based on trigger configuration
+    if (
+        webhook.trigger
+        and webhook.trigger.provider.type == "slack"
+        and webhook.trigger.trigger_type == "onMessage"
+    ):
+        # Only process message events
+        if webhook_data.get("type") != "event_callback":
+            logger.debug(
+                "Ignoring non-event_callback Slack webhook",
+                webhook_id=str(webhook.id),
+                event_type=webhook_data.get("type"),
+            )
+            return JSONResponse(content={"status": "ignored"})
+
+        event = webhook_data.get("event", {})
+        if event.get("type") != "message":
+            logger.debug(
+                "Ignoring non-message Slack event",
+                webhook_id=str(webhook.id),
+                event_type=event.get("type"),
+            )
+            return JSONResponse(content={"status": "ignored"})
+
+        # Filter bot messages to avoid loops
+        if event.get("bot_id") or event.get("subtype") == "bot_message":
+            logger.debug(
+                "Ignoring bot message to prevent loops",
+                webhook_id=str(webhook.id),
+            )
+            return JSONResponse(content={"status": "ignored"})
+
+        # Apply channel filter if specified
+        trigger_input = webhook.trigger.input or {}
+        if trigger_input.get("channel_id") and event.get("channel") != trigger_input.get("channel_id"):
+            logger.debug(
+                "Ignoring message from different channel",
+                webhook_id=str(webhook.id),
+                expected_channel=trigger_input.get("channel_id"),
+                actual_channel=event.get("channel"),
+            )
+            return JSONResponse(content={"status": "ignored"})
+
+        # Apply user filter if specified
+        if trigger_input.get("user_id") and event.get("user") != trigger_input.get("user_id"):
+            logger.debug(
+                "Ignoring message from different user",
+                webhook_id=str(webhook.id),
+                expected_user=trigger_input.get("user_id"),
+                actual_user=event.get("user"),
+            )
+            return JSONResponse(content={"status": "ignored"})
+
     # Publish to dev channel (fire-and-forget for local development)
     # If no dev session is active, Centrifugo drops the message automatically
     if webhook.trigger:

@@ -303,5 +303,8 @@ class TriggerService:
         """Get the trigger handler class for a given provider and trigger type."""
         if provider_type == "gitlab":
             return GITLAB_TRIGGER_TYPES[trigger_type]
+        elif provider_type == "slack":
+            from app.services.providers.implementations.slack import SLACK_TRIGGER_TYPES
+            return SLACK_TRIGGER_TYPES[trigger_type]
         else:
             raise ValueError(f"Unknown provider type: {provider_type}")
