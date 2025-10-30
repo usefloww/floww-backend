@@ -161,8 +161,6 @@ class Namespace(Base):
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
-    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     # Owner can be either a User or Organization
     user_owner_id: Mapped[Optional[UUID]] = mapped_column(

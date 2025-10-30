@@ -51,9 +51,7 @@ async def get_or_create_user(
         session.add(user)
         await session.flush()
 
-        namespace = Namespace(
-            user_owner_id=user.id, name=str(user.id), display_name=str(user.id)
-        )
+        namespace = Namespace(user_owner_id=user.id)
         session.add(namespace)
         await session.flush()
         if create:
