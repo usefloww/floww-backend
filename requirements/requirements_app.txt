@@ -24,3 +24,4 @@ itsdangerous==2.2.0
 cryptography==46.0.3
 alembic-postgresql-enum==1.8.0
 workos==5.32.0
+ipython==9.6.0
