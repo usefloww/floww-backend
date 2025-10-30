@@ -24,7 +24,7 @@ from sqlalchemy.sql import func
 
 class Base(DeclarativeBase):
     def __repr__(self) -> str:
-        return self._repr(id=str(self.id))
+        return self._repr(id=self.id)
 
     def _repr(self, **fields: dict[str, Any]) -> str:
         """
@@ -34,6 +34,9 @@ class Base(DeclarativeBase):
         at_least_one_attached_attribute = False
         for key, field in fields.items():
             try:
+                # Convert UUID fields to strings automatically
+                if isinstance(field, UUID):
+                    field = str(field)
                 field_strings.append(f"{key}={field!r}")
             except DetachedInstanceError:
                 field_strings.append(f"{key}=DetachedInstanceError")
@@ -95,7 +98,7 @@ class User(Base):
 
     def __repr__(self):
         return self._repr(
-            id=str(self.id), email=self.email, workos_user_id=self.workos_user_id
+            id=self.id, email=self.email, workos_user_id=self.workos_user_id
         )
 
 
@@ -124,7 +127,7 @@ class Organization(Base):
     )
 
     def __repr__(self):
-        return self._repr(id=str(self.id), name=self.name)
+        return self._repr(id=self.id, name=self.name)
 
 
 class OrganizationMember(Base):
@@ -468,5 +471,5 @@ class Provider(Base):
 
     def __repr__(self):
         return self._repr(
-            id=str(self.id), namespace=self.namespace, type=self.type, alias=self.alias
+            id=self.id, namespace_id=self.namespace_id, type=self.type, alias=self.alias
         )
