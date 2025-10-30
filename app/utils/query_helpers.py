@@ -20,8 +20,12 @@ from app.models import (
 
 def _namespace_filter(user_id):
     return or_(
-        Namespace.user_owner_id == str(user_id),
-        Namespace.organization_owner.has(OrganizationMember.user_id == str(user_id)),
+        Namespace.user_owner_id == user_id,
+        Namespace.organization_owner_id.in_(
+            select(OrganizationMember.organization_id).where(
+                OrganizationMember.user_id == user_id
+            )
+        ),
     )
 
 
