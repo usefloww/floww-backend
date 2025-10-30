@@ -4,7 +4,9 @@ from app.deps.db import SessionDep
 from app.models import Namespace, User
 
 
-async def get_or_create_user(session: SessionDep, workos_user_id: str) -> User:
+async def get_or_create_user(
+    session: SessionDep, workos_user_id: str, create: bool = True
+) -> User:
     result = await session.execute(
         select(User).where(User.workos_user_id == workos_user_id)
     )
@@ -19,4 +21,6 @@ async def get_or_create_user(session: SessionDep, workos_user_id: str) -> User:
         )
         session.add(namespace)
         await session.flush()
+        if create:
+            await session.commit()
     return user
