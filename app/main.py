@@ -22,7 +22,7 @@ from app.routes import (
     workflows,
 )
 from app.routes.admin import init_admin
-from app.utils.logging import setup_logger
+from app.utils.logging_utils import setup_logger
 
 
 def init_sentry():

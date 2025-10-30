@@ -1,5 +1,6 @@
 import structlog
 from fastapi import APIRouter
+from sqlalchemy.orm import selectinload
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep
@@ -13,25 +14,36 @@ router = APIRouter(prefix="/namespaces", tags=["Namespaces"])
 @router.get("")
 async def list_namespaces(current_user: CurrentUser, session: SessionDep):
     """List namespaces accessible to the authenticated user."""
-    # Query namespaces where user has access
-    query = UserAccessibleQuery(current_user.id).namespaces()
+    # Import the Namespace model to use it properly
+    from app.models import Namespace
+
+    # Query namespaces where user has access with organization details
+    query = (
+        UserAccessibleQuery(current_user.id)
+        .namespaces()
+        .options(selectinload(Namespace.organization_owner))
+    )
     result = await session.execute(query)
     namespaces = result.scalars().all()
 
-    return {
-        "results": [
-            {
-                "id": str(namespace.id),
-                "name": namespace.name,
-                "display_name": namespace.display_name,
-                "user_owner_id": str(namespace.user_owner_id)
-                if namespace.user_owner_id
-                else None,
-                "organization_owner_id": str(namespace.organization_owner_id)
-                if namespace.organization_owner_id
-                else None,
+    results = []
+    for namespace in namespaces:
+        namespace_data = {"id": str(namespace.id)}
+
+        if namespace.user_owner_id:
+            # Personal namespace
+            namespace_data["user"] = {"id": str(namespace.user_owner_id)}
+        elif namespace.organization_owner_id and namespace.organization_owner:
+            # Organization namespace
+            namespace_data["organization"] = {
+                "id": str(namespace.organization_owner.id),
+                "name": namespace.organization_owner.name,
+                "display_name": namespace.organization_owner.display_name,
             }
-            for namespace in namespaces
-        ],
-        "total": len(namespaces),
+
+        results.append(namespace_data)
+
+    return {
+        "results": results,
+        "total": len(results),
     }

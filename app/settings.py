@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -34,6 +34,11 @@ class Settings(BaseSettings):
 
     # Public API URL for webhook callbacks
     PUBLIC_API_URL: str = "https://api.flow.toondn.app"
+
+    model_config = SettingsConfigDict(
+        # `.env.prod` takes priority over `.env`
+        env_file=(".env", ".env.prod")
+    )
 
 
 settings = Settings()

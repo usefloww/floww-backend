@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Optional, Union
+from typing import Any, Optional, Union
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -18,11 +18,30 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm.exc import DetachedInstanceError
 from sqlalchemy.sql import func
 
 
 class Base(DeclarativeBase):
-    pass
+    def __repr__(self) -> str:
+        return self._repr(id=self.id)
+
+    def _repr(self, **fields: dict[str, Any]) -> str:
+        """
+        Helper for __repr__
+        """
+        field_strings = []
+        at_least_one_attached_attribute = False
+        for key, field in fields.items():
+            try:
+                field_strings.append(f"{key}={field!r}")
+            except DetachedInstanceError:
+                field_strings.append(f"{key}=DetachedInstanceError")
+            else:
+                at_least_one_attached_attribute = True
+        if at_least_one_attached_attribute:
+            return f"<{self.__class__.__name__}({','.join(field_strings)})>"
+        return f"<{self.__class__.__name__} {id(self)}>"
 
 
 class WorkflowDeploymentStatus(Enum):
@@ -52,6 +71,9 @@ class User(Base):
     workos_user_id: Mapped[str] = mapped_column(
         String(255), unique=True, nullable=False
     )
+    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    last_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
@@ -70,6 +92,11 @@ class User(Base):
     deployments: Mapped[list["WorkflowDeployment"]] = relationship(
         foreign_keys="WorkflowDeployment.deployed_by_id", back_populates="deployed_by"
     )
+
+    def __repr__(self):
+        return self._repr(
+            id=self.id, email=self.email, workos_user_id=self.workos_user_id
+        )
 
 
 class Organization(Base):
