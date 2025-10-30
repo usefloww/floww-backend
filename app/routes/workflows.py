@@ -5,10 +5,11 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func, select
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep, TransactionSessionDep
-from app.models import Namespace, Workflow
+from app.models import Namespace, Workflow, WorkflowDeployment
 from app.services.crud_helpers import CrudHelper
 from app.utils.query_helpers import UserAccessibleQuery
 
@@ -25,6 +26,7 @@ class WorkflowRead(BaseModel):
     created_by_id: UUID
     created_at: datetime
     updated_at: datetime
+    last_deployed_at: Optional[datetime] = None
 
 
 class WorkflowCreate(BaseModel):
@@ -52,11 +54,46 @@ def helper_factory(user: CurrentUser, session: SessionDep):
 
 
 @router.get("")
-async def list_workflows(current_user: CurrentUser, session: SessionDep):
+async def list_workflows(
+    current_user: CurrentUser,
+    session: SessionDep,
+    namespace_id: Optional[UUID] = None,
+):
     """List workflows accessible to the authenticated user."""
     helper = helper_factory(current_user, session)
-    result = await helper.list_response()
-    return result
+    base_result = await helper.list_response(namespace_id=namespace_id)
+
+    # Get workflow IDs
+    workflow_ids = [w.id for w in base_result.results]
+
+    if workflow_ids:
+        # Get latest deployment date for each workflow
+        latest_deployments = (
+            select(
+                WorkflowDeployment.workflow_id,
+                func.max(WorkflowDeployment.deployed_at).label("last_deployed_at"),
+            )
+            .where(WorkflowDeployment.workflow_id.in_(workflow_ids))
+            .group_by(WorkflowDeployment.workflow_id)
+        )
+
+        deployment_result = await session.execute(latest_deployments)
+        deployment_map = {
+            row.workflow_id: row.last_deployed_at for row in deployment_result.all()
+        }
+
+        # Update workflows with last_deployed_at
+        from app.services.crud_helpers import ListResult
+
+        updated_workflows = [
+            workflow.model_copy(
+                update={"last_deployed_at": deployment_map.get(workflow.id)}
+            )
+            for workflow in base_result.results
+        ]
+        return ListResult(results=updated_workflows)
+
+    return base_result
 
 
 @router.post("")

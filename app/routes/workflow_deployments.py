@@ -183,7 +183,10 @@ async def create_workflow_deployment(
 
         # Handle non-provider webhooks (user-defined webhooks)
         for trigger_meta in triggers_metadata:
-            if trigger_meta["type"] == "webhook" and "provider_type" not in trigger_meta:
+            if (
+                trigger_meta["type"] == "webhook"
+                and "provider_type" not in trigger_meta
+            ):
                 # Generate path if not provided
                 webhook_path = trigger_meta.get("path") or f"/webhook/{uuid4()}"
                 webhook_method = trigger_meta.get("method") or "POST"

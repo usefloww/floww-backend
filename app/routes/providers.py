@@ -84,10 +84,14 @@ def helper_factory(user: CurrentUser, session: SessionDep):
 
 
 @router.get("")
-async def list_providers(current_user: CurrentUser, session: SessionDep):
+async def list_providers(
+    current_user: CurrentUser,
+    session: SessionDep,
+    namespace_id: Optional[UUID] = None,
+):
     """List providers accessible to the authenticated user."""
     helper = helper_factory(current_user, session)
-    result = await helper.list_response()
+    result = await helper.list_response(namespace_id=namespace_id)
     return result
 
 
