@@ -89,6 +89,7 @@ class TriggerService:
         )
 
         webhooks_info = []
+        seen_webhook_ids = set()  # Track webhooks we've already added (for deduplication)
 
         # 1. Destroy removed triggers
         for identity in to_remove:
@@ -105,6 +106,7 @@ class TriggerService:
             )
             if webhook_info:
                 webhooks_info.append(webhook_info)
+                seen_webhook_ids.add(webhook_info["id"])
 
         # 3. Refresh unchanged triggers (verify they still exist)
         for identity in to_keep:
@@ -113,11 +115,15 @@ class TriggerService:
             logger.info("Refreshed trigger", trigger_id=str(trigger.id))
 
             # Add webhook info for existing triggers
+            # Check both trigger-owned and provider-owned webhooks
             incoming_webhook_result = await self.session.execute(
-                select(IncomingWebhook).where(IncomingWebhook.trigger_id == trigger.id)
+                select(IncomingWebhook).where(
+                    (IncomingWebhook.trigger_id == trigger.id)
+                    | (IncomingWebhook.provider_id == trigger.provider_id)
+                )
             )
             incoming_webhook = incoming_webhook_result.scalar_one_or_none()
-            if incoming_webhook:
+            if incoming_webhook and incoming_webhook.id not in seen_webhook_ids:
                 webhook_url = f"{settings.PUBLIC_API_URL}{incoming_webhook.path}"
                 webhooks_info.append(
                     {
@@ -127,6 +133,7 @@ class TriggerService:
                         "method": incoming_webhook.method,
                     }
                 )
+                seen_webhook_ids.add(incoming_webhook.id)
 
         await self.session.flush()
         return webhooks_info
