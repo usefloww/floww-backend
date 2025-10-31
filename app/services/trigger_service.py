@@ -167,11 +167,38 @@ class TriggerService:
             trigger_meta["provider_type"], trigger_meta["trigger_type"]
         )
 
-        # Generate webhook URL
-        from uuid import uuid4
+        # Check if this is a Slack provider (uses provider-owned webhooks)
+        is_slack_provider = trigger_meta["provider_type"] == "slack"
 
-        webhook_path = f"/webhook/{uuid4()}"
-        webhook_url = f"{settings.PUBLIC_API_URL}{webhook_path}"
+        # For Slack, check if provider already has a webhook
+        webhook_path = None
+        webhook_url = None
+        existing_webhook = None
+
+        if is_slack_provider:
+            # Look for existing provider-owned webhook
+            existing_webhook_result = await self.session.execute(
+                select(IncomingWebhook).where(
+                    IncomingWebhook.provider_id == provider.id
+                )
+            )
+            existing_webhook = existing_webhook_result.scalar_one_or_none()
+
+            if existing_webhook:
+                webhook_path = existing_webhook.path
+                webhook_url = f"{settings.PUBLIC_API_URL}{webhook_path}"
+                logger.info(
+                    "Reusing existing provider webhook for Slack",
+                    provider_id=str(provider.id),
+                    webhook_url=webhook_url,
+                )
+
+        # Generate new webhook URL if not reusing
+        if not webhook_url:
+            from uuid import uuid4
+
+            webhook_path = f"/webhook/{uuid4()}"
+            webhook_url = f"{settings.PUBLIC_API_URL}{webhook_path}"
 
         # Call trigger's create method
         provider_type_class = PROVIDER_TYPES_MAP[trigger_meta["provider_type"]]
@@ -196,20 +223,35 @@ class TriggerService:
         await self.session.flush()
         await self.session.refresh(trigger)
 
-        # Create IncomingWebhook record
-        incoming_webhook = IncomingWebhook(
-            trigger_id=trigger.id,
-            path=webhook_path,
-            method="POST",
-        )
-        self.session.add(incoming_webhook)
-        await self.session.flush()
-        await self.session.refresh(incoming_webhook)
+        # Create or reuse IncomingWebhook record
+        if existing_webhook:
+            # Reuse existing provider-owned webhook
+            incoming_webhook = existing_webhook
+        else:
+            # Create new webhook
+            if is_slack_provider:
+                # Create provider-owned webhook
+                incoming_webhook = IncomingWebhook(
+                    provider_id=provider.id,
+                    path=webhook_path,
+                    method="POST",
+                )
+            else:
+                # Create trigger-owned webhook (legacy behavior for GitLab, etc.)
+                incoming_webhook = IncomingWebhook(
+                    trigger_id=trigger.id,
+                    path=webhook_path,
+                    method="POST",
+                )
+            self.session.add(incoming_webhook)
+            await self.session.flush()
+            await self.session.refresh(incoming_webhook)
 
         logger.info(
             "Created trigger",
             trigger_id=str(trigger.id),
             webhook_url=webhook_url,
+            is_provider_owned=is_slack_provider,
         )
 
         return {

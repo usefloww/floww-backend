@@ -1,3 +1,5 @@
+import json
+
 import structlog
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -7,142 +9,56 @@ from sqlalchemy.orm import selectinload
 from app.deps.db import SessionDep
 from app.models import (
     IncomingWebhook,
+    Provider,
     Trigger,
     WorkflowDeployment,
     WorkflowDeploymentStatus,
 )
 from app.services.centrifugo_service import centrifugo_service
+from app.services.providers.provider_registry import PROVIDER_TYPES_MAP
 from app.utils.aws_lambda import invoke_lambda_async
+from app.utils.encryption import decrypt_secret
 
 router = APIRouter()
 logger = structlog.stdlib.get_logger(__name__)
 
 
-@router.post("/webhook/{path:path}")
-@router.get("/webhook/{path:path}")
-@router.put("/webhook/{path:path}")
-@router.delete("/webhook/{path:path}")
-async def webhook_listener(request: Request, path: str, session: SessionDep):
-    # Normalize path to always have leading slash
-    normalized_path = f"/{path}" if not path.startswith("/") else path
+async def _execute_trigger(
+    session: SessionDep,
+    request: Request,
+    trigger: Trigger,
+    normalized_path: str,
+    webhook_data: dict,
+) -> dict | None:
+    """
+    Execute a single trigger by invoking its Lambda deployment.
 
-    # Query webhook by path and method (with trigger relationship for metadata)
-    result = await session.execute(
-        select(IncomingWebhook)
-        .options(
-            selectinload(IncomingWebhook.trigger).selectinload(Trigger.provider),
-            selectinload(IncomingWebhook.trigger).selectinload(Trigger.workflow),
-        )
-        .where(IncomingWebhook.path == normalized_path)
-        .where(IncomingWebhook.method == request.method)
-    )
-    webhook = result.scalar_one_or_none()
-
-    if not webhook:
-        return JSONResponse(content={"error": "Webhook not found"}, status_code=404)
-
-    # Get webhook payload
-    webhook_data = (
-        await request.json()
-        if request.headers.get("content-type") == "application/json"
-        else {}
-    )
-
-    # Handle Slack URL verification challenge
-    # When configuring Event Subscriptions in Slack, Slack sends a challenge
-    # that must be echoed back to verify the webhook URL
-    if (
-        webhook.trigger
-        and webhook.trigger.provider.type == "slack"
-        and webhook_data.get("type") == "url_verification"
-    ):
-        challenge = webhook_data.get("challenge")
-        if challenge:
-            logger.info(
-                "Responding to Slack URL verification challenge",
-                webhook_id=str(webhook.id),
-            )
-            return JSONResponse(content={"challenge": challenge})
-
-    # Filter Slack message events based on trigger configuration
-    if (
-        webhook.trigger
-        and webhook.trigger.provider.type == "slack"
-        and webhook.trigger.trigger_type == "onMessage"
-    ):
-        # Only process message events
-        if webhook_data.get("type") != "event_callback":
-            logger.debug(
-                "Ignoring non-event_callback Slack webhook",
-                webhook_id=str(webhook.id),
-                event_type=webhook_data.get("type"),
-            )
-            return JSONResponse(content={"status": "ignored"})
-
-        event = webhook_data.get("event", {})
-        if event.get("type") != "message":
-            logger.debug(
-                "Ignoring non-message Slack event",
-                webhook_id=str(webhook.id),
-                event_type=event.get("type"),
-            )
-            return JSONResponse(content={"status": "ignored"})
-
-        # Filter bot messages to avoid loops
-        if event.get("bot_id") or event.get("subtype") == "bot_message":
-            logger.debug(
-                "Ignoring bot message to prevent loops",
-                webhook_id=str(webhook.id),
-            )
-            return JSONResponse(content={"status": "ignored"})
-
-        # Apply channel filter if specified
-        trigger_input = webhook.trigger.input or {}
-        if trigger_input.get("channel_id") and event.get("channel") != trigger_input.get("channel_id"):
-            logger.debug(
-                "Ignoring message from different channel",
-                webhook_id=str(webhook.id),
-                expected_channel=trigger_input.get("channel_id"),
-                actual_channel=event.get("channel"),
-            )
-            return JSONResponse(content={"status": "ignored"})
-
-        # Apply user filter if specified
-        if trigger_input.get("user_id") and event.get("user") != trigger_input.get("user_id"):
-            logger.debug(
-                "Ignoring message from different user",
-                webhook_id=str(webhook.id),
-                expected_user=trigger_input.get("user_id"),
-                actual_user=event.get("user"),
-            )
-            return JSONResponse(content={"status": "ignored"})
-
+    Returns result dict if successful, None if no active deployment.
+    """
     # Publish to dev channel (fire-and-forget for local development)
-    # If no dev session is active, Centrifugo drops the message automatically
-    if webhook.trigger:
-        trigger_metadata = {
-            "provider_type": webhook.trigger.provider.type,
-            "provider_alias": webhook.trigger.provider.alias,
-            "trigger_type": webhook.trigger.trigger_type,
-            "input": webhook.trigger.input,
-        }
+    trigger_metadata = {
+        "provider_type": trigger.provider.type,
+        "provider_alias": trigger.provider.alias,
+        "trigger_type": trigger.trigger_type,
+        "input": trigger.input,
+    }
 
-        await centrifugo_service.publish_dev_webhook_event(
-            workflow_id=webhook.trigger.workflow_id,
-            trigger_metadata=trigger_metadata,
-            webhook_data={
-                "path": normalized_path,
-                "method": request.method,
-                "headers": dict(request.headers),
-                "body": webhook_data,
-                "query": dict(request.query_params),
-            },
-        )
+    await centrifugo_service.publish_dev_webhook_event(
+        workflow_id=trigger.workflow_id,
+        trigger_metadata=trigger_metadata,
+        webhook_data={
+            "path": normalized_path,
+            "method": request.method,
+            "headers": dict(request.headers),
+            "body": webhook_data,
+            "query": dict(request.query_params),
+        },
+    )
 
     # Find active deployment for this workflow
     deployment_result = await session.execute(
         select(WorkflowDeployment)
-        .where(WorkflowDeployment.workflow_id == webhook.trigger.workflow_id)
+        .where(WorkflowDeployment.workflow_id == trigger.workflow_id)
         .where(WorkflowDeployment.status == WorkflowDeploymentStatus.ACTIVE)
         .order_by(WorkflowDeployment.deployed_at.desc())
         .limit(1)
@@ -151,15 +67,11 @@ async def webhook_listener(request: Request, path: str, session: SessionDep):
 
     if not deployment:
         logger.warning(
-            "No active deployment found for webhook",
-            path=normalized_path,
-            method=request.method,
-            workflow_id=str(webhook.trigger.workflow_id),
+            "No active deployment found for trigger",
+            trigger_id=str(trigger.id),
+            workflow_id=str(trigger.workflow_id),
         )
-        return JSONResponse(
-            content={"error": "No active deployment found"},
-            status_code=503,
-        )
+        return None
 
     # Build Lambda event payload
     event_payload = {
@@ -181,26 +93,220 @@ async def webhook_listener(request: Request, path: str, session: SessionDep):
     if not invoke_result["success"]:
         logger.error(
             "Failed to invoke Lambda",
-            webhook_id=str(webhook.id),
+            trigger_id=str(trigger.id),
             runtime_id=str(deployment.runtime_id),
             error=invoke_result.get("error"),
         )
+        return None
+
+    logger.info(
+        "Webhook invoked Lambda for trigger",
+        trigger_id=str(trigger.id),
+        workflow_id=str(trigger.workflow_id),
+        runtime_id=str(deployment.runtime_id),
+    )
+
+    return {
+        "trigger_id": str(trigger.id),
+        "workflow_id": str(trigger.workflow_id),
+        "status": "invoked",
+    }
+
+
+@router.post("/webhook/{path:path}")
+@router.get("/webhook/{path:path}")
+@router.put("/webhook/{path:path}")
+@router.delete("/webhook/{path:path}")
+async def webhook_listener(request: Request, path: str, session: SessionDep):
+    # Normalize path to always have leading slash and include /webhook/ prefix
+    normalized_path = (
+        f"/webhook/{path}" if not path.startswith("/") else f"/webhook{path}"
+    )
+
+    logger.info(
+        "Webhook lookup",
+        path=path,
+        normalized_path=normalized_path,
+        method=request.method,
+    )
+
+    # Query webhook by path and method (with both trigger and provider relationships)
+    result = await session.execute(
+        select(IncomingWebhook)
+        .options(
+            selectinload(IncomingWebhook.trigger).selectinload(Trigger.provider),
+            selectinload(IncomingWebhook.trigger).selectinload(Trigger.workflow),
+            selectinload(IncomingWebhook.provider),
+        )
+        .where(IncomingWebhook.path == normalized_path)
+        .where(IncomingWebhook.method == request.method)
+    )
+    webhook = result.scalar_one_or_none()
+
+    logger.info(
+        "Webhook lookup result",
+        webhook_found=webhook is not None,
+        webhook_id=str(webhook.id) if webhook else None,
+        is_provider_owned=webhook.provider_id is not None if webhook else None,
+    )
+
+    if not webhook:
+        return JSONResponse(content={"error": "Webhook not found"}, status_code=404)
+
+    # Get webhook payload
+    webhook_data = (
+        await request.json()
+        if request.headers.get("content-type") == "application/json"
+        else {}
+    )
+
+    # Branch based on webhook ownership
+    if webhook.provider_id:
+        # Provider-owned webhook: route to all matching triggers for this provider
+        return await _handle_provider_webhook(
+            session, request, webhook, normalized_path, webhook_data
+        )
+    elif webhook.trigger_id:
+        # Trigger-owned webhook: execute single trigger
+        return await _handle_trigger_webhook(
+            session, request, webhook, normalized_path, webhook_data
+        )
+    else:
+        # This should never happen due to database constraint
+        logger.error(
+            "Webhook has neither provider_id nor trigger_id",
+            webhook_id=str(webhook.id),
+        )
         return JSONResponse(
-            content={"error": "Failed to invoke workflow"},
+            content={"error": "Invalid webhook configuration"},
             status_code=500,
         )
 
+
+async def _handle_provider_webhook(
+    session: SessionDep,
+    request: Request,
+    webhook: IncomingWebhook,
+    normalized_path: str,
+    webhook_data: dict,
+) -> JSONResponse:
+    """Handle webhook owned by a provider (routes to multiple triggers)."""
+    provider = webhook.provider
     logger.info(
-        "Webhook invoked Lambda",
+        "Processing provider-owned webhook",
         webhook_id=str(webhook.id),
-        workflow_id=str(webhook.trigger.workflow_id),
-        runtime_id=str(deployment.runtime_id),
+        provider_id=str(provider.id),
+        provider_type=provider.type,
     )
+
+    # Get provider class from registry
+    provider_class = PROVIDER_TYPES_MAP.get(provider.type)
+    if not provider_class:
+        logger.error(
+            "Unknown provider type",
+            provider_type=provider.type,
+        )
+        return JSONResponse(
+            content={"error": f"Unknown provider type: {provider.type}"},
+            status_code=500,
+        )
+
+    # Instantiate provider
+    provider_instance = provider_class()
+
+    # Decrypt provider config
+    provider_config_json = decrypt_secret(provider.encrypted_config)
+    provider_state = provider_class.model.model_validate_json(provider_config_json)
+
+    # Call validate_webhook for early response (e.g., Slack URL verification)
+    validation_response = await provider_instance.validate_webhook(
+        request, provider_state
+    )
+    if validation_response:
+        return validation_response
+
+    # Load all triggers for this provider
+    triggers_result = await session.execute(
+        select(Trigger)
+        .options(
+            selectinload(Trigger.provider),
+            selectinload(Trigger.workflow),
+        )
+        .where(Trigger.provider_id == provider.id)
+    )
+    triggers = list(triggers_result.scalars().all())
+
+    logger.info(
+        "Loaded triggers for provider",
+        provider_id=str(provider.id),
+        trigger_count=len(triggers),
+    )
+
+    # Call process_webhook to filter triggers
+    matching_triggers = await provider_instance.process_webhook(
+        request, provider_state, triggers
+    )
+
+    logger.info(
+        "Provider filtered triggers",
+        provider_id=str(provider.id),
+        matching_trigger_count=len(matching_triggers),
+    )
+
+    if not matching_triggers:
+        return JSONResponse(
+            content={"message": "No matching triggers for this event"},
+            status_code=200,
+        )
+
+    # Execute all matching triggers
+    results = []
+    for trigger in matching_triggers:
+        result = await _execute_trigger(
+            session, request, trigger, normalized_path, webhook_data
+        )
+        if result:
+            results.append(result)
 
     return JSONResponse(
         content={
             "webhook_id": str(webhook.id),
-            "workflow_id": str(webhook.trigger.workflow_id),
-            "status": "invoked",
+            "provider_id": str(provider.id),
+            "triggers_executed": len(results),
+            "results": results,
+        }
+    )
+
+
+async def _handle_trigger_webhook(
+    session: SessionDep,
+    request: Request,
+    webhook: IncomingWebhook,
+    normalized_path: str,
+    webhook_data: dict,
+) -> JSONResponse:
+    """Handle webhook owned by a single trigger (legacy behavior for GitLab, etc.)."""
+    trigger = webhook.trigger
+    logger.info(
+        "Processing trigger-owned webhook",
+        webhook_id=str(webhook.id),
+        trigger_id=str(trigger.id),
+    )
+
+    # Execute the trigger
+    result = await _execute_trigger(
+        session, request, trigger, normalized_path, webhook_data
+    )
+
+    if not result:
+        return JSONResponse(
+            content={"message": "No active deployment found, only sent to dev mode."},
+            status_code=200,
+        )
+
+    return JSONResponse(
+        content={
+            "webhook_id": str(webhook.id),
+            **result,
         }
     )

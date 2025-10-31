@@ -358,21 +358,36 @@ class IncomingWebhook(Base):
     Used to execute triggers based on an incoming webhooks
 
     Ex: new calendar events gets created which sends out webhook
+
+    A webhook can be owned by either a trigger or a provider, but not both.
+    - Trigger-owned: webhook executes a specific trigger (e.g., GitLab merge request)
+    - Provider-owned: webhook routes to all triggers for that provider (e.g., Slack workspace)
     """
 
     __tablename__ = "incoming_webhooks"
+    __table_args__ = (
+        CheckConstraint(
+            "(trigger_id IS NOT NULL AND provider_id IS NULL) OR "
+            "(trigger_id IS NULL AND provider_id IS NOT NULL)",
+            name="webhook_owner_check",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
-    trigger_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("triggers.id", ondelete="CASCADE")
+    trigger_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("triggers.id", ondelete="CASCADE"), nullable=True
+    )
+    provider_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("providers.id", ondelete="CASCADE"), nullable=True
     )
     path: Mapped[str] = mapped_column(Text, nullable=False)
     method: Mapped[str] = mapped_column(Text, nullable=False, server_default="POST")
 
     # Relationships
-    trigger: Mapped["Trigger"] = relationship(back_populates="incoming_webhooks")
+    trigger: Mapped[Optional["Trigger"]] = relationship(back_populates="incoming_webhooks")
+    provider: Mapped[Optional["Provider"]] = relationship(back_populates="incoming_webhooks")
 
 
 class RecurringTask(Base):
@@ -468,6 +483,7 @@ class Provider(Base):
     # Relationships
     namespace: Mapped["Namespace"] = relationship(back_populates="providers")
     triggers: Mapped[list["Trigger"]] = relationship(back_populates="provider")
+    incoming_webhooks: Mapped[list["IncomingWebhook"]] = relationship(back_populates="provider")
 
     def __repr__(self):
         return self._repr(
