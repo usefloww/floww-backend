@@ -4,9 +4,8 @@ import uuid
 from datetime import datetime, timezone
 from uuid import UUID
 
-import httpx
 import structlog
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -54,52 +53,70 @@ class PushTokenResponse(BaseModel):
 
 @router.post("/push_token")
 async def get_push_token(
-    request: PushTokenRequest,
+    push_request: PushTokenRequest,
+    request: Request,
     current_user: CurrentUser,
     session: SessionDep,
 ) -> PushTokenResponse:
-    """Get a push token from ECR proxy for pushing Docker images"""
+    """Get Docker credentials for pushing images.
+
+    Returns the user's WorkOS token as the Docker password for use with
+    the internal Docker registry proxy.
+    """
 
     # Check if image already exists in ECR
-    image_uri = get_image_uri(settings.ECR_REGISTRY_URL, request.image_hash)
+    image_uri = get_image_uri(settings.ECR_REGISTRY_URL, push_request.image_hash)
     if image_uri is not None:
         logger.info(
             "Image hash already exists in ECR, refusing push token",
-            image_hash=request.image_hash,
+            image_hash=push_request.image_hash,
         )
         raise HTTPException(status_code=409, detail="Image already exists in registry")
 
-    # ECR proxy endpoint
-    payload = {
-        "image_name": "trigger-lambda",
-        "tag": request.image_hash,
-        "action": "push",
-    }
+    # Extract WorkOS token from request
+    # Same logic as get_current_user in app/deps/auth.py
+    from fastapi.security import HTTPAuthorizationCredentials
 
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                settings.ECR_PROXY_URL + "/api/token",
-                json=payload,
-            )
-            response.raise_for_status()
+    from app.deps.auth import security
 
-            token_data = response.json()
-            return PushTokenResponse(
-                password=token_data["password"],
-                expires_in=token_data.get("expires_in", 3600),
-                image_tag=request.image_hash,
-                registry_url=settings.ECR_PROXY_URL.replace("https://", "")
-                + "/trigger-lambda",
-            )
-    except httpx.HTTPError as e:
-        logger.error("Failed to get push token from ECR proxy", error=str(e))
+    credentials: HTTPAuthorizationCredentials | None = await security(request)
+
+    workos_token = None
+    if credentials and credentials.credentials:
+        workos_token = credentials.credentials
+    else:
+        # Try session cookie
+        from app.routes.admin_auth import get_jwt_from_session_cookie
+
+        session_cookie = request.cookies.get("session")
+        if session_cookie:
+            workos_token = get_jwt_from_session_cookie(session_cookie)
+
+    if not workos_token:
+        logger.error("Could not extract WorkOS token from request")
         raise HTTPException(
-            status_code=503, detail="Failed to get push token from registry"
+            status_code=401,
+            detail="Authentication token not found",
         )
-    except Exception as e:
-        logger.error("Unexpected error getting push token", error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+
+    # Return Docker credentials using the user's WorkOS token
+    # Docker will use: docker login <registry_url> -u token -p <workos_token>
+    registry_host = settings.PUBLIC_API_URL.replace("https://", "").replace(
+        "http://", ""
+    )
+
+    logger.info(
+        "Generated Docker push credentials",
+        user_id=str(current_user.id),
+        image_hash=push_request.image_hash,
+    )
+
+    return PushTokenResponse(
+        password=workos_token,
+        expires_in=3600,  # WorkOS tokens typically valid for 1 hour
+        image_tag=push_request.image_hash,
+        registry_url=f"{registry_host}/trigger-lambda",
+    )
 
 
 @router.post("")

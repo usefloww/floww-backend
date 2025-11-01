@@ -29,11 +29,6 @@ services:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=secret
 
-  valkey:
-    container_name: floww-backend-valkey
-    image: valkey/valkey:latest
-    restart: always
-
   centrifugo:
     container_name: floww-backend-centrifugo
     image: centrifugo/centrifugo:v6

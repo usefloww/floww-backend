@@ -9,6 +9,7 @@ from app.routes import (
     admin_auth,
     centrifugo,
     dev,
+    docker_proxy,
     health,
     namespaces,
     organizations,
@@ -78,6 +79,7 @@ api_router.include_router(provider_types.router)
 api_router.include_router(workflow_deployments.router)
 api_router.include_router(organizations.router)
 api_router.include_router(dev.router)
+app.include_router(docker_proxy.router)
 app.include_router(webhooks.router)
 app.include_router(admin_auth.router)
 app.include_router(centrifugo.router)
