@@ -12,7 +12,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: developerflows/floww-backend
+  IMAGE_NAME: usefloww/floww-backend
 
 jobs:
   build-and-push:
