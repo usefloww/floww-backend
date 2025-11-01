@@ -46,7 +46,7 @@ class TriggerService:
         new_triggers = [
             t
             for t in new_triggers_metadata
-            if "provider_type" in t and "provider_alias" in t
+            if t.get("provider_type") and t.get("provider_alias")
         ]
 
         # Build trigger identity keys for comparison
