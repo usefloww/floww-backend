@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Generic, Optional, Type, TypeVar
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Generic, Optional, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -32,15 +32,20 @@ class TriggerI(ABC, Generic[I, S, P]):
         return cls.__orig_bases__[0].__args__[1]
 
     @abstractmethod
-    def create(self, provider: P, input: I) -> S:
+    async def create(
+        self,
+        provider: P,
+        input: I,
+        register_webhook: Callable[..., Awaitable[dict[str, Any]]],
+    ) -> S:
         pass
 
     @abstractmethod
-    def refresh(self, provider: P, input: I, state: S) -> S:
+    async def refresh(self, provider: P, input: I, state: S) -> S:
         pass
 
     @abstractmethod
-    def destroy(self, provider: P, input: I, state: S) -> None:
+    async def destroy(self, provider: P, input: I, state: S) -> None:
         pass
 
 

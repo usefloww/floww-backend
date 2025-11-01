@@ -227,7 +227,7 @@ class OnMessage(TriggerI[OnMessageInput, OnMessageState, SlackProvider]):
         self,
         provider: SlackProviderState,
         input: OnMessageInput,
-        webhook_url: str,
+        register_webhook,
     ) -> OnMessageState:
         """
         Store the webhook configuration for Slack message events.
@@ -239,11 +239,16 @@ class OnMessage(TriggerI[OnMessageInput, OnMessageState, SlackProvider]):
         Args:
             provider: Slack provider configuration (workspace_url, bot_token)
             input: Filter configuration (channel_id, user_id)
-            webhook_url: The webhook URL to configure in Slack App dashboard
+            register_webhook: Callback to register or reuse a webhook URL
 
         Returns:
             State containing the webhook configuration
         """
+        webhook_registration = await register_webhook(
+            owner="provider", reuse_existing=True
+        )
+        webhook_url = webhook_registration["url"]
+
         # No API call needed - Slack webhooks are configured manually in the app dashboard
         # The webhook_url should be used to configure Event Subscriptions in Slack App settings
         return OnMessageState(

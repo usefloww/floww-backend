@@ -56,9 +56,12 @@ class OnMergeRequestComment(
         self,
         provider: GitlabProviderState,
         input: OnMergeRequestCommentInput,
-        webhook_url: str,
+        register_webhook,
     ) -> OnMergeRequestCommentState:
         """Create a GitLab webhook for merge request comments."""
+        webhook_registration = await register_webhook(method="POST")
+        webhook_url = webhook_registration["url"]
+
         headers = {
             "PRIVATE-TOKEN": provider.accessToken,
             "Content-Type": "application/json",

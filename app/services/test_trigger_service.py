@@ -85,6 +85,47 @@ async def test_sync_triggers_create_new_gitlab_trigger(session):
 
 
 @pytest.mark.asyncio
+async def test_builtin_webhook_custom_path_respected(session):
+    """Test that builtin webhook triggers honor custom paths."""
+    workflow_id = uuid4()
+    namespace_id = uuid4()
+
+    trigger_service = TriggerService(session)
+    webhooks_info = await trigger_service.sync_triggers(
+        workflow_id=workflow_id,
+        namespace_id=namespace_id,
+        new_triggers_metadata=[
+            {
+                "type": "webhook",
+                "provider_type": "builtin",
+                "provider_alias": "default",
+                "trigger_type": "onWebhook",
+                "input": {"path": "/custom", "method": "post"},
+            }
+        ],
+    )
+
+    assert len(webhooks_info) == 1
+    assert webhooks_info[0]["path"] == "/webhook/custom"
+    assert webhooks_info[0]["method"] == "POST"
+
+    trigger_result = await session.execute(
+        select(Trigger).where(Trigger.workflow_id == workflow_id)
+    )
+    trigger = trigger_result.scalar_one()
+    assert trigger.state["path"] == "/webhook/custom"
+    assert trigger.state["method"] == "POST"
+    assert trigger.state["webhook_url"].endswith("/webhook/custom")
+
+    webhook_result = await session.execute(
+        select(IncomingWebhook).where(IncomingWebhook.trigger_id == trigger.id)
+    )
+    incoming_webhook = webhook_result.scalar_one()
+    assert incoming_webhook.path == "/webhook/custom"
+    assert incoming_webhook.method == "POST"
+
+
+@pytest.mark.asyncio
 async def test_sync_triggers_remove_old_trigger(session):
     """Test removing a trigger that no longer exists."""
     workflow_id = uuid4()

@@ -1,15 +1,17 @@
 import json
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import IncomingWebhook, Provider, Trigger
+from app.services.providers.implementations.builtin import BUILTIN_TRIGGER_TYPES
 from app.services.providers.implementations.gitlab import (
     GITLAB_TRIGGER_TYPES,
 )
+from app.services.providers.implementations.slack import SLACK_TRIGGER_TYPES
 from app.services.providers.provider_registry import PROVIDER_TYPES_MAP
 from app.settings import settings
 from app.utils.encryption import decrypt_secret
@@ -20,6 +22,31 @@ logger = structlog.get_logger(__name__)
 class TriggerService:
     def __init__(self, session: AsyncSession):
         self.session = session
+
+    async def ensure_builtin_provider(self, namespace_id: UUID) -> Provider:
+        """Ensure builtin provider exists for namespace, create if needed."""
+        result = await self.session.execute(
+            select(Provider).where(
+                Provider.namespace_id == namespace_id,
+                Provider.type == "builtin",
+                Provider.alias == "default"
+            )
+        )
+        provider = result.scalar_one_or_none()
+
+        if not provider:
+            from app.utils.encryption import encrypt_secret
+            provider = Provider(
+                namespace_id=namespace_id,
+                type="builtin",
+                alias="default",
+                encrypted_config=encrypt_secret("{}")
+            )
+            self.session.add(provider)
+            await self.session.flush()
+            logger.info("Auto-created builtin provider", namespace_id=str(namespace_id))
+
+        return provider
 
     async def sync_triggers(
         self,
@@ -36,13 +63,16 @@ class TriggerService:
 
         Returns list of webhook info for created/existing webhooks.
         """
+        # Ensure builtin provider exists before processing triggers
+        await self.ensure_builtin_provider(namespace_id)
+
         # Get existing triggers for this workflow
         result = await self.session.execute(
             select(Trigger).where(Trigger.workflow_id == workflow_id)
         )
         existing_triggers = list(result.scalars().all())
 
-        # Parse new triggers metadata (only provider-managed triggers)
+        # Parse new triggers metadata (all triggers now have provider metadata from SDK)
         new_triggers = [
             t
             for t in new_triggers_metadata
@@ -169,104 +199,125 @@ class TriggerService:
         provider_config_json = decrypt_secret(provider.encrypted_config)
         provider_config = json.loads(provider_config_json)
 
-        # Get trigger handler
         trigger_handler = self._get_trigger_handler(
             trigger_meta["provider_type"], trigger_meta["trigger_type"]
         )
 
-        # Check if this is a Slack provider (uses provider-owned webhooks)
-        is_slack_provider = trigger_meta["provider_type"] == "slack"
-
-        # For Slack, check if provider already has a webhook
-        webhook_path = None
-        webhook_url = None
-        existing_webhook = None
-
-        if is_slack_provider:
-            # Look for existing provider-owned webhook
-            existing_webhook_result = await self.session.execute(
-                select(IncomingWebhook).where(
-                    IncomingWebhook.provider_id == provider.id
-                )
-            )
-            existing_webhook = existing_webhook_result.scalar_one_or_none()
-
-            if existing_webhook:
-                webhook_path = existing_webhook.path
-                webhook_url = f"{settings.PUBLIC_API_URL}{webhook_path}"
-                logger.info(
-                    "Reusing existing provider webhook for Slack",
-                    provider_id=str(provider.id),
-                    webhook_url=webhook_url,
-                )
-
-        # Generate new webhook URL if not reusing
-        if not webhook_url:
-            from uuid import uuid4
-
-            webhook_path = f"/webhook/{uuid4()}"
-            webhook_url = f"{settings.PUBLIC_API_URL}{webhook_path}"
-
-        # Call trigger's create method
         provider_type_class = PROVIDER_TYPES_MAP[trigger_meta["provider_type"]]
         provider_state = provider_type_class.model(**provider_config)
 
         trigger_input_class = trigger_handler.input_schema()
         trigger_input = trigger_input_class(**trigger_meta["input"])
 
-        trigger_state = await trigger_handler().create(
-            provider_state, trigger_input, webhook_url
-        )
-
-        # Create Trigger record
+        # Pre-create trigger so register_webhook has an ID to associate trigger-owned webhooks
         trigger = Trigger(
             workflow_id=workflow_id,
             provider_id=provider.id,
             trigger_type=trigger_meta["trigger_type"],
             input=trigger_meta["input"],
-            state=trigger_state.model_dump(),
+            state={},
         )
         self.session.add(trigger)
         await self.session.flush()
         await self.session.refresh(trigger)
 
-        # Create or reuse IncomingWebhook record
-        if existing_webhook:
-            # Reuse existing provider-owned webhook
-            incoming_webhook = existing_webhook
-        else:
-            # Create new webhook
-            if is_slack_provider:
-                # Create provider-owned webhook
+        registered_webhooks: list[dict[str, Any]] = []
+
+        async def register_webhook(
+            *,
+            path: str | None = None,
+            method: str = "POST",
+            owner: str = "trigger",
+            reuse_existing: bool = False,
+        ) -> dict[str, Any]:
+            method_upper = (method or "POST").upper()
+
+            if owner not in {"trigger", "provider"}:
+                raise ValueError("owner must be 'trigger' or 'provider'")
+
+            # Provider-owned webhooks can optionally reuse an existing registration
+            if owner == "provider" and reuse_existing:
+                existing_result = await self.session.execute(
+                    select(IncomingWebhook).where(
+                        IncomingWebhook.provider_id == provider.id
+                    )
+                )
+                existing_webhook = existing_result.scalar_one_or_none()
+                if existing_webhook:
+                    info = {
+                        "id": existing_webhook.id,
+                        "url": f"{settings.PUBLIC_API_URL}{existing_webhook.path}",
+                        "path": existing_webhook.path,
+                        "method": existing_webhook.method,
+                        "owner": "provider",
+                    }
+                    registered_webhooks.append(info)
+                    return info
+
+            normalized_path = None
+            if path:
+                normalized_path = path.strip()
+                if not normalized_path.startswith("/"):
+                    normalized_path = f"/{normalized_path}"
+                if not normalized_path.startswith("/webhook"):
+                    normalized_path = f"/webhook{normalized_path}"
+            else:
+                normalized_path = f"/webhook/{uuid4()}"
+
+            if owner == "provider":
                 incoming_webhook = IncomingWebhook(
                     provider_id=provider.id,
-                    path=webhook_path,
-                    method="POST",
+                    path=normalized_path,
+                    method=method_upper,
                 )
             else:
-                # Create trigger-owned webhook (legacy behavior for GitLab, etc.)
                 incoming_webhook = IncomingWebhook(
                     trigger_id=trigger.id,
-                    path=webhook_path,
-                    method="POST",
+                    path=normalized_path,
+                    method=method_upper,
                 )
+
             self.session.add(incoming_webhook)
             await self.session.flush()
             await self.session.refresh(incoming_webhook)
 
+            info = {
+                "id": incoming_webhook.id,
+                "url": f"{settings.PUBLIC_API_URL}{incoming_webhook.path}",
+                "path": incoming_webhook.path,
+                "method": incoming_webhook.method,
+                "owner": owner,
+            }
+            registered_webhooks.append(info)
+            return info
+
+        trigger_state = await trigger_handler().create(
+            provider_state, trigger_input, register_webhook
+        )
+
+        trigger.state = trigger_state.model_dump()
+        self.session.add(trigger)
+        await self.session.flush()
+        await self.session.refresh(trigger)
+
+        primary_webhook = registered_webhooks[0] if registered_webhooks else None
+
         logger.info(
             "Created trigger",
             trigger_id=str(trigger.id),
-            webhook_url=webhook_url,
-            is_provider_owned=is_slack_provider,
+            has_webhook=primary_webhook is not None,
+            webhook_owner=primary_webhook["owner"] if primary_webhook else None,
         )
 
-        return {
-            "id": incoming_webhook.id,
-            "url": webhook_url,
-            "path": webhook_path,
-            "method": "POST",
-        }
+        if primary_webhook:
+            return {
+                "id": primary_webhook["id"],
+                "url": primary_webhook["url"],
+                "path": primary_webhook["path"],
+                "method": primary_webhook["method"],
+            }
+
+        return None
 
     async def _destroy_trigger(self, trigger: Trigger) -> None:
         """Destroy a trigger and clean up its webhook."""
@@ -353,7 +404,8 @@ class TriggerService:
         if provider_type == "gitlab":
             return GITLAB_TRIGGER_TYPES[trigger_type]
         elif provider_type == "slack":
-            from app.services.providers.implementations.slack import SLACK_TRIGGER_TYPES
             return SLACK_TRIGGER_TYPES[trigger_type]
+        elif provider_type == "builtin":
+            return BUILTIN_TRIGGER_TYPES[trigger_type]
         else:
             raise ValueError(f"Unknown provider type: {provider_type}")
