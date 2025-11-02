@@ -1,5 +1,3 @@
-import json
-
 import structlog
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -9,14 +7,13 @@ from sqlalchemy.orm import selectinload
 from app.deps.db import SessionDep
 from app.models import (
     IncomingWebhook,
-    Provider,
     Trigger,
     WorkflowDeployment,
     WorkflowDeploymentStatus,
 )
 from app.services.centrifugo_service import centrifugo_service
 from app.services.providers.provider_registry import PROVIDER_TYPES_MAP
-from app.utils.aws_lambda import invoke_lambda_async
+from app.services.run_user_code_service import WebhookPayload, run_user_code
 from app.utils.encryption import decrypt_secret
 
 router = APIRouter()
@@ -58,6 +55,7 @@ async def _execute_trigger(
     # Find active deployment for this workflow
     deployment_result = await session.execute(
         select(WorkflowDeployment)
+        .options(selectinload(WorkflowDeployment.runtime))
         .where(WorkflowDeployment.workflow_id == trigger.workflow_id)
         .where(WorkflowDeployment.status == WorkflowDeploymentStatus.ACTIVE)
         .order_by(WorkflowDeployment.deployed_at.desc())
@@ -73,37 +71,18 @@ async def _execute_trigger(
         )
         return None
 
-    # Build Lambda event payload
-    event_payload = {
-        "userCode": deployment.user_code.get("files", {}),
-        "triggerType": "webhook",
-        "path": normalized_path,
-        "method": request.method,
-        "headers": dict(request.headers),
-        "body": webhook_data,
-        "query": dict(request.query_params),
-    }
-
-    # Invoke Lambda asynchronously
-    invoke_result = invoke_lambda_async(
-        runtime_id=str(deployment.runtime_id),
-        event_payload=event_payload,
-    )
-
-    if not invoke_result["success"]:
-        logger.error(
-            "Failed to invoke Lambda",
-            trigger_id=str(trigger.id),
-            runtime_id=str(deployment.runtime_id),
-            error=invoke_result.get("error"),
-        )
-        return None
-
-    logger.info(
-        "Webhook invoked Lambda for trigger",
+    await run_user_code(
+        runtime=deployment.runtime,
         trigger_id=str(trigger.id),
-        workflow_id=str(trigger.workflow_id),
-        runtime_id=str(deployment.runtime_id),
+        files=deployment.user_code.get("files", {}),  # type: ignore
+        payload=WebhookPayload(
+            path=normalized_path,
+            body=webhook_data,
+            headers=dict(request.headers),
+            query=dict(request.query_params),
+            method=request.method,
+            params=dict(request.query_params),
+        ),
     )
 
     return {

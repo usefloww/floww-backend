@@ -3,8 +3,6 @@ services:
     container_name: floww-backend
     build:
       context: .
-      secrets:
-        - package_registry_token
     volumes:
       - ./app:/home/appuser/app
     command: >
@@ -31,10 +29,16 @@ services:
 
   centrifugo:
     container_name: floww-backend-centrifugo
-    image: centrifugo/centrifugo:v6
-    command: centrifugo -c /centrifugo/config.json
-    volumes:
-      - ./centrifugo.json:/centrifugo/config.json
+    build:
+      context: ./centrifugo
+    environment:
+      - CENTRIFUGO_API_KEY=${CENTRIFUGO_API_KEY:-floww-api-key-dev}
+      - CENTRIFUGO_ADMIN_ENABLED=${CENTRIFUGO_ADMIN_ENABLED:-true}
+      - CENTRIFUGO_ADMIN_INSECURE=${CENTRIFUGO_ADMIN_INSECURE:-true}
+      - CENTRIFUGO_CONNECT_PROXY_ENDPOINT=${CENTRIFUGO_CONNECT_PROXY_ENDPOINT:-http://app:8000/centrifugo/connect}
+      - CENTRIFUGO_SUBSCRIBE_PROXY_ENDPOINT=${CENTRIFUGO_SUBSCRIBE_PROXY_ENDPOINT:-http://app:8000/centrifugo/subscribe}
+      - CENTRIFUGO_ALLOWED_ORIGINS=${CENTRIFUGO_ALLOWED_ORIGINS:-["http://localhost:3000", "http://localhost:8000"]}
+      - CENTRIFUGO_ALLOW_ANONYMOUS=${CENTRIFUGO_ALLOW_ANONYMOUS:-true}
     ports:
       - "5001:8000"  # WebSocket and HTTP API
       - "8001:8001"  # Admin panel
@@ -54,9 +58,3 @@ services:
     env_file:
       - .env
     restart: no
-
-
-
-secrets:
-  package_registry_token:
-    environment: GL_PAT

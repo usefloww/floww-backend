@@ -1,0 +1,15 @@
+{
+    "name": "Debug in docker",
+    "type": "debugpy",
+    "request": "attach",
+    "pathMappings": [
+        {
+            "localRoot": "${workspaceFolder}",
+            "remoteRoot": "/home/appuser"
+        }
+    ],
+    "connect": {
+        "host": "localhost",
+        "port": 3100
+    }
+}

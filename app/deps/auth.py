@@ -5,9 +5,12 @@ import structlog
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.auth.provider_base import AuthProvider
 from app.deps.db import SessionDep
+from app.deps.provider import get_auth_provider
 from app.models import User
 from app.utils.auth import get_user_from_token
+from app.utils.session import get_jwt_from_session_cookie
 
 security = HTTPBearer(auto_error=False)
 
@@ -15,13 +18,11 @@ security = HTTPBearer(auto_error=False)
 async def get_current_user(
     request: Request,
     session: SessionDep,
+    provider: AuthProvider = Depends(get_auth_provider),
     credentials: Annotated[
         Optional[HTTPAuthorizationCredentials], Depends(security)
     ] = None,
 ) -> User:
-    """Validate JWT token from either Bearer header or session cookie and return the authenticated user."""
-    from app.routes.admin_auth import get_jwt_from_session_cookie
-
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -30,11 +31,9 @@ async def get_current_user(
 
     jwt_token = None
 
-    # Try Bearer token first
     if credentials and credentials.credentials:
         jwt_token = credentials.credentials
     else:
-        # Try session cookie
         session_cookie = request.cookies.get("session")
         if session_cookie:
             jwt_token = get_jwt_from_session_cookie(session_cookie)
@@ -43,7 +42,7 @@ async def get_current_user(
         raise credentials_exception
 
     try:
-        user = await get_user_from_token(session, jwt_token)
+        user = await get_user_from_token(session, jwt_token, provider)
         structlog.contextvars.bind_contextvars(user_id=user.id)
         return user
     except jwt.PyJWTError as e:

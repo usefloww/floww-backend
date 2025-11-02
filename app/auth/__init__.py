@@ -1,0 +1,1 @@
+"""Authentication provider abstraction layer."""

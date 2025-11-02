@@ -13,6 +13,7 @@ from app.deps.db import SessionDep, TransactionSessionDep
 from app.models import Organization, OrganizationMember, OrganizationRole, User
 from app.services.crud_helpers import CrudHelper
 from app.services.user_service import load_users_from_workos
+from app.settings import settings
 from app.utils.query_helpers import UserAccessibleQuery
 
 logger = structlog.stdlib.get_logger(__name__)
@@ -333,7 +334,18 @@ async def sync_users_from_workos(
     current_user: CurrentUser,
     session: TransactionSessionDep,
 ):
-    """Sync users from WorkOS for this organization."""
+    """
+    Sync users from WorkOS for this organization.
+
+    This endpoint is only available when AUTH_PROVIDER is set to "workos".
+    """
+    # Check if WorkOS provider is active
+    if settings.AUTH_PROVIDER != "workos":
+        raise HTTPException(
+            status_code=501,
+            detail=f"User sync is only available with WorkOS provider. Current provider: {settings.AUTH_PROVIDER}",
+        )
+
     # Verify user has access to the organization
     helper = helper_factory(current_user, session)
     await helper.get_response(organization_id)  # This will raise 404 if not accessible

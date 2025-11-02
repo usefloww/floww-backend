@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class GeneralConfig(BaseSettings):
     PUBLIC_API_URL: str = "http://localhost:8000"
+    RUNTIME_TYPE: Literal["lambda", "docker", "kubernetes"] = "lambda"
 
 
 class LambdaConfig(BaseSettings):
@@ -18,6 +19,18 @@ class LambdaConfig(BaseSettings):
     )
 
 
+class DockerConfig(BaseSettings):
+    DOCKER_REGISTRY_URL: str = ""
+    DOCKER_REGISTRY_USER: str = ""
+    DOCKER_REGISTRY_PASSWORD: str = ""
+
+
+class KubernetesConfig(BaseSettings):
+    DOCKER_REGISTRY_URL: str = ""
+    DOCKER_REGISTRY_USER: str = ""
+    DOCKER_REGISTRY_PASSWORD: str = ""
+
+
 class DatabaseConfig(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://admin:secret@db:5432/postgres"
     SESSION_SECRET_KEY: str = "floww-session-secret-change-in-production"
@@ -29,12 +42,19 @@ class DatabaseConfig(BaseSettings):
 class AuthConfig(BaseSettings):
     ADMIN_PASSWORD: str = ""
     AUTH_PROVIDER: Literal["workos", "auth0", "oidc"] = "workos"
+
+    # Generic OAuth/OIDC settings (used by all providers)
     AUTH_CLIENT_ID: str = ""
     AUTH_CLIENT_SECRET: str = ""
-    AUTH_DOMAIN: str = ""
-    WORKOS_CLIENT_ID: str = ""
-    WORKOS_CLIENT_SECRET: str = ""
-    WORKOS_API_URL: str = "https://api.workos.com"
+    AUTH_DOMAIN: str = ""  # Optional, for providers that need it (e.g., Auth0)
+
+    # OIDC-specific settings
+    AUTH_ISSUER_URL: str = ""  # OIDC issuer URL for discovery (e.g., https://keycloak.example.com/realms/myrealm)
+    AUTH_JWKS_URL: str = ""  # Optional: Override JWKS endpoint if not using discovery
+
+    # WorkOS-specific settings (only when AUTH_PROVIDER="workos")
+    AUTH_API_URL: str = "https://api.workos.com"  # WorkOS API base URL
+
     JWT_ALGORITHM: str = "RS256"
 
 
@@ -50,6 +70,8 @@ class Settings(
     CentrifugoConfig,
     DatabaseConfig,
     GeneralConfig,
+    DockerConfig,
+    KubernetesConfig,
     LambdaConfig,
     BaseSettings,
 ):

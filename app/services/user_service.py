@@ -2,7 +2,6 @@ from typing import Optional
 
 import structlog
 from sqlalchemy import select
-from workos.async_client import AsyncClient as AsyncWorkOSClient
 
 from app.deps.db import SessionDep
 from app.models import (
@@ -16,17 +15,23 @@ from app.settings import settings
 
 logger = structlog.stdlib.get_logger(__name__)
 
-# Initialize WorkOS async client
-workos_client = AsyncWorkOSClient(
-    api_key=settings.WORKOS_CLIENT_SECRET,
-    client_id=settings.WORKOS_CLIENT_ID,
-)
+# Initialize WorkOS client only when using WorkOS provider
+workos_client = None
+if settings.AUTH_PROVIDER == "workos":
+    from workos.async_client import AsyncClient as AsyncWorkOSClient
 
-# Verify WorkOS client is properly configured
-if not settings.WORKOS_CLIENT_SECRET:
-    logger.warning("WORKOS_CLIENT_SECRET is not set - WorkOS integration will not work")
-if not settings.WORKOS_CLIENT_ID:
-    logger.warning("WORKOS_CLIENT_ID is not set - WorkOS integration will not work")
+    workos_client = AsyncWorkOSClient(
+        api_key=settings.AUTH_CLIENT_SECRET,
+        client_id=settings.AUTH_CLIENT_ID,
+    )
+
+    # Verify WorkOS client is properly configured
+    if not settings.AUTH_CLIENT_SECRET:
+        logger.warning(
+            "AUTH_CLIENT_SECRET is not set - WorkOS integration will not work"
+        )
+    if not settings.AUTH_CLIENT_ID:
+        logger.warning("AUTH_CLIENT_ID is not set - WorkOS integration will not work")
 
 
 async def get_or_create_user(
@@ -80,6 +85,8 @@ async def load_users_from_workos(
     """
     Load users from WorkOS and sync them to the database.
 
+    This function is only available when AUTH_PROVIDER is set to "workos".
+
     Args:
         session: Database session
         organization_id: If provided, load users from this WorkOS organization.
@@ -87,11 +94,21 @@ async def load_users_from_workos(
 
     Returns:
         List of User objects that were created or updated
+
+    Raises:
+        ValueError: If WorkOS is not configured or AUTH_PROVIDER is not "workos"
     """
-    # Check if WorkOS is properly configured
-    if not settings.WORKOS_CLIENT_SECRET or not settings.WORKOS_CLIENT_ID:
+    # Check if WorkOS provider is active
+    if settings.AUTH_PROVIDER != "workos":
         raise ValueError(
-            "WorkOS client is not properly configured. Please set WORKOS_CLIENT_SECRET and WORKOS_CLIENT_ID."
+            f"User sync is only available with WorkOS provider. "
+            f"Current provider: {settings.AUTH_PROVIDER}"
+        )
+
+    # Check if WorkOS client is initialized
+    if workos_client is None:
+        raise ValueError(
+            "WorkOS client is not initialized. Please check AUTH_CLIENT_SECRET and AUTH_CLIENT_ID."
         )
 
     try:

@@ -8,6 +8,7 @@ from sqladmin.authentication import AuthenticationBackend
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
+from app.deps.provider import get_auth_provider
 from app.settings import settings
 from app.utils.auth import validate_jwt_token
 
@@ -65,14 +66,13 @@ class AdminAuth(AuthenticationBackend):
             return RedirectResponse(url=login_url)
 
         try:
+            # Get the auth provider
+            provider = get_auth_provider()
+
             # Validate JWT token to ensure it's valid
-            await validate_jwt_token(jwt_token)
+            user_id = await validate_jwt_token(jwt_token, provider)
 
-            # Decode JWT to get email claim (without validation since we already validated above)
-            decoded_token = jwt.decode(jwt_token, options={"verify_signature": False})
-
-            user_id = decoded_token.get("sub")
-
+            # Check if user is an admin
             if user_id not in ADMIN_USER_IDS:
                 return Response(
                     content="Access denied: Admin permissions required", status_code=403
