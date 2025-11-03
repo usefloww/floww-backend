@@ -95,6 +95,8 @@ async def validate_jwt(token: str, issuer_url: str, audience: str) -> str:
                 raise jwt.PyJWTError(f"Failed to load public key from JWKS: {str(e)}")
 
         issuer = discovery.get("issuer")
+
+        issuer = f"https://api.workos.com/user_management/{settings.AUTH_CLIENT_ID}"
         if not issuer:
             issuer = issuer_url
 
@@ -103,7 +105,7 @@ async def validate_jwt(token: str, issuer_url: str, audience: str) -> str:
             public_key,
             algorithms=[settings.JWT_ALGORITHM],
             issuer=issuer,
-            audience=audience,
+            # audience=audience,
         )
 
         external_user_id: str = payload.get("sub")
