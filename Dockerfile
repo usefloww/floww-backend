@@ -25,15 +25,13 @@ RUN useradd -u "${UID}" -g "${GID}" --create-home -s /bin/bash appuser
 
 COPY --chown=appuser:appuser --from=uv /uv /usr/local/bin/uv
 USER appuser
-ENV PATH="/home/appuser/venv/bin:$PATH"
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 VIRTUAL_ENV=/home/appuser/venv
+ENV PATH="/home/appuser/.venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 VIRTUAL_ENV=/home/appuser/.venv
 WORKDIR /home/appuser
-
-RUN uv venv /home/appuser/venv
 
 COPY --chown=appuser:appuser pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/home/appuser/.cache/uv,uid=1000,gid=2000 \
-    uv sync --frozen --no-dev
+    uv sync --frozen --no-dev --no-install-project
 
 ##########
 # Checks #
@@ -41,7 +39,7 @@ RUN --mount=type=cache,target=/home/appuser/.cache/uv,uid=1000,gid=2000 \
 FROM builder AS checks
 
 RUN --mount=type=cache,target=/home/appuser/.cache/uv,uid=1000,gid=2000 \
-    uv sync --frozen
+    uv sync --frozen --no-install-project
 
 ###############
 # Application #
@@ -54,11 +52,11 @@ RUN groupadd -g "${GID}" appuser
 RUN useradd -u "${UID}" -g "${GID}" --create-home -s /bin/bash appuser
 
 USER appuser
-ENV PATH="/home/appuser/venv/bin:$PATH"
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 VIRTUAL_ENV=/home/appuser/venv
+ENV PATH="/home/appuser/.venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 VIRTUAL_ENV=/home/appuser/.venv
 WORKDIR /home/appuser
 
-COPY --from=builder /home/appuser/venv /home/appuser/venv
+COPY --from=builder /home/appuser/.venv /home/appuser/.venv
 COPY ./app /home/appuser/app
 COPY ./alembic.ini /home/appuser/alembic.ini
 WORKDIR /home/appuser
