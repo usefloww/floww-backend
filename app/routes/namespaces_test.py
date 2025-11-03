@@ -21,7 +21,7 @@ async def test_list_namespaces_includes_personal_namespace(client_a: UserClient)
 
     # Verify personal namespace is included
     personal_namespace_ids = [
-        ns["id"] for ns in namespaces if ns["user_owner_id"] == str(client_a.user.id)
+        ns["id"] for ns in namespaces if ns["user"]["id"] == str(client_a.user.id)
     ]
     assert len(personal_namespace_ids) >= 1
 
@@ -36,10 +36,7 @@ async def test_namespace_data_structure_validation(client_a: UserClient):
     if len(namespaces) > 0:
         namespace = namespaces[0]
         assert "id" in namespace
-        assert "name" in namespace
-        assert "display_name" in namespace
-        assert "user_owner_id" in namespace
-        assert "organization_owner_id" in namespace
+        assert "user" in namespace or "organization" in namespace
 
 
 async def test_namespaces_access_control_between_users(
@@ -57,10 +54,10 @@ async def test_namespaces_access_control_between_users(
 
     # Users should not share personal namespace access
     a_personal_namespaces = [
-        ns for ns in namespaces_a if ns["user_owner_id"] == str(client_a.user.id)
+        ns for ns in namespaces_a if ns["user"]["id"] == str(client_a.user.id)
     ]
     b_personal_namespaces = [
-        ns for ns in namespaces_b if ns["user_owner_id"] == str(client_b.user.id)
+        ns for ns in namespaces_b if ns["user"]["id"] == str(client_b.user.id)
     ]
 
     # Each user should have their own personal namespace

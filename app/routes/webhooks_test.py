@@ -113,9 +113,9 @@ async def test_webhook_not_found(client_a: UserClient):
     "app.routes.webhooks.centrifugo_service.publish_dev_webhook_event",
     new_callable=AsyncMock,
 )
-@patch("app.routes.webhooks.invoke_lambda_async")
+@patch("app.routes.webhooks.run_user_code")
 async def test_webhook_successful_invocation(
-    mock_invoke_lambda,
+    mock_run_user_code,
     mock_centrifugo,
     client_a: UserClient,
     session: AsyncSession,
@@ -124,7 +124,7 @@ async def test_webhook_successful_invocation(
 ):
     """Test successful webhook invocation with active deployment."""
     # Mock successful Lambda invocation
-    mock_invoke_lambda.return_value = {"success": True}
+    mock_run_user_code.return_value = {"success": True}
 
     # Test webhook payload
     webhook_payload = {
@@ -154,11 +154,11 @@ async def test_webhook_successful_invocation(
     assert centrifugo_args["webhook_data"]["method"] == "POST"
 
     # Verify Lambda was invoked
-    mock_invoke_lambda.assert_called_once()
-    lambda_args = mock_invoke_lambda.call_args[1]
-    assert lambda_args["runtime_id"] == str(active_deployment.runtime_id)
-    assert lambda_args["event_payload"]["triggerType"] == "webhook"
-    assert lambda_args["event_payload"]["body"] == webhook_payload
+    mock_run_user_code.assert_called_once()
+    run_user_code_args = mock_run_user_code.call_args[1]
+    assert run_user_code_args["runtime_id"] == str(active_deployment.runtime_id)
+    assert run_user_code_args["event_payload"]["triggerType"] == "webhook"
+    assert run_user_code_args["event_payload"]["body"] == webhook_payload
 
 
 @patch(

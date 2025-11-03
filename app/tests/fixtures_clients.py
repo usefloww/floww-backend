@@ -80,7 +80,7 @@ async def client(session: AsyncSession, dependency_overrides):
 @pytest.fixture(scope="function")
 async def client_a(session, dependency_overrides):
     async with AsyncClient(**_client_args(session)) as ac:
-        ac.user = await get_or_create_user(session, "test_user_a", False)
+        ac.user = await get_or_create_user(session, "test_user_a", create=False)
         ac.personal_namespace = await _get_personal_namespace(session, ac.user)
 
         ac.headers["Authorization"] = "Bearer test_user_a"
@@ -90,7 +90,7 @@ async def client_a(session, dependency_overrides):
 @pytest.fixture(scope="function")
 async def client_b(session, dependency_overrides):
     async with AsyncClient(**_client_args(session)) as ac:
-        ac.user = await get_or_create_user(session, "test_user_b", False)
+        ac.user = await get_or_create_user(session, "test_user_b", create=False)
         ac.personal_namespace = await _get_personal_namespace(session, ac.user)
 
         ac.headers["Authorization"] = "Bearer test_user_b"

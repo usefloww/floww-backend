@@ -30,20 +30,18 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 VIRTUAL_ENV=/home/appuser/venv
 WORKDIR /home/appuser
 
 RUN uv venv /home/appuser/venv
-RUN uv pip install setuptools wheel pip
 
-COPY ./requirements/requirements_app.txt requirements.txt
+COPY --chown=appuser:appuser pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/home/appuser/.cache/uv,uid=1000,gid=2000 \
-    uv pip install -r requirements.txt
+    uv sync --frozen --no-dev
 
 ##########
 # Checks #
 ##########
 FROM builder AS checks
 
-COPY ./requirements/additional_requirements_mypy.txt ./requirements/additional_requirements_test.txt ./
 RUN --mount=type=cache,target=/home/appuser/.cache/uv,uid=1000,gid=2000 \
-    uv pip install -r additional_requirements_mypy.txt -r additional_requirements_test.txt
+    uv sync --frozen
 
 ###############
 # Application #

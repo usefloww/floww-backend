@@ -1,6 +1,0 @@
-mypy
-types-requests
-boto3-stubs
-types-dateparser
-types-ujson
-pytest-stub

@@ -18,7 +18,7 @@ async def test_create_and_retrieve_workflow(client_a: UserClient, session):
     response = await client_a.get("/api/workflows")
     assert response.status_code == 200
 
-    workflows = response.json()["workflows"]
+    workflows = response.json()["results"]
     assert len(workflows) == 1
     assert workflows[0]["name"] == "My Test Workflow"
 
@@ -48,7 +48,7 @@ async def test_create_multiple_workflows(client_a: UserClient):
     response = await client_a.get("/api/workflows")
     assert response.status_code == 200
 
-    workflows = response.json()["workflows"]
+    workflows = response.json()["results"]
     assert len(workflows) == 2
 
     workflow_names = [w["name"] for w in workflows]
@@ -73,8 +73,8 @@ async def test_list_workflows_returns_correct_structure(client_a: UserClient):
     assert response.status_code == 200
 
     data = response.json()
-    assert "workflows" in data
-    assert isinstance(data["workflows"], list)
+    assert "results" in data
+    assert isinstance(data["results"], list)
 
 
 async def test_workflow_creation_includes_metadata(client_a: UserClient):
@@ -108,7 +108,7 @@ async def test_workflows_are_accessible_to_user(
     response = await client_a.get("/api/workflows")
     assert response.status_code == 200
 
-    workflows = response.json()["workflows"]
+    workflows = response.json()["results"]
     assert len(workflows) == 1
     assert workflows[0]["name"] == "Accessible Workflow"
 
@@ -116,5 +116,5 @@ async def test_workflows_are_accessible_to_user(
     response = await client_b.get("/api/workflows")
     assert response.status_code == 200
 
-    workflows = response.json()["workflows"]
+    workflows = response.json()["results"]
     assert len(workflows) == 0

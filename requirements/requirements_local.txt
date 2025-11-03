@@ -1,3 +1,0 @@
--r requirements_app.txt
--r additional_requirements_mypy.txt
--r additional_requirements_test.txt

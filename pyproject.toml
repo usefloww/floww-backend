@@ -1,3 +1,63 @@
+[project]
+name = "floww-backend"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "uvicorn==0.34.0",
+    "boto3==1.35.95",
+    "fastapi==0.115.6",
+    "phonenumbers==8.13.52",
+    "dateparser==1.2.0",
+    "langcodes==3.5.0",
+    "unidecode==1.3.8",
+    "requests==2.32.3",
+    "gunicorn==23.0.0",
+    "sentry-sdk[fastapi]==2.19.2",
+    "debugpy==1.8.12",
+    "prometheus-fastapi-instrumentator==7.0.0",
+    "pyinstrument==4.6.2",
+    "sqladmin==0.21.0",
+    "pydantic-settings>=2.8.1",
+    "asyncpg==0.30.0",
+    "pyjwt[crypto]==2.10.1",
+    "httpx==0.27.2",
+    "structlog==25.4.0",
+    "asgi-correlation-id==4.3.4",
+    "alembic==1.16.5",
+    "greenlet==3.2.4",
+    "itsdangerous==2.2.0",
+    "cryptography==46.0.3",
+    "alembic-postgresql-enum==1.8.0",
+    "workos==5.32.0",
+    "ipython==9.6.0",
+    "aiodocker==0.22.2",
+]
+
+[dependency-groups]
+dev = [
+    # Type checking
+    "mypy",
+    "types-requests",
+    "boto3-stubs",
+    "types-dateparser",
+    "types-ujson",
+    "pytest-stub",
+    # Testing
+    "pytest",
+    "pytest-asyncio",
+    "pytest-mock",
+    "pytest-random-order",
+    "bandit",
+    "ruff",
+    "websocket-client",
+]
+
+# Hard override for httpx - ensures this version is used even if other packages require different versions
+[tool.uv]
+override-dependencies = [
+    "httpx==0.27.2",
+]
+
 [tool.pyright]
 pythonVersion = "3.13"
 typeCheckingMode = "standard"

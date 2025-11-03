@@ -31,7 +31,7 @@ async def test_create_and_retrieve_provider(client_a: UserClient):
     response = await client_a.get("/api/providers")
     assert response.status_code == 200
 
-    providers = response.json()["providers"]
+    providers = response.json()["results"]
     assert len(providers) == 1
     assert providers[0]["alias"] == "my-gitlab"
 
@@ -65,7 +65,7 @@ async def test_create_multiple_providers(client_a: UserClient):
     response = await client_a.get("/api/providers")
     assert response.status_code == 200
 
-    providers = response.json()["providers"]
+    providers = response.json()["results"]
     assert len(providers) == 2
 
     provider_aliases = [p["alias"] for p in providers]
@@ -78,8 +78,8 @@ async def test_list_providers_returns_correct_structure(client_a: UserClient):
     assert response.status_code == 200
 
     data = response.json()
-    assert "providers" in data
-    assert isinstance(data["providers"], list)
+    assert "results" in data
+    assert isinstance(data["results"], list)
 
 
 async def test_provider_creation_includes_metadata(client_a: UserClient):
@@ -118,13 +118,13 @@ async def test_providers_are_accessible_to_user(
     # Client A should see the provider
     response = await client_a.get("/api/providers")
     assert response.status_code == 200
-    providers_a = response.json()["providers"]
+    providers_a = response.json()["results"]
     assert len(providers_a) == 1
 
     # Client B should not see client A's provider
     response = await client_b.get("/api/providers")
     assert response.status_code == 200
-    providers_b = response.json()["providers"]
+    providers_b = response.json()["results"]
     assert len(providers_b) == 0
 
 

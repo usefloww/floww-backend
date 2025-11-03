@@ -1,21 +1,52 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import IncomingWebhook, Provider, Trigger
+from app.models import IncomingWebhook, Namespace, Provider, Trigger, User, Workflow
 from app.services.trigger_service import TriggerService
 from app.utils.encryption import encrypt_secret
+
+
+async def create_test_namespace(session: AsyncSession) -> tuple[UUID, UUID]:
+    """Create a test user and namespace, returning (user_id, namespace_id)."""
+    user = User(
+        workos_user_id=f"test_user_{uuid4()}",
+        email="test@example.com",
+    )
+    session.add(user)
+    await session.flush()
+
+    namespace = Namespace(user_owner_id=user.id)
+    session.add(namespace)
+    await session.flush()
+
+    return user.id, namespace.id
+
+
+async def create_test_workflow(
+    session: AsyncSession, namespace_id: UUID, user_id: UUID | None = None
+) -> UUID:
+    """Create a test workflow, returning workflow_id."""
+    workflow = Workflow(
+        name="Test Workflow",
+        namespace_id=namespace_id,
+        created_by_id=user_id,
+    )
+    session.add(workflow)
+    await session.flush()
+    return workflow.id
 
 
 @pytest.mark.asyncio
 async def test_sync_triggers_create_new_gitlab_trigger(session):
     """Test creating a new GitLab trigger."""
     # Create test workflow and namespace
-    workflow_id = uuid4()
-    namespace_id = uuid4()
+    user_id, namespace_id = await create_test_namespace(session)
+    workflow_id = await create_test_workflow(session, namespace_id, user_id)
 
     # Create a provider
     provider = Provider(
@@ -24,7 +55,7 @@ async def test_sync_triggers_create_new_gitlab_trigger(session):
         type="gitlab",
         alias="default",
         encrypted_config=encrypt_secret(
-            json.dumps({"url": "https://gitlab.com", "token": "test-token"})
+            json.dumps({"url": "https://gitlab.com", "accessToken": "test-token"})
         ),
     )
     session.add(provider)
@@ -32,7 +63,7 @@ async def test_sync_triggers_create_new_gitlab_trigger(session):
 
     # Mock the GitLab API calls
     with patch("httpx.AsyncClient") as mock_client:
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.json.return_value = {"id": 12345}
         mock_response.raise_for_status = MagicMock()
 
@@ -87,8 +118,8 @@ async def test_sync_triggers_create_new_gitlab_trigger(session):
 @pytest.mark.asyncio
 async def test_builtin_webhook_custom_path_respected(session):
     """Test that builtin webhook triggers honor custom paths."""
-    workflow_id = uuid4()
-    namespace_id = uuid4()
+    user_id, namespace_id = await create_test_namespace(session)
+    workflow_id = await create_test_workflow(session, namespace_id, user_id)
 
     trigger_service = TriggerService(session)
     webhooks_info = await trigger_service.sync_triggers(
@@ -128,8 +159,8 @@ async def test_builtin_webhook_custom_path_respected(session):
 @pytest.mark.asyncio
 async def test_sync_triggers_remove_old_trigger(session):
     """Test removing a trigger that no longer exists."""
-    workflow_id = uuid4()
-    namespace_id = uuid4()
+    user_id, namespace_id = await create_test_namespace(session)
+    workflow_id = await create_test_workflow(session, namespace_id, user_id)
 
     # Create provider
     provider = Provider(
@@ -138,7 +169,7 @@ async def test_sync_triggers_remove_old_trigger(session):
         type="gitlab",
         alias="default",
         encrypted_config=encrypt_secret(
-            json.dumps({"url": "https://gitlab.com", "token": "test-token"})
+            json.dumps({"url": "https://gitlab.com", "accessToken": "test-token"})
         ),
     )
     session.add(provider)
@@ -191,8 +222,8 @@ async def test_sync_triggers_remove_old_trigger(session):
 @pytest.mark.asyncio
 async def test_sync_triggers_keep_unchanged_trigger(session):
     """Test that unchanged triggers are refreshed but not recreated."""
-    workflow_id = uuid4()
-    namespace_id = uuid4()
+    user_id, namespace_id = await create_test_namespace(session)
+    workflow_id = await create_test_workflow(session, namespace_id, user_id)
 
     # Create provider
     provider = Provider(
@@ -201,7 +232,7 @@ async def test_sync_triggers_keep_unchanged_trigger(session):
         type="gitlab",
         alias="default",
         encrypted_config=encrypt_secret(
-            json.dumps({"url": "https://gitlab.com", "token": "test-token"})
+            json.dumps({"url": "https://gitlab.com", "accessToken": "test-token"})
         ),
     )
     session.add(provider)
@@ -265,8 +296,8 @@ async def test_sync_triggers_keep_unchanged_trigger(session):
 @pytest.mark.asyncio
 async def test_sync_triggers_handles_group_webhooks(session):
     """Test creating a group-level GitLab webhook."""
-    workflow_id = uuid4()
-    namespace_id = uuid4()
+    user_id, namespace_id = await create_test_namespace(session)
+    workflow_id = await create_test_workflow(session, namespace_id, user_id)
 
     # Create provider
     provider = Provider(
@@ -275,7 +306,7 @@ async def test_sync_triggers_handles_group_webhooks(session):
         type="gitlab",
         alias="default",
         encrypted_config=encrypt_secret(
-            json.dumps({"url": "https://gitlab.com", "token": "test-token"})
+            json.dumps({"url": "https://gitlab.com", "accessToken": "test-token"})
         ),
     )
     session.add(provider)
@@ -283,7 +314,7 @@ async def test_sync_triggers_handles_group_webhooks(session):
 
     # Mock GitLab API calls for group webhook
     with patch("httpx.AsyncClient") as mock_client:
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.json.return_value = {"id": 99999}
         mock_response.raise_for_status = MagicMock()
 
@@ -326,8 +357,8 @@ async def test_sync_triggers_handles_group_webhooks(session):
 @pytest.mark.asyncio
 async def test_sync_triggers_provider_not_found(session):
     """Test error handling when provider is not configured."""
-    workflow_id = uuid4()
-    namespace_id = uuid4()
+    user_id, namespace_id = await create_test_namespace(session)
+    workflow_id = await create_test_workflow(session, namespace_id, user_id)
 
     triggers_metadata = [
         {
