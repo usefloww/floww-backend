@@ -1,5 +1,14 @@
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Generic, Optional, Type, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    Generic,
+    Optional,
+    Type,
+    TypeVar,
+)
 
 from pydantic import BaseModel
 

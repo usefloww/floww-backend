@@ -1,33 +1,19 @@
 import urllib.parse
-from typing import Optional
 
 import jwt
 from fastapi import Response
-from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqladmin.authentication import AuthenticationBackend
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
-from app.deps.provider import get_auth_provider
+from app.auth.oidc import validate_jwt
 from app.settings import settings
-from app.utils.auth import validate_jwt_token
+from app.utils.session import get_jwt_from_session_cookie
 
 ADMIN_USER_IDS = {
     "user_01K6R7KC1974RG2BXD4SE9Q56F",  # Ruben
     "user_01K6QS8VX9CZHP5C3QVMFKW750",  # Toon
 }
-
-# Session serializer (same as in admin_auth routes)
-session_serializer = URLSafeTimedSerializer(settings.SESSION_SECRET_KEY)
-
-
-def get_jwt_from_session_cookie(cookie_value: str) -> Optional[str]:
-    """Extract JWT token from signed session cookie."""
-    try:
-        # 30 day expiration for session cookies
-        return session_serializer.loads(cookie_value, max_age=30 * 24 * 3600)
-    except BadSignature:
-        return None
 
 
 class AdminAuth(AuthenticationBackend):
@@ -66,11 +52,10 @@ class AdminAuth(AuthenticationBackend):
             return RedirectResponse(url=login_url)
 
         try:
-            # Get the auth provider
-            provider = get_auth_provider()
-
-            # Validate JWT token to ensure it's valid
-            user_id = await validate_jwt_token(jwt_token, provider)
+            # Validate JWT token using OIDC
+            user_id = await validate_jwt(
+                jwt_token, settings.AUTH_ISSUER_URL, settings.AUTH_CLIENT_ID
+            )
 
             # Check if user is an admin
             if user_id not in ADMIN_USER_IDS:

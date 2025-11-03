@@ -1,12 +1,10 @@
 import secrets
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature
 
-from app.auth.provider_base import AuthProvider
-from app.deps.provider import get_auth_provider
 from app.utils.session import (
     create_session_cookie,
     is_safe_redirect_url,
@@ -20,8 +18,9 @@ router = APIRouter(tags=["Admin Auth"])
 async def admin_login(
     request: Request,
     next_url: Optional[str] = Query(None, alias="next"),
-    provider: AuthProvider = Depends(get_auth_provider),
 ):
+    from app.auth.oidc import get_authorization_url
+
     if next_url and not is_safe_redirect_url(next_url, request):
         next_url = "/admin"
     elif not next_url:
@@ -35,7 +34,7 @@ async def admin_login(
     scheme = "http" if host and "localhost" in host else "https"
     redirect_uri = f"{scheme}://{host}/auth/callback"
 
-    auth_url = provider.get_authorization_url(
+    auth_url = await get_authorization_url(
         redirect_uri=redirect_uri,
         state=signed_state,
         scope="openid profile email",
@@ -50,8 +49,9 @@ async def admin_auth_callback(
     code: Optional[str] = Query(None),
     state: Optional[str] = Query(None),
     error: Optional[str] = Query(None),
-    provider: AuthProvider = Depends(get_auth_provider),
 ):
+    from app.auth.oidc import exchange_code_for_token
+
     if error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"OAuth error: {error}"
@@ -76,7 +76,7 @@ async def admin_auth_callback(
     scheme = "http" if host and "localhost" in host else "https"
     redirect_uri = f"{scheme}://{host}/auth/callback"
 
-    token_data = await provider.exchange_code_for_token(code, redirect_uri)
+    token_data = await exchange_code_for_token(code, redirect_uri)
     jwt_token = token_data.get("id_token") or token_data.get("access_token")
 
     if not jwt_token:

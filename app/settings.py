@@ -41,19 +41,12 @@ class DatabaseConfig(BaseSettings):
 
 class AuthConfig(BaseSettings):
     ADMIN_PASSWORD: str = ""
-    AUTH_PROVIDER: Literal["workos", "auth0", "oidc"] = "workos"
 
-    # Generic OAuth/OIDC settings (used by all providers)
+    # OIDC settings (works with any OIDC-compliant provider: WorkOS, Auth0, Keycloak, etc.)
     AUTH_CLIENT_ID: str = ""
+    AUTH_DEVICE_CLIENT_ID: str = ""
     AUTH_CLIENT_SECRET: str = ""
-    AUTH_DOMAIN: str = ""  # Optional, for providers that need it (e.g., Auth0)
-
-    # OIDC-specific settings
-    AUTH_ISSUER_URL: str = ""  # OIDC issuer URL for discovery (e.g., https://keycloak.example.com/realms/myrealm)
-    AUTH_JWKS_URL: str = ""  # Optional: Override JWKS endpoint if not using discovery
-
-    # WorkOS-specific settings (only when AUTH_PROVIDER="workos")
-    AUTH_API_URL: str = "https://api.workos.com"  # WorkOS API base URL
+    AUTH_ISSUER_URL: str = ""  # OIDC issuer URL for discovery
 
     JWT_ALGORITHM: str = "RS256"
 
@@ -65,6 +58,14 @@ class CentrifugoConfig(BaseSettings):
     CENTRIFUGO_JWT_SECRET: str = "floww-dev-jwt-secret-key-change-in-production"
 
 
+class SingleOrgConfig(BaseSettings):
+    SINGLE_ORG_MODE: bool = True
+    SINGLE_ORG_NAME: str = "default"
+    SINGLE_ORG_DISPLAY_NAME: str = "Default Organization"
+    SINGLE_ORG_DEFAULT_ROLE: Literal["owner", "admin", "member"] = "member"
+    SINGLE_ORG_ALLOW_PERSONAL_NAMESPACES: bool = False
+
+
 class Settings(
     AuthConfig,
     CentrifugoConfig,
@@ -73,6 +74,7 @@ class Settings(
     DockerConfig,
     KubernetesConfig,
     LambdaConfig,
+    SingleOrgConfig,
     BaseSettings,
 ):
     model_config = SettingsConfigDict(env_file=(".env", ".env.prod"))

@@ -10,6 +10,7 @@ from app.services.providers.provider_utils import (
 #### Provider ####
 class BuiltinProviderState(BaseModel):
     """Builtin provider has no configuration."""
+
     pass
 
 

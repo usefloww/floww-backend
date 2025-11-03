@@ -21,6 +21,15 @@ logger = structlog.stdlib.get_logger(__name__)
 router = APIRouter(prefix="/organizations", tags=["Organizations"])
 
 
+def check_single_org_mode():
+    """Raise 403 error if single-org mode is enabled and management is disabled."""
+    if settings.SINGLE_ORG_MODE:
+        raise HTTPException(
+            status_code=403,
+            detail="Organization management is disabled in single-organization mode",
+        )
+
+
 class OrganizationRead(BaseModel):
     id: UUID
     name: str
@@ -92,6 +101,7 @@ async def create_organization(
     session: TransactionSessionDep,
 ):
     """Create a new organization."""
+    check_single_org_mode()
     helper = helper_factory(current_user, session)
     response = await helper.create_response(data)
 
@@ -125,6 +135,7 @@ async def update_organization(
     data: OrganizationUpdate,
 ):
     """Update a specific organization."""
+    check_single_org_mode()
     helper = helper_factory(current_user, session)
     result = await helper.update_response(organization_id, data)
     await session.commit()
@@ -138,6 +149,7 @@ async def delete_organization(
     session: TransactionSessionDep,
 ):
     """Delete an organization."""
+    check_single_org_mode()
     helper = helper_factory(current_user, session)
     response = await helper.delete_response(organization_id)
     return response
@@ -190,6 +202,7 @@ async def add_organization_member(
     session: TransactionSessionDep,
 ) -> OrganizationMemberRead:
     """Add a member to an organization."""
+    check_single_org_mode()
     # Verify user has access to the organization
     helper = helper_factory(current_user, session)
     await helper.get_response(organization_id)  # This will raise 404 if not accessible
@@ -249,6 +262,7 @@ async def update_organization_member(
     session: TransactionSessionDep,
 ) -> OrganizationMemberRead:
     """Update a member's role in an organization."""
+    check_single_org_mode()
     # Verify user has access to the organization
     helper = helper_factory(current_user, session)
     await helper.get_response(organization_id)  # This will raise 404 if not accessible
@@ -294,6 +308,7 @@ async def remove_organization_member(
     session: TransactionSessionDep,
 ):
     """Remove a member from an organization."""
+    check_single_org_mode()
     # Verify user has access to the organization
     helper = helper_factory(current_user, session)
     await helper.get_response(organization_id)  # This will raise 404 if not accessible
@@ -337,14 +352,9 @@ async def sync_users_from_workos(
     """
     Sync users from WorkOS for this organization.
 
-    This endpoint is only available when AUTH_PROVIDER is set to "workos".
+    This is an optional feature that requires the WorkOS SDK and credentials.
     """
-    # Check if WorkOS provider is active
-    if settings.AUTH_PROVIDER != "workos":
-        raise HTTPException(
-            status_code=501,
-            detail=f"User sync is only available with WorkOS provider. Current provider: {settings.AUTH_PROVIDER}",
-        )
+    check_single_org_mode()
 
     # Verify user has access to the organization
     helper = helper_factory(current_user, session)

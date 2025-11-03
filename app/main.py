@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from app.routes import (
     admin_auth,
     centrifugo,
+    config,
     dev,
     docker_proxy,
     health,
@@ -23,6 +24,7 @@ from app.routes import (
     workflows,
 )
 from app.routes.admin import init_admin
+from app.settings import settings
 from app.utils.logging_utils import setup_logger
 
 
@@ -49,6 +51,26 @@ setup_logger(app)
 init_admin(app)
 
 
+@app.on_event("startup")
+async def startup_event():
+    """Initialize single-org mode if enabled."""
+    if settings.SINGLE_ORG_MODE:
+        from app.deps.db import AsyncSessionLocal
+        from app.utils.single_org import ensure_default_organization
+
+        async with AsyncSessionLocal() as session:
+            try:
+                org_id, namespace_id = await ensure_default_organization(session)
+                # Store in app state for easy access
+                app.state.default_organization_id = org_id
+                app.state.default_namespace_id = namespace_id
+                print(
+                    f"Single-org mode initialized: org_id={org_id}, namespace_id={namespace_id}"
+                )
+            finally:
+                await session.close()
+
+
 api_router = APIRouter(prefix="/api")
 
 
@@ -69,6 +91,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 
 api_router.include_router(health.router)
+api_router.include_router(config.router)
 api_router.include_router(workflows.router)
 api_router.include_router(whoami.router)
 api_router.include_router(secrets.router)

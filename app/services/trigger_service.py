@@ -29,18 +29,19 @@ class TriggerService:
             select(Provider).where(
                 Provider.namespace_id == namespace_id,
                 Provider.type == "builtin",
-                Provider.alias == "default"
+                Provider.alias == "default",
             )
         )
         provider = result.scalar_one_or_none()
 
         if not provider:
             from app.utils.encryption import encrypt_secret
+
             provider = Provider(
                 namespace_id=namespace_id,
                 type="builtin",
                 alias="default",
-                encrypted_config=encrypt_secret("{}")
+                encrypted_config=encrypt_secret("{}"),
             )
             self.session.add(provider)
             await self.session.flush()
@@ -119,7 +120,9 @@ class TriggerService:
         )
 
         webhooks_info = []
-        seen_webhook_ids = set()  # Track webhooks we've already added (for deduplication)
+        seen_webhook_ids = (
+            set()
+        )  # Track webhooks we've already added (for deduplication)
 
         # 1. Destroy removed triggers
         for identity in to_remove:

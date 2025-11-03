@@ -377,17 +377,25 @@ class IncomingWebhook(Base):
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
     trigger_id: Mapped[Optional[UUID]] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("triggers.id", ondelete="CASCADE"), nullable=True
+        PGUUID(as_uuid=True),
+        ForeignKey("triggers.id", ondelete="CASCADE"),
+        nullable=True,
     )
     provider_id: Mapped[Optional[UUID]] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("providers.id", ondelete="CASCADE"), nullable=True
+        PGUUID(as_uuid=True),
+        ForeignKey("providers.id", ondelete="CASCADE"),
+        nullable=True,
     )
     path: Mapped[str] = mapped_column(Text, nullable=False)
     method: Mapped[str] = mapped_column(Text, nullable=False, server_default="POST")
 
     # Relationships
-    trigger: Mapped[Optional["Trigger"]] = relationship(back_populates="incoming_webhooks")
-    provider: Mapped[Optional["Provider"]] = relationship(back_populates="incoming_webhooks")
+    trigger: Mapped[Optional["Trigger"]] = relationship(
+        back_populates="incoming_webhooks"
+    )
+    provider: Mapped[Optional["Provider"]] = relationship(
+        back_populates="incoming_webhooks"
+    )
 
 
 class RecurringTask(Base):
@@ -483,7 +491,9 @@ class Provider(Base):
     # Relationships
     namespace: Mapped["Namespace"] = relationship(back_populates="providers")
     triggers: Mapped[list["Trigger"]] = relationship(back_populates="provider")
-    incoming_webhooks: Mapped[list["IncomingWebhook"]] = relationship(back_populates="provider")
+    incoming_webhooks: Mapped[list["IncomingWebhook"]] = relationship(
+        back_populates="provider"
+    )
 
     def __repr__(self):
         return self._repr(

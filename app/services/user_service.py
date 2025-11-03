@@ -15,23 +15,19 @@ from app.settings import settings
 
 logger = structlog.stdlib.get_logger(__name__)
 
-# Initialize WorkOS client only when using WorkOS provider
+# Initialize WorkOS client as optional feature for user sync
+# This is independent of the authentication method (which uses OIDC)
 workos_client = None
-if settings.AUTH_PROVIDER == "workos":
+try:
     from workos.async_client import AsyncClient as AsyncWorkOSClient
 
-    workos_client = AsyncWorkOSClient(
-        api_key=settings.AUTH_CLIENT_SECRET,
-        client_id=settings.AUTH_CLIENT_ID,
-    )
-
-    # Verify WorkOS client is properly configured
-    if not settings.AUTH_CLIENT_SECRET:
-        logger.warning(
-            "AUTH_CLIENT_SECRET is not set - WorkOS integration will not work"
+    if settings.AUTH_CLIENT_SECRET and settings.AUTH_CLIENT_ID:
+        workos_client = AsyncWorkOSClient(
+            api_key=settings.AUTH_CLIENT_SECRET,
+            client_id=settings.AUTH_CLIENT_ID,
         )
-    if not settings.AUTH_CLIENT_ID:
-        logger.warning("AUTH_CLIENT_ID is not set - WorkOS integration will not work")
+except ImportError:
+    logger.debug("WorkOS SDK not installed - user sync feature will not be available")
 
 
 async def get_or_create_user(
@@ -56,9 +52,58 @@ async def get_or_create_user(
         session.add(user)
         await session.flush()
 
-        namespace = Namespace(user_owner_id=user.id)
-        session.add(namespace)
-        await session.flush()
+        # Handle namespace and organization membership based on mode
+        if settings.SINGLE_ORG_MODE:
+            # Single-org mode: skip personal namespace, add user to default org
+            if not settings.SINGLE_ORG_ALLOW_PERSONAL_NAMESPACES:
+                # Get the default organization
+                from app.utils.single_org import get_default_organization_id
+
+                default_org_id = await get_default_organization_id(session)
+
+                # Check if user is already a member (shouldn't happen for new user, but be safe)
+                existing_membership = await session.execute(
+                    select(OrganizationMember).where(
+                        OrganizationMember.organization_id == default_org_id,
+                        OrganizationMember.user_id == user.id,
+                    )
+                )
+                if not existing_membership.scalar_one_or_none():
+                    # Map string role to enum
+                    role_map = {
+                        "owner": OrganizationRole.OWNER,
+                        "admin": OrganizationRole.ADMIN,
+                        "member": OrganizationRole.MEMBER,
+                    }
+                    role = role_map.get(
+                        settings.SINGLE_ORG_DEFAULT_ROLE.lower(),
+                        OrganizationRole.MEMBER,
+                    )
+
+                    org_member = OrganizationMember(
+                        organization_id=default_org_id,
+                        user_id=user.id,
+                        role=role,
+                    )
+                    session.add(org_member)
+                    await session.flush()
+                    logger.info(
+                        "Added user to default organization",
+                        user_id=user.id,
+                        organization_id=default_org_id,
+                        role=role,
+                    )
+            else:
+                # Create personal namespace even in single-org mode (if configured)
+                namespace = Namespace(user_owner_id=user.id)
+                session.add(namespace)
+                await session.flush()
+        else:
+            # Multi-tenant mode: create personal namespace (original behavior)
+            namespace = Namespace(user_owner_id=user.id)
+            session.add(namespace)
+            await session.flush()
+
         if create:
             await session.commit()
     else:
@@ -85,7 +130,7 @@ async def load_users_from_workos(
     """
     Load users from WorkOS and sync them to the database.
 
-    This function is only available when AUTH_PROVIDER is set to "workos".
+    This is an optional feature that requires the WorkOS SDK and credentials.
 
     Args:
         session: Database session
@@ -96,19 +141,12 @@ async def load_users_from_workos(
         List of User objects that were created or updated
 
     Raises:
-        ValueError: If WorkOS is not configured or AUTH_PROVIDER is not "workos"
+        ValueError: If WorkOS client is not initialized
     """
-    # Check if WorkOS provider is active
-    if settings.AUTH_PROVIDER != "workos":
-        raise ValueError(
-            f"User sync is only available with WorkOS provider. "
-            f"Current provider: {settings.AUTH_PROVIDER}"
-        )
-
-    # Check if WorkOS client is initialized
     if workos_client is None:
         raise ValueError(
-            "WorkOS client is not initialized. Please check AUTH_CLIENT_SECRET and AUTH_CLIENT_ID."
+            "WorkOS client is not initialized. Please install the WorkOS SDK and "
+            "configure AUTH_CLIENT_SECRET and AUTH_CLIENT_ID."
         )
 
     try:
