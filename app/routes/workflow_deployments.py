@@ -31,6 +31,10 @@ class WebhookInfo(BaseModel):
     url: str
     path: Optional[str] = None
     method: Optional[str] = None
+    trigger_id: Optional[UUID] = None
+    trigger_type: Optional[str] = None
+    provider_type: Optional[str] = None
+    provider_alias: Optional[str] = None
 
 
 class WorkflowDeploymentRead(BaseModel):

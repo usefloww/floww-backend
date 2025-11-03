@@ -133,11 +133,19 @@ async def webhook_listener(request: Request, path: str, session: SessionDep):
         return JSONResponse(content={"error": "Webhook not found"}, status_code=404)
 
     # Get webhook payload
-    webhook_data = (
-        await request.json()
-        if request.headers.get("content-type") == "application/json"
-        else {}
-    )
+    content_type = request.headers.get("content-type", "").lower()
+    if "application/json" in content_type:
+        try:
+            webhook_data = await request.json()
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning(
+                "Failed to parse JSON body for webhook",
+                error=str(exc),
+                content_type=content_type,
+            )
+            webhook_data = {}
+    else:
+        webhook_data = {}
 
     # Branch based on webhook ownership
     if webhook.provider_id:

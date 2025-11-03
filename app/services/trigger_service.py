@@ -11,6 +11,7 @@ from app.services.providers.implementations.builtin import BUILTIN_TRIGGER_TYPES
 from app.services.providers.implementations.gitlab import (
     GITLAB_TRIGGER_TYPES,
 )
+from app.services.providers.implementations.jira import JIRA_TRIGGER_TYPES
 from app.services.providers.implementations.slack import SLACK_TRIGGER_TYPES
 from app.services.providers.provider_registry import PROVIDER_TYPES_MAP
 from app.settings import settings
@@ -157,6 +158,7 @@ class TriggerService:
             )
             incoming_webhook = incoming_webhook_result.scalar_one_or_none()
             if incoming_webhook and incoming_webhook.id not in seen_webhook_ids:
+                provider = await self.session.get(Provider, trigger.provider_id)
                 webhook_url = f"{settings.PUBLIC_API_URL}{incoming_webhook.path}"
                 webhooks_info.append(
                     {
@@ -164,6 +166,10 @@ class TriggerService:
                         "url": webhook_url,
                         "path": incoming_webhook.path,
                         "method": incoming_webhook.method,
+                        "provider_type": provider.type if provider else None,
+                        "provider_alias": provider.alias if provider else None,
+                        "trigger_type": trigger.trigger_type,
+                        "trigger_id": trigger.id,
                     }
                 )
                 seen_webhook_ids.add(incoming_webhook.id)
@@ -318,6 +324,10 @@ class TriggerService:
                 "url": primary_webhook["url"],
                 "path": primary_webhook["path"],
                 "method": primary_webhook["method"],
+                "provider_type": provider.type,
+                "provider_alias": provider.alias,
+                "trigger_type": trigger.trigger_type,
+                "trigger_id": trigger.id,
             }
 
         return None
@@ -406,6 +416,8 @@ class TriggerService:
         """Get the trigger handler class for a given provider and trigger type."""
         if provider_type == "gitlab":
             return GITLAB_TRIGGER_TYPES[trigger_type]
+        elif provider_type == "jira":
+            return JIRA_TRIGGER_TYPES[trigger_type]
         elif provider_type == "slack":
             return SLACK_TRIGGER_TYPES[trigger_type]
         elif provider_type == "builtin":
