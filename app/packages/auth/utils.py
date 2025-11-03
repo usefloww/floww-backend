@@ -3,8 +3,7 @@ import urllib.parse
 import httpx
 import jwt
 from fastapi import HTTPException, status
-
-from app.settings import settings
+from jwt import algorithms
 
 _discovery_cache: dict[str, dict] = {}
 _jwks_cache: dict[str, dict] = {}
@@ -42,14 +41,22 @@ async def get_jwks(jwks_url: str) -> dict:
     return jwks
 
 
-async def validate_jwt(token: str, issuer_url: str, audience: str) -> str:
+async def validate_jwt(
+    token: str,
+    jwks_keys: list[dict],
+    issuer: str,
+    audience: str | None,
+    algorithm: str,
+) -> str:
     """
-    Validate JWT token using OIDC discovery and return the user ID (sub claim).
+    Validate JWT token and return the user ID (sub claim).
 
     Args:
         token: JWT token to validate
-        issuer_url: OIDC issuer URL
+        jwks_keys: List of JWKS keys from the JWKS endpoint
+        issuer: Expected issuer to validate against
         audience: Expected audience (usually client ID)
+        algorithm: JWT algorithm to use for validation
 
     Returns:
         User ID from the 'sub' claim
@@ -58,31 +65,19 @@ async def validate_jwt(token: str, issuer_url: str, audience: str) -> str:
         HTTPException: If validation fails
     """
     try:
-        discovery = await get_oidc_discovery(issuer_url)
-        jwks_url = discovery.get("jwks_uri")
-
-        if not jwks_url:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="JWKS URI not found in OIDC discovery",
-            )
-
         unverified_header = jwt.get_unverified_header(token)
         key_id = unverified_header.get("kid")
 
-        jwks = await get_jwks(jwks_url)
-        keys = jwks.get("keys", [])
-
-        if not keys:
+        if not jwks_keys:
             raise jwt.PyJWTError("No keys found in JWKS")
 
         public_key = None
 
         if key_id:
             # If kid is present, find matching key
-            for key in keys:
+            for key in jwks_keys:
                 if key.get("kid") == key_id:
-                    public_key = jwt.algorithms.RSAAlgorithm.from_jwk(key)
+                    public_key = algorithms.RSAAlgorithm.from_jwk(key)
                     break
 
             if not public_key:
@@ -90,22 +85,16 @@ async def validate_jwt(token: str, issuer_url: str, audience: str) -> str:
         else:
             # If kid is missing, use the first available key (common with single-key setups)
             try:
-                public_key = jwt.algorithms.RSAAlgorithm.from_jwk(keys[0])
+                public_key = algorithms.RSAAlgorithm.from_jwk(jwks_keys[0])
             except (IndexError, KeyError, ValueError) as e:
                 raise jwt.PyJWTError(f"Failed to load public key from JWKS: {str(e)}")
-
-        issuer = discovery.get("issuer")
-
-        issuer = f"https://api.workos.com/user_management/{settings.AUTH_CLIENT_ID}"
-        if not issuer:
-            issuer = issuer_url
 
         payload = jwt.decode(
             token,
             public_key,
-            algorithms=[settings.JWT_ALGORITHM],
+            algorithms=[algorithm],
             issuer=issuer,
-            # audience=audience,
+            audience=audience,
         )
 
         external_user_id: str = payload.get("sub")
@@ -126,47 +115,39 @@ async def validate_jwt(token: str, issuer_url: str, audience: str) -> str:
         )
 
 
-async def get_authorization_url(
-    redirect_uri: str, state: str, scope: str = "openid profile email"
+def get_authorization_url(
+    authorization_endpoint: str,
+    client_id: str,
+    redirect_uri: str,
+    state: str,
+    scope: str = "openid profile email",
 ) -> str:
-    """Build OAuth authorization URL using OIDC discovery."""
-    discovery = await get_oidc_discovery(settings.AUTH_ISSUER_URL)
-    auth_endpoint = discovery.get("authorization_endpoint")
-
-    if not auth_endpoint:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Authorization endpoint not found in OIDC discovery",
-        )
-
+    """Build OAuth authorization URL."""
     auth_params = {
-        "client_id": settings.AUTH_CLIENT_ID,
+        "client_id": client_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
         "state": state,
         "scope": scope,
     }
 
-    return f"{auth_endpoint}?{urllib.parse.urlencode(auth_params)}"
+    return f"{authorization_endpoint}?{urllib.parse.urlencode(auth_params)}"
 
 
-async def exchange_code_for_token(code: str, redirect_uri: str) -> dict:
-    """Exchange authorization code for tokens using OIDC token endpoint."""
-    discovery = await get_oidc_discovery(settings.AUTH_ISSUER_URL)
-    token_endpoint = discovery.get("token_endpoint")
-
-    if not token_endpoint:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Token endpoint not found in OIDC discovery",
-        )
-
+async def exchange_code_for_token(
+    token_endpoint: str,
+    client_id: str,
+    client_secret: str,
+    code: str,
+    redirect_uri: str,
+) -> dict:
+    """Exchange authorization code for tokens."""
     async with httpx.AsyncClient() as client:
         token_response = await client.post(
             token_endpoint,
             data={
-                "client_id": settings.AUTH_CLIENT_ID,
-                "client_secret": settings.AUTH_CLIENT_SECRET,
+                "client_id": client_id,
+                "client_secret": client_secret,
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": redirect_uri,

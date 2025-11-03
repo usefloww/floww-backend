@@ -1,15 +1,13 @@
 from sqlalchemy.orm import Session
 
-from app.auth.oidc import validate_jwt
+from app.factories import get_auth_provider
 from app.models import User
 from app.services.user_service import get_or_create_user
-from app.settings import settings
 
 
 async def get_user_from_token(session: Session, token: str) -> User:
-    external_user_id = await validate_jwt(
-        token, settings.AUTH_ISSUER_URL, settings.AUTH_CLIENT_ID
-    )
+    auth_provider = get_auth_provider()
+    external_user_id = await auth_provider.validate_token(token)
 
     return await get_or_create_user(session, external_user_id)
 
