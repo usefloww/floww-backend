@@ -52,8 +52,6 @@ services:
     container_name: "floww-backend-migrations"
     build:
       context: .
-      secrets:
-        - package_registry_token
     command: "python -m alembic upgrade head"
     env_file:
       - .env

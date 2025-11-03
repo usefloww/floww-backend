@@ -1,6 +1,5 @@
 from fastapi import APIRouter
 
-from app.auth.oidc import get_oidc_discovery
 from app.settings import settings
 
 router = APIRouter(tags=["Config"])
@@ -8,16 +7,25 @@ router = APIRouter(tags=["Config"])
 
 @router.get("/config")
 async def get_config():
-    discovery = await get_oidc_discovery(settings.AUTH_ISSUER_URL)
-
+    # Temporary hardcoded values for WorkOS
     auth_config = {
-        "client_id": settings.AUTH_DEVICE_CLIENT_ID,
-        "device_authorization_endpoint": discovery.get("device_authorization_endpoint"),
-        "token_endpoint": discovery.get("token_endpoint"),
-        "authorization_endpoint": discovery.get("authorization_endpoint"),
-        "issuer": discovery.get("issuer"),
-        "jwks_uri": discovery.get("jwks_uri"),
+        "client_id": settings.AUTH_CLIENT_ID,
+        "device_authorization_endpoint": "https://api.workos.com/user_management/authorize/device",
+        "token_endpoint": "https://api.workos.com/user_management/authenticate",
+        "authorization_endpoint": "https://api.workos.com/user_management/authorize",
+        "issuer": "https://api.workos.com/user_management",
+        "jwks_uri": "https://api.workos.com/user_management/jwks",
     }
+
+    # discovery = await get_oidc_discovery(settings.AUTH_ISSUER_URL)
+    # auth_config = {
+    #     "client_id": settings.AUTH_CLIENT_ID,
+    #     "device_authorization_endpoint": discovery.get("device_authorization_endpoint"),
+    #     "token_endpoint": discovery.get("token_endpoint"),
+    #     "authorization_endpoint": discovery.get("authorization_endpoint"),
+    #     "issuer": discovery.get("issuer"),
+    #     "jwks_uri": discovery.get("jwks_uri"),
+    # }
 
     websocket_url = settings.PUBLIC_API_URL.replace("http://", "ws://").replace(
         "https://", "wss://"
