@@ -1,5 +1,7 @@
+import urllib.parse
 from abc import ABC, abstractmethod
 
+import jwt as pyjwt
 from pydantic import BaseModel
 from workos import WorkOSClient
 
@@ -38,10 +40,15 @@ class AuthProvider(ABC):
     async def validate_token(self, token: str) -> str: ...
 
     @abstractmethod
-    async def get_authorization_url(self, redirect_uri: str, state: str) -> str: ...
+    async def get_authorization_url(
+        self, redirect_uri: str, state: str, prompt: str | None = None
+    ) -> str: ...
 
     @abstractmethod
     async def exchange_code_for_token(self, code: str, redirect_uri: str) -> dict: ...
+
+    @abstractmethod
+    async def revoke_session(self, jwt_token: str) -> None: ...
 
 
 class OIDCProvider(AuthProvider):
@@ -76,13 +83,16 @@ class OIDCProvider(AuthProvider):
             algorithm=settings.JWT_ALGORITHM,
         )
 
-    async def get_authorization_url(self, redirect_uri: str, state: str) -> str:
+    async def get_authorization_url(
+        self, redirect_uri: str, state: str, prompt: str | None = None
+    ) -> str:
         config = await self.get_config()
         return _get_authorization_url(
             authorization_endpoint=config.authorization_endpoint,
             client_id=self.client_id,
             redirect_uri=redirect_uri,
             state=state,
+            prompt=prompt,
         )
 
     async def exchange_code_for_token(self, code: str, redirect_uri: str) -> dict:
@@ -94,6 +104,12 @@ class OIDCProvider(AuthProvider):
             code=code,
             redirect_uri=redirect_uri,
         )
+
+    async def revoke_session(self, jwt_token: str) -> None:
+        """Generic OIDC providers may not support session revocation."""
+        # Most OIDC providers don't have a standard session revocation endpoint
+        # This would need to be implemented per-provider if needed
+        pass
 
 
 class WorkOSProvider(AuthProvider):
@@ -128,13 +144,24 @@ class WorkOSProvider(AuthProvider):
             algorithm=settings.JWT_ALGORITHM,
         )
 
-    async def get_authorization_url(self, redirect_uri: str, state: str) -> str:
+    async def get_authorization_url(
+        self, redirect_uri: str, state: str, prompt: str | None = None
+    ) -> str:
         # Use WorkOS SDK to generate authorization URL
         authorization_url = self.workos.user_management.get_authorization_url(
             provider="authkit",
             redirect_uri=redirect_uri,
             state=state,
         )
+
+        # Manually append OAuth2 prompt parameter if provided
+        # WorkOS AuthKit supports standard OAuth2 parameters
+        if prompt:
+            separator = "&" if "?" in authorization_url else "?"
+            authorization_url = (
+                f"{authorization_url}{separator}prompt={urllib.parse.quote(prompt)}"
+            )
+
         return authorization_url
 
     async def exchange_code_for_token(self, code: str, redirect_uri: str) -> dict:
@@ -146,3 +173,21 @@ class WorkOSProvider(AuthProvider):
             "refresh_token": result.refresh_token,
             "id_token": result.access_token,
         }
+
+    async def revoke_session(self, jwt_token: str) -> None:
+        """Revoke WorkOS session by extracting session ID from JWT and calling WorkOS API."""
+        try:
+            # Decode JWT without verification to extract session ID
+            decoded = pyjwt.decode(jwt_token, options={"verify_signature": False})
+            session_id = decoded.get("sid")
+
+            if not session_id:
+                print("No session ID found in JWT token")
+                return
+
+            # Revoke the session using WorkOS SDK
+            # Note: This is a synchronous call, WorkOS SDK doesn't provide async methods
+            self.workos.user_management.revoke_session(session_id=session_id)
+        except Exception as e:
+            # Don't fail logout if revocation fails
+            print(f"Failed to revoke WorkOS session: {e}")

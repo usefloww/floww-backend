@@ -25,13 +25,12 @@ def is_safe_redirect_url(url: str, request: Request) -> bool:
     if not url:
         return False
 
-    if url.startswith("/admin"):
-        return True
-
     parsed_url = urllib.parse.urlparse(url)
     request_host = request.headers.get("host", "")
 
+    # Allow all relative URLs (they can't be open redirects)
     if not parsed_url.netloc:
-        return url.startswith("/admin")
+        return url.startswith("/")
 
+    # For absolute URLs, only allow same host
     return parsed_url.netloc.lower() == request_host.lower()

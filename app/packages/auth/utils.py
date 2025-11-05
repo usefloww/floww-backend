@@ -121,6 +121,7 @@ def get_authorization_url(
     redirect_uri: str,
     state: str,
     scope: str = "openid profile email",
+    prompt: str | None = None,
 ) -> str:
     """Build OAuth authorization URL."""
     auth_params = {
@@ -130,6 +131,9 @@ def get_authorization_url(
         "state": state,
         "scope": scope,
     }
+
+    if prompt:
+        auth_params["prompt"] = prompt
 
     return f"{authorization_endpoint}?{urllib.parse.urlencode(auth_params)}"
 
