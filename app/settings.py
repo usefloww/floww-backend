@@ -1,5 +1,6 @@
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,6 +41,7 @@ class DatabaseConfig(BaseSettings):
 
 
 class AuthConfig(BaseSettings):
+    AUTH_TYPE: Literal["oidc", "workos", "admin_user", "none"] = "workos"
     ADMIN_PASSWORD: str = ""
 
     # OIDC settings (works with any OIDC-compliant provider: WorkOS, Auth0, Keycloak, etc.)
@@ -78,6 +80,16 @@ class Settings(
     BaseSettings,
 ):
     model_config = SettingsConfigDict(env_file=(".env", ".env.prod"))
+
+    @model_validator(mode="after")
+    def validate_auth_type_none_requires_single_org(self):
+        """Validate that AUTH_TYPE='none' requires SINGLE_ORG_MODE=True"""
+        if self.AUTH_TYPE == "none" and not self.SINGLE_ORG_MODE:
+            raise ValueError(
+                "AUTH_TYPE='none' (anonymous authentication) requires SINGLE_ORG_MODE=True. "
+                "Anonymous authentication is only supported in single-organization mode."
+            )
+        return self
 
 
 settings = Settings()

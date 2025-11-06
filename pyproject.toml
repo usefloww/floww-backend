@@ -42,11 +42,13 @@ dev = [
     "types-dateparser",
     "types-ujson",
     "pytest-stub",
+    "boto3-stubs[essential, batch, lambda]",
     # Testing
     "pytest",
     "pytest-asyncio",
     "pytest-mock",
     "pytest-random-order",
+    "testcontainers>=4.13.2",
     "bandit",
     "ruff",
     "websocket-client",

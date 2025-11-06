@@ -1,12 +1,12 @@
 from fastapi import APIRouter
 
-from app.deps.auth import CurrentUser
+from app.deps.auth import CurrentUserOptional
 
 router = APIRouter(tags=["Whoami"])
 
 
 @router.get("/whoami")
-async def get_current_user_info(current_user: CurrentUser):
+async def get_current_user_info(current_user: CurrentUserOptional):
     """Get information about the currently authenticated user."""
     return {
         "id": str(current_user.id),

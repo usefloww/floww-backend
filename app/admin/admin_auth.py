@@ -6,7 +6,7 @@ from sqladmin.authentication import AuthenticationBackend
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
-from app.factories import get_auth_provider
+from app.factories import auth_provider_factory
 from app.utils.session import get_jwt_from_session_cookie
 
 ADMIN_USER_IDS = {
@@ -52,7 +52,7 @@ class AdminAuth(AuthenticationBackend):
 
         try:
             # Validate JWT token using OIDC
-            auth_provider = get_auth_provider()
+            auth_provider = auth_provider_factory()
             user_id = await auth_provider.validate_token(jwt_token)
 
             # Check if user is an admin

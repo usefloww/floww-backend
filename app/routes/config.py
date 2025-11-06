@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.factories import get_auth_provider
+from app.factories import auth_provider_factory
 from app.settings import settings
 
 router = APIRouter(tags=["Config"])
@@ -8,7 +8,7 @@ router = APIRouter(tags=["Config"])
 
 @router.get("/config")
 async def get_config():
-    auth_provider = get_auth_provider()
+    auth_provider = auth_provider_factory()
     auth_config = await auth_provider.get_config()
 
     auth_config = {

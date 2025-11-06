@@ -1,32 +1,32 @@
-import boto3
+from typing import TYPE_CHECKING
+
 import structlog
 from botocore.exceptions import ClientError
 
-from app.settings import settings
+if TYPE_CHECKING:
+    from mypy_boto3_lambda.client import LambdaClient
 
 logger = structlog.stdlib.get_logger(__name__)
-lambda_client = boto3.client(
-    "lambda",
-    region_name=settings.AWS_REGION,
-    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-)
 
 
-def deploy_lambda_function(runtime_id: str, image_uri: str):
+def deploy_lambda_function(
+    lambda_client: "LambdaClient",
+    runtime_id: str,
+    image_uri: str,
+    execution_role_arn: str,
+):
     """Deploy a Lambda function with container image."""
     function_name = f"floww-runtime-{runtime_id}"
 
-    response = lambda_client.create_function(
+    lambda_client.create_function(
         FunctionName=function_name,
-        Role=settings.LAMBDA_EXECUTION_ROLE_ARN,
+        Role=execution_role_arn,
         Code={"ImageUri": image_uri},
         PackageType="Image",
         Timeout=30,
         MemorySize=512,
         Publish=True,
     )
-    print(response)
     logger.info(
         "Created Lambda function",
         function_name=function_name,
@@ -34,7 +34,7 @@ def deploy_lambda_function(runtime_id: str, image_uri: str):
     )
 
 
-def get_lambda_deploy_status(runtime_id: str):
+def get_lambda_deploy_status(lambda_client: "LambdaClient", runtime_id: str):
     name = f"floww-runtime-{runtime_id}"
     try:
         res = lambda_client.get_function(FunctionName=name)
@@ -71,7 +71,9 @@ def get_lambda_deploy_status(runtime_id: str):
         return {"success": False, "status": "FAILED", "logs": str(e)}
 
 
-def invoke_lambda_async(runtime_id: str, event_payload: dict):
+def invoke_lambda_async(
+    lambda_client: "LambdaClient", runtime_id: str, event_payload: dict
+):
     """Invoke a Lambda function asynchronously (fire-and-forget)."""
     import json
 

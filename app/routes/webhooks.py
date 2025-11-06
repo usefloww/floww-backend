@@ -5,15 +5,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.deps.db import SessionDep
+from app.factories import runtime_factory
 from app.models import (
     IncomingWebhook,
     Trigger,
     WorkflowDeployment,
     WorkflowDeploymentStatus,
 )
+from app.packages.runtimes.runtime_types import RuntimeConfig, RuntimeWebhookPayload
 from app.services.centrifugo_service import centrifugo_service
 from app.services.providers.provider_registry import PROVIDER_TYPES_MAP
-from app.services.run_user_code_service import WebhookPayload, run_user_code
 from app.utils.encryption import decrypt_secret
 
 router = APIRouter()
@@ -71,11 +72,15 @@ async def _execute_trigger(
         )
         return None
 
-    await run_user_code(
-        runtime=deployment.runtime,
+    runtime_impl = runtime_factory()
+    await runtime_impl.invoke_trigger(
         trigger_id=str(trigger.id),
-        files=deployment.user_code.get("files", {}),  # type: ignore
-        payload=WebhookPayload(
+        runtime_config=RuntimeConfig(
+            runtime_id=str(deployment.runtime.id),
+            image_uri=deployment.runtime.config["image_uri"],  # pyright: ignore[reportOptionalSubscript]
+        ),
+        user_code=deployment.user_code,
+        payload=RuntimeWebhookPayload(
             path=normalized_path,
             body=webhook_data,
             headers=dict(request.headers),

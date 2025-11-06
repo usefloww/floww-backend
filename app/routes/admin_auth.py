@@ -5,7 +5,8 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature
 
-from app.factories import get_auth_provider
+from app.factories import auth_provider_factory
+from app.settings import settings
 from app.utils.session import (
     create_session_cookie,
     get_jwt_from_session_cookie,
@@ -22,6 +23,12 @@ async def admin_login(
     next_url: Optional[str] = Query(None, alias="next"),
     prompt: Optional[str] = Query(None),
 ):
+    # If AUTH_TYPE is 'none', redirect to home since no authentication is needed
+    if settings.AUTH_TYPE == "none":
+        if not next_url or not is_safe_redirect_url(next_url, request):
+            next_url = "/"
+        return RedirectResponse(url=next_url, status_code=status.HTTP_302_FOUND)
+
     if not next_url or not is_safe_redirect_url(next_url, request):
         next_url = "/"
 
@@ -33,7 +40,7 @@ async def admin_login(
     scheme = "http" if host and "localhost" in host else "https"
     redirect_uri = f"{scheme}://{host}/auth/callback"
 
-    auth_provider = get_auth_provider()
+    auth_provider = auth_provider_factory()
 
     auth_url = await auth_provider.get_authorization_url(
         redirect_uri=redirect_uri,
@@ -51,6 +58,10 @@ async def admin_auth_callback(
     state: Optional[str] = Query(None),
     error: Optional[str] = Query(None),
 ):
+    # If AUTH_TYPE is 'none', redirect to home since no authentication callback is needed
+    if settings.AUTH_TYPE == "none":
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+
     if error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"OAuth error: {error}"
@@ -75,7 +86,7 @@ async def admin_auth_callback(
     scheme = "http" if host and "localhost" in host else "https"
     redirect_uri = f"{scheme}://{host}/auth/callback"
 
-    auth_provider = get_auth_provider()
+    auth_provider = auth_provider_factory()
     token_data = await auth_provider.exchange_code_for_token(code, redirect_uri)
     jwt_token = token_data.get("id_token") or token_data.get("access_token")
 
@@ -102,13 +113,17 @@ async def admin_auth_callback(
 
 @router.post("/auth/logout")
 async def admin_logout(request: Request):
+    # If AUTH_TYPE is 'none', just redirect to home since no logout is needed
+    if settings.AUTH_TYPE == "none":
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+
     # Extract session token to revoke it
     session_cookie = request.cookies.get("session")
     if session_cookie:
         jwt_token = get_jwt_from_session_cookie(session_cookie)
         if jwt_token:
             try:
-                auth_provider = get_auth_provider()
+                auth_provider = auth_provider_factory()
                 await auth_provider.revoke_session(jwt_token)
             except Exception as e:
                 # Log but don't fail logout if revocation fails

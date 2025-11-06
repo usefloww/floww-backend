@@ -1,7 +1,6 @@
 import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
 from uuid import UUID
 
 import structlog
@@ -11,13 +10,14 @@ from sqlalchemy import select
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep, TransactionSessionDep
+from app.factories import runtime_factory
 from app.models import (
     Runtime,
     RuntimeCreationStatus,
 )
+from app.packages.runtimes.runtime_types import RuntimeConfig
 from app.settings import settings
 from app.utils.aws_ecr import get_image_uri
-from app.utils.aws_lambda import deploy_lambda_function, get_lambda_deploy_status
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -25,7 +25,7 @@ logger = structlog.stdlib.get_logger(__name__)
 router = APIRouter(prefix="/runtimes", tags=["Runtimes"])
 
 
-class RuntimeConfig(BaseModel):
+class RuntimeCreateConfig(BaseModel):
     image_hash: str
 
     @property
@@ -37,7 +37,7 @@ class RuntimeConfig(BaseModel):
 
 
 class RuntimeCreate(BaseModel):
-    config: RuntimeConfig
+    config: RuntimeCreateConfig
 
 
 class PushTokenRequest(BaseModel):
@@ -160,19 +160,17 @@ async def create_runtime(
     await session.flush()
     await session.refresh(runtime)
 
-    deploy_lambda_function(
-        runtime_id=str(runtime.id),
-        image_uri=image_uri,
+    runtime_impl = runtime_factory()
+
+    creation_status = await runtime_impl.create_runtime(
+        RuntimeConfig(
+            runtime_id=str(runtime.id),
+            image_uri=image_uri,
+        ),
     )
 
-    log_entry = {
-        "timestamp": str(datetime.now(timezone.utc)),
-        "message": "Lambda deployment initiated",
-        "level": "info",
-    }
-
-    current_logs = runtime.creation_logs or []
-    runtime.creation_logs = current_logs + [log_entry]
+    runtime.creation_status = creation_status.status  # pyright: ignore[reportAttributeAccessIssue]
+    runtime.creation_logs = creation_status.new_logs
 
     await session.flush()
     await session.refresh(runtime)
@@ -199,49 +197,16 @@ async def update_runtime_status_background(runtime_id: UUID):
         if not runtime or runtime.creation_status != RuntimeCreationStatus.IN_PROGRESS:
             return
 
-        # Check Lambda status
-        lambda_status = get_lambda_deploy_status(str(runtime_id))
+        # Check status
+        runtime_impl = runtime_factory()
+        creation_status = await runtime_impl.get_runtime_status(str(runtime_id))
 
-        # Update runtime status and logs if needed
-        if lambda_status["success"]:
-            new_status = RuntimeCreationStatus(lambda_status["status"].lower())
+        if creation_status.status != runtime.creation_status:
+            runtime.creation_status = creation_status.status  # pyright: ignore[reportAttributeAccessIssue]
+            current_logs = runtime.creation_logs or []
+            runtime.creation_logs = current_logs + creation_status.new_logs
 
-            # Only update if status changed
-            if runtime.creation_status != new_status:
-                runtime.creation_status = new_status
-
-                # Add log entry
-                log_entry = {
-                    "timestamp": str(datetime.now(timezone.utc)),
-                    "message": f"Status updated to {new_status.value}",
-                    "level": "info",
-                    "lambda_state": lambda_status.get("lambda_state"),
-                    "last_update_status": lambda_status.get("last_update_status"),
-                }
-
-                # Add additional logs if available
-                if lambda_status.get("logs"):
-                    log_entry["lambda_logs"] = lambda_status["logs"]
-
-                current_logs = runtime.creation_logs or []
-                runtime.creation_logs = current_logs + [log_entry]
-
-                await session.commit()
-        else:
-            # Lambda check failed, update to FAILED if not already
-            if runtime.creation_status != RuntimeCreationStatus.FAILED:
-                runtime.creation_status = RuntimeCreationStatus.FAILED
-
-                log_entry = {
-                    "timestamp": str(datetime.now(timezone.utc)),
-                    "message": f"Lambda check failed: {lambda_status.get('logs', 'Unknown error')}",
-                    "level": "error",
-                }
-
-                current_logs = runtime.creation_logs or []
-                runtime.creation_logs = current_logs + [log_entry]
-
-                await session.commit()
+            await session.commit()
 
 
 @router.get("/{runtime_id}")
