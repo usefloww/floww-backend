@@ -15,13 +15,13 @@ class KubernetesRuntime(RuntimeI):
         runtime_config: RuntimeConfig,
     ) -> RuntimeCreationStatus:
         # runtimes are created on demand so no creation is needed
-        return RuntimeCreationStatus(status="completed", new_logs=[])
+        return RuntimeCreationStatus(status="COMPLETED", new_logs=[])
 
     async def get_runtime_status(
         self,
         runtime_id: str,
     ) -> RuntimeCreationStatus:
-        return RuntimeCreationStatus(status="completed", new_logs=[])
+        return RuntimeCreationStatus(status="COMPLETED", new_logs=[])
 
     async def invoke_trigger(
         self,

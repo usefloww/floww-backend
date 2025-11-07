@@ -31,6 +31,7 @@ dependencies = [
     "workos==5.32.0",
     "ipython==9.6.0",
     "aiodocker==0.22.2",
+    "argon2-cffi>=25.1.0",
 ]
 
 [dependency-groups]

@@ -18,6 +18,7 @@ from app.routes import (
     providers,
     runtimes,
     secrets,
+    service_accounts,
     webhooks,
     whoami,
     workflow_deployments,
@@ -166,6 +167,7 @@ api_router.include_router(provider_types.router)
 api_router.include_router(workflow_deployments.router)
 api_router.include_router(organizations.router)
 api_router.include_router(dev.router)
+api_router.include_router(service_accounts.router)
 app.include_router(docker_proxy.router)
 app.include_router(webhooks.router)
 app.include_router(admin_auth.router)

@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     String,
@@ -54,9 +55,9 @@ class WorkflowDeploymentStatus(Enum):
 
 
 class RuntimeCreationStatus(Enum):
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    FAILED = "failed"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
 
 
 class OrganizationRole(Enum):
@@ -65,14 +66,22 @@ class OrganizationRole(Enum):
     MEMBER = "member"
 
 
+class UserType(str, Enum):
+    HUMAN = "human"
+    SERVICE_ACCOUNT = "service_account"
+
+
 class User(Base):
     __tablename__ = "users"
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
-    workos_user_id: Mapped[str] = mapped_column(
-        String(255), unique=True, nullable=False
+    user_type: Mapped[UserType] = mapped_column(
+        SQLEnum(UserType), nullable=False, default=UserType.HUMAN
+    )
+    workos_user_id: Mapped[Optional[str]] = mapped_column(
+        String(255), unique=True, nullable=True
     )
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -210,6 +219,40 @@ class Namespace(Base):
         ),
         Index("idx_namespaces_user_owner", "user_owner_id"),
         Index("idx_namespaces_organization_owner", "organization_owner_id"),
+    )
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    prefix: Mapped[str] = mapped_column(Text, nullable=False)
+    """
+    the prefix is used to show the user a small part of the api key to identify it
+    it is not used for authentication. It shows the general prefix and then 3 characters of the actual key
+
+    - floww_sa_xxx
+    - floww_u_xxx
+    """
+    hashed_key: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    user_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "prefix", name="uq_user_api_key_prefix"),
     )
 
 
@@ -499,3 +542,37 @@ class Provider(Base):
         return self._repr(
             id=self.id, namespace_id=self.namespace_id, type=self.type, alias=self.alias
         )
+
+
+# class KeyValueStore(Base):
+#     __tablename__ = "key_value_stores"
+
+#     id: Mapped[UUID] = mapped_column(
+#         PGUUID(as_uuid=True), primary_key=True, default=uuid4
+#     )
+#     namespace_id: Mapped[UUID] = mapped_column(
+#         PGUUID(as_uuid=True), ForeignKey("namespaces.id", ondelete="CASCADE")
+#     )
+#     name: Mapped[str] = mapped_column(Text(), nullable=False)
+
+#     # Relationships
+#     namespace: Mapped["Namespace"] = relationship(back_populates="key_value_stores")
+#     items: Mapped[list["KeyValueStoreItem"]] = relationship(
+#         back_populates="key_value_store", cascade="all, delete-orphan"
+#     )
+
+
+# class KeyValueStoreItem(Base):
+#     __tablename__ = "key_value_store_items"
+
+#     id: Mapped[UUID] = mapped_column(
+#         PGUUID(as_uuid=True), primary_key=True, default=uuid4
+#     )
+#     key_value_store_id: Mapped[UUID] = mapped_column(
+#         PGUUID(as_uuid=True), ForeignKey("key_value_stores.id", ondelete="CASCADE")
+#     )
+#     key: Mapped[str] = mapped_column(Text(), nullable=False)
+#     value: Mapped[Any] = mapped_column(JSONB, nullable=False)
+
+#     # Relationships
+#     key_value_store: Mapped["KeyValueStore"] = relationship(back_populates="items")

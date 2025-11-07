@@ -169,7 +169,7 @@ async def create_runtime(
         ),
     )
 
-    runtime.creation_status = creation_status.status  # pyright: ignore[reportAttributeAccessIssue]
+    runtime.creation_status = RuntimeCreationStatus(creation_status.status)
     runtime.creation_logs = creation_status.new_logs
 
     await session.flush()
@@ -201,8 +201,8 @@ async def update_runtime_status_background(runtime_id: UUID):
         runtime_impl = runtime_factory()
         creation_status = await runtime_impl.get_runtime_status(str(runtime_id))
 
-        if creation_status.status != runtime.creation_status:
-            runtime.creation_status = creation_status.status  # pyright: ignore[reportAttributeAccessIssue]
+        if creation_status.status != runtime.creation_status.value:
+            runtime.creation_status = RuntimeCreationStatus(creation_status.status)
             current_logs = runtime.creation_logs or []
             runtime.creation_logs = current_logs + creation_status.new_logs
 
@@ -232,6 +232,6 @@ async def get_runtime(
     return {
         "id": str(runtime.id),
         "config": runtime.config,
-        "creation_status": runtime.creation_status.value,
+        "creation_status": runtime.creation_status.value.lower(),
         "creation_logs": runtime.creation_logs,
     }

@@ -10,9 +10,12 @@ from app.models import (
     Namespace,
     Organization,
     OrganizationMember,
+    OrganizationRole,
     Provider,
     Runtime,
     Secret,
+    User,
+    UserType,
     Workflow,
     WorkflowDeployment,
 )
@@ -48,6 +51,21 @@ def _namespace_filter(user_id):
 class UserAccessibleQuery:
     def __init__(self, user_id: UUID):
         self.user_id = user_id
+
+    def service_accounts(self):
+        return select(User).where(
+            User.user_type == UserType.SERVICE_ACCOUNT,
+            User.organization_memberships.any(
+                OrganizationMember.organization_id.in_(
+                    select(OrganizationMember.organization_id).where(
+                        OrganizationMember.user_id == self.user_id,
+                        OrganizationMember.role.in_(
+                            [OrganizationRole.ADMIN, OrganizationRole.OWNER]
+                        ),
+                    )
+                )
+            ),
+        )
 
     def namespaces(self):
         return select(Namespace).where(_namespace_filter(self.user_id))

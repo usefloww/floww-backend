@@ -34,7 +34,7 @@ class LambdaRuntime(RuntimeI):
             self.execution_role_arn,
         )
         return RuntimeCreationStatus(
-            status="in_progress",
+            status="IN_PROGRESS",
             new_logs=[
                 {
                     "timestamp": str(datetime.now(timezone.utc)),
@@ -50,7 +50,7 @@ class LambdaRuntime(RuntimeI):
     ) -> RuntimeCreationStatus:
         status = get_lambda_deploy_status(self.lambda_client, runtime_id)
         return RuntimeCreationStatus(
-            status=status["status"].lower(),
+            status=status["status"],
             new_logs=[
                 {
                     "timestamp": str(datetime.now(timezone.utc)),

@@ -177,7 +177,7 @@ async def create_workflow_deployment(
         # Convert TriggerMetadata to dict format
         triggers_metadata = [trigger.model_dump() for trigger in data.triggers]
 
-        # Sync provider-managed triggers
+        # Sync provider-managed triggers (raises HTTPException if any fail)
         provider_webhooks = await trigger_service.sync_triggers(
             workflow_id=data.workflow_id,
             namespace_id=workflow.namespace_id,

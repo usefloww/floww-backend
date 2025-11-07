@@ -1,3 +1,7 @@
+import secrets
+import string
+
+import argon2
 from cryptography.fernet import Fernet
 
 from app.settings import settings
@@ -31,3 +35,15 @@ def decrypt_secret(encrypted_value: str) -> str:
     f = Fernet(settings.ENCRYPTION_KEY.encode())
     decrypted = f.decrypt(encrypted_value.encode())
     return decrypted.decode()
+
+
+def generate_cryptographic_key(length: int) -> str:
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+def hash_api_key(value: str) -> str:
+    """No salt needed because entropy of api keys is high enough"""
+
+    hasher = argon2.PasswordHasher()
+    return hasher.hash(value)

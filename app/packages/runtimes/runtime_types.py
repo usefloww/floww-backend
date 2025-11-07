@@ -19,7 +19,7 @@ class RuntimeConfig(BaseModel):
 
 
 class RuntimeCreationStatus(BaseModel):
-    status: Literal["completed", "failed", "in_progress"]
+    status: Literal["COMPLETED", "FAILED", "IN_PROGRESS"]
     new_logs: list[dict]
 
 

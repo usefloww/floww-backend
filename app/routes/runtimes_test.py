@@ -38,7 +38,7 @@ async def test_create_runtime_success(client_a: UserClient):
             created_runtime["config"]["image_hash"]
             == runtime_data["config"]["image_hash"]
         )
-        assert created_runtime["creation_status"] == "in_progress"
+        assert created_runtime["creation_status"] == "IN_PROGRESS"
         assert created_runtime["creation_logs"] is not None
         assert len(created_runtime["creation_logs"]) >= 1
         assert (
@@ -115,7 +115,7 @@ async def test_get_runtime_basic(client_a: UserClient, session: AsyncSession):
     runtime_data = response.json()
     assert runtime_data["id"] == str(runtime.id)
     assert runtime_data["config"]["image_hash"] == "test-hash-latest"
-    assert runtime_data["creation_status"] == "completed"
+    assert runtime_data["creation_status"] == "COMPLETED"
     assert len(runtime_data["creation_logs"]) == 1
 
 
@@ -146,7 +146,7 @@ async def test_get_runtime_triggers_background_update(
     runtime_data = response.json()
     assert runtime_data["id"] == str(runtime.id)
     assert (
-        runtime_data["creation_status"] == "in_progress"
+        runtime_data["creation_status"] == "IN_PROGRESS"
     )  # Should be immediate response
     assert runtime_data["config"]["image_hash"] == "in-progress-hash-latest"
 
