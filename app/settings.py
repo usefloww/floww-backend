@@ -33,7 +33,7 @@ class KubernetesConfig(BaseSettings):
 
 
 class DatabaseConfig(BaseSettings):
-    DATABASE_URL: str = "postgresql+asyncpg://admin:secret@db:5432/postgres"
+    DATABASE_URL: str = "postgresql://admin:secret@db:5432/postgres"
     SESSION_SECRET_KEY: str = "floww-session-secret-change-in-production"
 
     # Secret encryption key (must be a valid Fernet key - 32 url-safe base64-encoded bytes)
@@ -63,6 +63,7 @@ class CentrifugoConfig(BaseSettings):
     CENTRIFUGO_PORT: int = 8000
     CENTRIFUGO_API_KEY: str = "floww-api-key-dev"
     CENTRIFUGO_JWT_SECRET: str = "floww-dev-jwt-secret-key-change-in-production"
+    CENTRIFUGO_PUBLIC_URL: str = "http://localhost:5001"  # Public URL for WebSocket connections
 
 
 class SingleOrgConfig(BaseSettings):

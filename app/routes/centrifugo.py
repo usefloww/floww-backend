@@ -4,7 +4,7 @@ import structlog
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.deps.auth import CurrentUser
+from app.deps.auth import CurrentUser, CurrentUserOptional
 from app.deps.db import SessionDep
 from app.models import Workflow
 from app.utils.query_helpers import UserAccessibleQuery

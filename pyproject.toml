@@ -32,6 +32,7 @@ dependencies = [
     "ipython==9.6.0",
     "aiodocker==0.22.2",
     "argon2-cffi>=25.1.0",
+    "websockets>=15.0.1",
 ]
 
 [dependency-groups]

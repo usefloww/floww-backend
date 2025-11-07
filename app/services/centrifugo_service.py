@@ -150,6 +150,7 @@ class CentrifugoService:
 
         event_data = {
             "type": "webhook",
+            "auth_token": webhook_data.get("auth_token"),
             "path": webhook_data.get("path"),
             "method": webhook_data.get("method"),
             "headers": webhook_data.get("headers", {}),
@@ -159,6 +160,7 @@ class CentrifugoService:
         }
 
         # Fire and forget - don't wait for response
+        print(event_data)
         await self.publish_to_channel(channel, event_data)
 
     async def close(self):

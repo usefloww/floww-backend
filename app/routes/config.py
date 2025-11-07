@@ -20,7 +20,7 @@ async def get_config():
         "jwks_uri": auth_config.jwks_uri,
     }
 
-    websocket_url = settings.PUBLIC_API_URL.replace("http://", "ws://").replace(
+    websocket_url = settings.CENTRIFUGO_PUBLIC_URL.replace("http://", "ws://").replace(
         "https://", "wss://"
     )
 

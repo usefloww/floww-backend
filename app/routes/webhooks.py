@@ -34,6 +34,9 @@ async def _execute_trigger(
 
     Returns result dict if successful, None if no active deployment.
     """
+    # Generate short-lived JWT token for this invocation
+    auth_token = WorkflowAuthService.generate_invocation_token(trigger.workflow)
+
     # Publish to dev channel (fire-and-forget for local development)
     trigger_metadata = {
         "provider_type": trigger.provider.type,
@@ -46,6 +49,7 @@ async def _execute_trigger(
         workflow_id=trigger.workflow_id,
         trigger_metadata=trigger_metadata,
         webhook_data={
+            "auth_token": auth_token,
             "path": normalized_path,
             "method": request.method,
             "headers": dict(request.headers),
@@ -72,9 +76,6 @@ async def _execute_trigger(
             workflow_id=str(trigger.workflow_id),
         )
         return None
-
-    # Generate short-lived JWT token for this invocation
-    auth_token = WorkflowAuthService.generate_invocation_token(deployment)
 
     runtime_impl = runtime_factory()
     await runtime_impl.invoke_trigger(

@@ -207,6 +207,9 @@ class Namespace(Base):
     providers: Mapped[list["Provider"]] = relationship(
         back_populates="namespace", cascade="all, delete-orphan"
     )
+    kv_tables: Mapped[list["KeyValueTable"]] = relationship(
+        back_populates="namespace", cascade="all, delete-orphan"
+    )
 
     @property
     def namespace_owner(self) -> Union["User", "Organization", None]:
@@ -338,6 +341,9 @@ class Workflow(Base):
         back_populates="workflow", cascade="all, delete-orphan"
     )
     triggers: Mapped[list["Trigger"]] = relationship(
+        back_populates="workflow", cascade="all, delete-orphan"
+    )
+    kv_table_permissions: Mapped[list["KeyValueTablePermission"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
     )
 
@@ -544,35 +550,100 @@ class Provider(Base):
         )
 
 
-# class KeyValueStore(Base):
-#     __tablename__ = "key_value_stores"
+class KeyValueTable(Base):
+    __tablename__ = "kv_tables"
 
-#     id: Mapped[UUID] = mapped_column(
-#         PGUUID(as_uuid=True), primary_key=True, default=uuid4
-#     )
-#     namespace_id: Mapped[UUID] = mapped_column(
-#         PGUUID(as_uuid=True), ForeignKey("namespaces.id", ondelete="CASCADE")
-#     )
-#     name: Mapped[str] = mapped_column(Text(), nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    namespace_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("namespaces.id", ondelete="CASCADE")
+    )
+    name: Mapped[str] = mapped_column(Text(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
 
-#     # Relationships
-#     namespace: Mapped["Namespace"] = relationship(back_populates="key_value_stores")
-#     items: Mapped[list["KeyValueStoreItem"]] = relationship(
-#         back_populates="key_value_store", cascade="all, delete-orphan"
-#     )
+    # Relationships
+    namespace: Mapped["Namespace"] = relationship(back_populates="kv_tables")
+    items: Mapped[list["KeyValueItem"]] = relationship(
+        back_populates="table", cascade="all, delete-orphan"
+    )
+    permissions: Mapped[list["KeyValueTablePermission"]] = relationship(
+        back_populates="table", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("namespace_id", "name", name="uq_namespace_table_name"),
+        Index("idx_kv_tables_namespace", "namespace_id"),
+    )
+
+    def __repr__(self):
+        return self._repr(
+            id=self.id, namespace_id=self.namespace_id, name=self.name
+        )
 
 
-# class KeyValueStoreItem(Base):
-#     __tablename__ = "key_value_store_items"
+class KeyValueTablePermission(Base):
+    __tablename__ = "kv_table_permissions"
 
-#     id: Mapped[UUID] = mapped_column(
-#         PGUUID(as_uuid=True), primary_key=True, default=uuid4
-#     )
-#     key_value_store_id: Mapped[UUID] = mapped_column(
-#         PGUUID(as_uuid=True), ForeignKey("key_value_stores.id", ondelete="CASCADE")
-#     )
-#     key: Mapped[str] = mapped_column(Text(), nullable=False)
-#     value: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    table_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("kv_tables.id", ondelete="CASCADE")
+    )
+    workflow_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("workflows.id", ondelete="CASCADE")
+    )
+    can_read: Mapped[bool] = mapped_column(default=True)
+    can_write: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
-#     # Relationships
-#     key_value_store: Mapped["KeyValueStore"] = relationship(back_populates="items")
+    # Relationships
+    table: Mapped["KeyValueTable"] = relationship(back_populates="permissions")
+    workflow: Mapped["Workflow"] = relationship(back_populates="kv_table_permissions")
+
+    __table_args__ = (
+        UniqueConstraint("table_id", "workflow_id", name="uq_table_workflow_permission"),
+        Index("idx_kv_permissions_table", "table_id"),
+        Index("idx_kv_permissions_workflow", "workflow_id"),
+    )
+
+    def __repr__(self):
+        return self._repr(
+            id=self.id, table_id=self.table_id, workflow_id=self.workflow_id,
+            can_read=self.can_read, can_write=self.can_write
+        )
+
+
+class KeyValueItem(Base):
+    __tablename__ = "kv_items"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    table_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("kv_tables.id", ondelete="CASCADE")
+    )
+    key: Mapped[str] = mapped_column(Text(), nullable=False)
+    value: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    table: Mapped["KeyValueTable"] = relationship(back_populates="items")
+
+    __table_args__ = (
+        UniqueConstraint("table_id", "key", name="uq_table_key"),
+        Index("idx_kv_items_table", "table_id"),
+        Index("idx_kv_items_table_key", "table_id", "key"),
+    )
+
+    def __repr__(self):
+        return self._repr(
+            id=self.id, table_id=self.table_id, key=self.key
+        )

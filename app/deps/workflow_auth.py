@@ -30,7 +30,7 @@ class WorkflowContext(BaseModel):
 
 
 async def get_workflow_context(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
 ) -> WorkflowContext:
     """
     Validate workflow JWT token and extract context.

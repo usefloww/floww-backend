@@ -11,7 +11,7 @@ from typing import Any
 
 import jwt
 
-from app.models import WorkflowDeployment
+from app.models import Workflow
 from app.settings import settings
 
 
@@ -20,22 +20,21 @@ class WorkflowAuthService:
 
     @staticmethod
     def generate_invocation_token(
-        deployment: WorkflowDeployment,
+        workflow: Workflow,
         invocation_id: str | None = None,
     ) -> str:
         """
         Generate a short-lived JWT token for a workflow invocation.
 
         Args:
-            deployment: The workflow deployment being invoked
+            workflow: The workflow being invoked
             invocation_id: Unique identifier for this invocation (generated if not provided)
 
         Returns:
             Signed JWT token string
 
         Token claims:
-            - sub: "deployment:<deployment_id>"
-            - deployment_id: UUID of the deployment
+            - sub: "workflow:<workflow_id>"
             - workflow_id: UUID of the workflow
             - namespace_id: UUID of the namespace
             - invocation_id: Unique identifier for this invocation
@@ -51,10 +50,9 @@ class WorkflowAuthService:
         expiration = now + timedelta(seconds=settings.WORKFLOW_JWT_EXPIRATION_SECONDS)
 
         payload = {
-            "sub": f"deployment:{deployment.id}",
-            "deployment_id": str(deployment.id),
-            "workflow_id": str(deployment.workflow_id),
-            "namespace_id": str(deployment.workflow.namespace_id),
+            "sub": f"workflow:{workflow.id}",
+            "workflow_id": str(workflow.id),
+            "namespace_id": str(workflow.namespace_id),
             "invocation_id": invocation_id,
             "iat": now,
             "exp": expiration,
