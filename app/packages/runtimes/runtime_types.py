@@ -11,6 +11,7 @@ class RuntimeWebhookPayload(BaseModel):
     body: Any
     query: dict
     params: dict
+    auth_token: str | None = None  # Short-lived JWT for workflow-to-backend auth
 
 
 class RuntimeConfig(BaseModel):

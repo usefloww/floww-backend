@@ -15,6 +15,7 @@ from app.models import (
 from app.packages.runtimes.runtime_types import RuntimeConfig, RuntimeWebhookPayload
 from app.services.centrifugo_service import centrifugo_service
 from app.services.providers.provider_registry import PROVIDER_TYPES_MAP
+from app.services.workflow_auth_service import WorkflowAuthService
 from app.utils.encryption import decrypt_secret
 
 router = APIRouter()
@@ -72,6 +73,9 @@ async def _execute_trigger(
         )
         return None
 
+    # Generate short-lived JWT token for this invocation
+    auth_token = WorkflowAuthService.generate_invocation_token(deployment)
+
     runtime_impl = runtime_factory()
     await runtime_impl.invoke_trigger(
         trigger_id=str(trigger.id),
@@ -87,6 +91,7 @@ async def _execute_trigger(
             query=dict(request.query_params),
             method=request.method,
             params=dict(request.query_params),
+            auth_token=auth_token,
         ),
     )
 

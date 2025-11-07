@@ -52,6 +52,11 @@ class AuthConfig(BaseSettings):
 
     JWT_ALGORITHM: str = "RS256"
 
+    # Workflow JWT settings (for workflow-to-backend authentication)
+    WORKFLOW_JWT_SECRET: str = "floww-workflow-jwt-secret-change-in-production"
+    WORKFLOW_JWT_ALGORITHM: str = "HS256"
+    WORKFLOW_JWT_EXPIRATION_SECONDS: int = 300  # 5 minutes
+
 
 class CentrifugoConfig(BaseSettings):
     CENTRIFUGO_HOST: str = "centrifugo"
@@ -79,7 +84,7 @@ class Settings(
     SingleOrgConfig,
     BaseSettings,
 ):
-    model_config = SettingsConfigDict(env_file=(".env", ".env.prod"))
+    model_config = SettingsConfigDict(env_file=(".env", ".env.prod", ".env.test"))
 
     @model_validator(mode="after")
     def validate_auth_type_none_requires_single_org(self):
