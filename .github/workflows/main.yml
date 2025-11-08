@@ -1,4 +1,4 @@
-name: Build and Push Docker Image
+name: main pipeline
 
 on:
   push:
@@ -98,60 +98,49 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
+      - name: Setup SSH Agent
+        run: |
+          eval $(ssh-agent -s)
+          ssh-add - <<< "${{ secrets.SERVER_PRIVATE_KEY }}"
+
       - name: Run Migrations
-        uses: sagebind/docker-swarm-deploy-action@v2
-        with:
-          remote_host: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
-          ssh_private_key: ${{ secrets.SERVER_PRIVATE_KEY }}
-          args: |
-            service create \
-              --name backend-staging-migration-${{ github.sha }} \
-              --network traefik-staging-net \
-              --secret staging_backend_database_password \
-              --secret staging_backend_encryption_key \
-              --env AUTH_CLIENT_ID="client_01K6QQP8Q721ZX1YM1PBV3EWMR" \
-              --env DATABASE_USER="admin" \
-              --env DATABASE_HOST="floww-db.c7qb5biyplcn.us-east-1.rds.amazonaws.com" \
-              --env DATABASE_PORT="5432" \
-              --env DATABASE_NAME="postgres_staging" \
-              --env DATABASE_PASSWORD_FILE="/run/secrets/staging_backend_database_password" \
-              --env ENCRYPTION_KEY_FILE="/run/secrets/staging_backend_encryption_key" \
-              --restart-condition none \
-              --detach \
-              ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
-              python -m alembic upgrade head
+        env:
+          DOCKER_HOST: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
+        run: |
+          docker service create \
+            --name backend-staging-migration-${{ github.sha }} \
+            --network traefik-staging-net \
+            --secret staging_backend_database_password \
+            --secret staging_backend_encryption_key \
+            --env AUTH_CLIENT_ID="client_01K6QQP8Q721ZX1YM1PBV3EWMR" \
+            --env DATABASE_USER="admin" \
+            --env DATABASE_HOST="floww-db.c7qb5biyplcn.us-east-1.rds.amazonaws.com" \
+            --env DATABASE_PORT="5432" \
+            --env DATABASE_NAME="postgres_staging" \
+            --env DATABASE_PASSWORD_FILE="/run/secrets/staging_backend_database_password" \
+            --env ENCRYPTION_KEY_FILE="/run/secrets/staging_backend_encryption_key" \
+            --restart-condition none \
+            --detach \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            python -m alembic upgrade head
 
-      - name: Wait for Migration Completion
-        uses: sagebind/docker-swarm-deploy-action@v2
-        with:
-          remote_host: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
-          ssh_private_key: ${{ secrets.SERVER_PRIVATE_KEY }}
-          args: |
-            exec bash -c '
-              timeout 180 bash -c '\''
-                while true; do
-                  STATE=$(docker service ps backend-staging-migration-${{ github.sha }} --format "{{.CurrentState}}" --no-trunc | head -n1)
-                  echo "Migration state: $STATE"
-                  if echo "$STATE" | grep -q "Complete"; then
-                    echo "Migrations completed successfully!"
-                    exit 0
-                  elif echo "$STATE" | grep -q "Failed"; then
-                    echo "Migrations failed!"
-                    docker service logs backend-staging-migration-${{ github.sha }}
-                    exit 1
-                  fi
-                  sleep 5
-                done
-              '\''
-            '
+          timeout 180 bash -c '
+            while true; do
+              STATE=$(docker service ps backend-staging-migration-${{ github.sha }} --format "{{.CurrentState}}" --no-trunc | head -n1)
+              echo "Migration state: $STATE"
+              if echo "$STATE" | grep -q "Complete"; then
+                echo "Migrations completed successfully!"
+                exit 0
+              elif echo "$STATE" | grep -q "Failed"; then
+                echo "Migrations failed!"
+                docker service logs backend-staging-migration-${{ github.sha }}
+                exit 1
+              fi
+              sleep 5
+            done
+          '
 
-      - name: Cleanup Migration Service
-        if: always()
-        uses: sagebind/docker-swarm-deploy-action@v2
-        with:
-          remote_host: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
-          ssh_private_key: ${{ secrets.SERVER_PRIVATE_KEY }}
-          args: service rm backend-staging-migration-${{ github.sha }}
+          docker service rm backend-staging-migration-${{ github.sha }}
 
   staging-deploy:
     needs: [staging-migrate, build-centrifugo]
@@ -170,12 +159,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Setup SSH Agent
+        run: |
+          eval $(ssh-agent -s)
+          ssh-add - <<< "${{ secrets.SERVER_PRIVATE_KEY }}"
+
       - name: Deploy to Staging Swarm
-        uses: sagebind/docker-swarm-deploy-action@v2
-        with:
-          remote_host: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
-          ssh_private_key: ${{ secrets.SERVER_PRIVATE_KEY }}
-          args: stack deploy --compose-file stacks/staging.yml floww-backend-staging --with-registry-auth
+        env:
+          DOCKER_HOST: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
+        run: |
+          docker stack deploy -c stacks/staging.yml floww-backend-staging --with-registry-auth
 
   production-migrate:
     needs: [staging-deploy]
@@ -184,60 +177,49 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
+      - name: Setup SSH Agent
+        run: |
+          eval $(ssh-agent -s)
+          ssh-add - <<< "${{ secrets.SERVER_PRIVATE_KEY }}"
+
       - name: Run Migrations
-        uses: sagebind/docker-swarm-deploy-action@v2
-        with:
-          remote_host: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
-          ssh_private_key: ${{ secrets.SERVER_PRIVATE_KEY }}
-          args: |
-            service create \
-              --name backend-migration-${{ github.sha }} \
-              --network traefik-net \
-              --secret backend_database_password \
-              --secret backend_encryption_key \
-              --env AUTH_CLIENT_ID="client_01K6QQP8Q721ZX1YM1PBV3EWMR" \
-              --env DATABASE_USER="admin" \
-              --env DATABASE_HOST="floww-db.c7qb5biyplcn.us-east-1.rds.amazonaws.com" \
-              --env DATABASE_PORT="5432" \
-              --env DATABASE_NAME="postgres" \
-              --env DATABASE_PASSWORD_FILE="/run/secrets/backend_database_password" \
-              --env ENCRYPTION_KEY_FILE="/run/secrets/backend_encryption_key" \
-              --restart-condition none \
-              --detach \
-              ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
-              python -m alembic upgrade head
+        env:
+          DOCKER_HOST: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
+        run: |
+          docker service create \
+            --name backend-migration-${{ github.sha }} \
+            --network traefik-net \
+            --secret backend_database_password \
+            --secret backend_encryption_key \
+            --env AUTH_CLIENT_ID="client_01K6QQP8Q721ZX1YM1PBV3EWMR" \
+            --env DATABASE_USER="admin" \
+            --env DATABASE_HOST="floww-db.c7qb5biyplcn.us-east-1.rds.amazonaws.com" \
+            --env DATABASE_PORT="5432" \
+            --env DATABASE_NAME="postgres" \
+            --env DATABASE_PASSWORD_FILE="/run/secrets/backend_database_password" \
+            --env ENCRYPTION_KEY_FILE="/run/secrets/backend_encryption_key" \
+            --restart-condition none \
+            --detach \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            python -m alembic upgrade head
 
-      - name: Wait for Migration Completion
-        uses: sagebind/docker-swarm-deploy-action@v2
-        with:
-          remote_host: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
-          ssh_private_key: ${{ secrets.SERVER_PRIVATE_KEY }}
-          args: |
-            exec bash -c '
-              timeout 180 bash -c '\''
-                while true; do
-                  STATE=$(docker service ps backend-migration-${{ github.sha }} --format "{{.CurrentState}}" --no-trunc | head -n1)
-                  echo "Migration state: $STATE"
-                  if echo "$STATE" | grep -q "Complete"; then
-                    echo "Migrations completed successfully!"
-                    exit 0
-                  elif echo "$STATE" | grep -q "Failed"; then
-                    echo "Migrations failed!"
-                    docker service logs backend-migration-${{ github.sha }}
-                    exit 1
-                  fi
-                  sleep 5
-                done
-              '\''
-            '
+          timeout 180 bash -c '
+            while true; do
+              STATE=$(docker service ps backend-migration-${{ github.sha }} --format "{{.CurrentState}}" --no-trunc | head -n1)
+              echo "Migration state: $STATE"
+              if echo "$STATE" | grep -q "Complete"; then
+                echo "Migrations completed successfully!"
+                exit 0
+              elif echo "$STATE" | grep -q "Failed"; then
+                echo "Migrations failed!"
+                docker service logs backend-migration-${{ github.sha }}
+                exit 1
+              fi
+              sleep 5
+            done
+          '
 
-      - name: Cleanup Migration Service
-        if: always()
-        uses: sagebind/docker-swarm-deploy-action@v2
-        with:
-          remote_host: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
-          ssh_private_key: ${{ secrets.SERVER_PRIVATE_KEY }}
-          args: service rm backend-migration-${{ github.sha }}
+          docker service rm backend-migration-${{ github.sha }}
 
   production-deploy:
     needs: [production-migrate, build-centrifugo]
@@ -256,9 +238,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Setup SSH Agent
+        run: |
+          eval $(ssh-agent -s)
+          ssh-add - <<< "${{ secrets.SERVER_PRIVATE_KEY }}"
+
       - name: Deploy to Production Swarm
-        uses: sagebind/docker-swarm-deploy-action@v2
-        with:
-          remote_host: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
-          ssh_private_key: ${{ secrets.SERVER_PRIVATE_KEY }}
-          args: stack deploy --compose-file stacks/production.yml floww-backend --with-registry-auth
+        env:
+          DOCKER_HOST: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
+        run: |
+          docker stack deploy -c stacks/production.yml floww-backend --with-registry-auth
