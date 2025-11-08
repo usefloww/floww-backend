@@ -3,14 +3,21 @@ from typing import List, Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep, TransactionSessionDep
-from app.models import Organization, OrganizationMember, OrganizationRole, User
+from app.models import (
+    Namespace,
+    Organization,
+    OrganizationMember,
+    OrganizationRole,
+    User,
+)
 from app.services.crud_helpers import CrudHelper
 from app.services.user_service import load_users_from_workos
 from app.settings import settings
@@ -103,7 +110,15 @@ async def create_organization(
     """Create a new organization."""
     check_single_org_mode()
     helper = helper_factory(current_user, session)
-    response = await helper.create_response(data)
+
+    try:
+        response = await helper.create_response(data)
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Organization with name '{data.name}' already exists",
+        )
 
     # Make the creator the owner
     membership = OrganizationMember(
@@ -112,6 +127,11 @@ async def create_organization(
         role=OrganizationRole.OWNER,
     )
     session.add(membership)
+    await session.flush()
+
+    # Create a namespace for the organization
+    namespace = Namespace(organization_owner_id=response.id)
+    session.add(namespace)
     await session.flush()
 
     return response

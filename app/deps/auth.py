@@ -15,6 +15,14 @@ from app.utils.session import get_jwt_from_session_cookie
 security = HTTPBearer(auto_error=False)
 
 
+def _credentials_exception(message: str):
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=message,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 async def get_current_user(
     request: Request,
     session: SessionDep,
@@ -22,12 +30,6 @@ async def get_current_user(
         Optional[HTTPAuthorizationCredentials], Depends(security)
     ] = None,
 ) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
     jwt_token = None
 
     if credentials and credentials.credentials:
@@ -38,7 +40,7 @@ async def get_current_user(
             jwt_token = get_jwt_from_session_cookie(session_cookie)
 
     if not jwt_token:
-        raise credentials_exception
+        raise _credentials_exception("No credentials provided")
 
     # Check if this is a service account API key
     if jwt_token.startswith("floww_sa_"):
@@ -52,7 +54,7 @@ async def get_current_user(
 
         # Verify it exists and is not revoked
         if not api_key or api_key.revoked_at is not None:
-            raise credentials_exception
+            raise _credentials_exception("Invalid API key")
 
         # Load the user (service account)
         user_query = select(User).where(User.id == api_key.user_id)
@@ -60,7 +62,7 @@ async def get_current_user(
         user = user_result.scalar_one_or_none()
 
         if not user:
-            raise credentials_exception
+            raise _credentials_exception("Invalid API key")
 
         structlog.contextvars.bind_contextvars(user_id=user.id)
         return user
@@ -71,10 +73,10 @@ async def get_current_user(
         structlog.contextvars.bind_contextvars(user_id=user.id)
         return user
     except HTTPException:
-        raise credentials_exception
+        raise _credentials_exception("Invalid JWT token")
     except Exception as e:
         print(f"Auth error: {e}")
-        raise credentials_exception
+        raise _credentials_exception("Authentication error")
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]

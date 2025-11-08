@@ -12,6 +12,7 @@ async def test_create_and_retrieve_organization(client_a: UserClient):
     created_organization = response.json()
     assert created_organization["name"] == "test-org"
     assert created_organization["display_name"] == "My Test Organization"
+    organization_id = created_organization["id"]
 
     # Test: Retrieve organizations and verify it appears
     response = await client_a.get("/api/organizations")
@@ -20,6 +21,20 @@ async def test_create_and_retrieve_organization(client_a: UserClient):
     organizations = response.json()["results"]
     assert len(organizations) == 1
     assert organizations[0]["name"] == "test-org"
+
+    # Test: Verify a namespace was automatically created for the organization
+    response = await client_a.get("/api/namespaces")
+    assert response.status_code == 200
+
+    namespaces = response.json()["results"]
+    org_namespaces = [
+        ns
+        for ns in namespaces
+        if ns.get("organization") and ns["organization"]["id"] == organization_id
+    ]
+    assert len(org_namespaces) == 1
+    assert org_namespaces[0]["organization"]["name"] == "test-org"
+    assert org_namespaces[0]["organization"]["display_name"] == "My Test Organization"
 
 
 async def test_list_organizations_returns_correct_structure(client_a: UserClient):
@@ -69,6 +84,21 @@ async def test_organizations_are_isolated_between_users(
 
     organizations = response.json()["results"]
     assert len(organizations) == 0
+
+
+async def test_create_duplicate_organization_name_returns_409(client_a: UserClient):
+    organization_data = {
+        "name": "duplicate-org",
+        "display_name": "Duplicate Organization",
+    }
+    # Create first organization
+    response = await client_a.post("/api/organizations", json=organization_data)
+    assert response.status_code == 200
+
+    # Try to create another organization with the same name
+    response = await client_a.post("/api/organizations", json=organization_data)
+    assert response.status_code == 409
+    assert "already exists" in response.json()["detail"].lower()
 
 
 async def test_update_and_delete_organization(client_a: UserClient):
