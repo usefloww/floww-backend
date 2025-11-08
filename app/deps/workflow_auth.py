@@ -23,7 +23,6 @@ security = HTTPBearer(auto_error=True)
 class WorkflowContext(BaseModel):
     """Context information extracted from a workflow JWT token."""
 
-    deployment_id: UUID
     workflow_id: UUID
     namespace_id: UUID
     invocation_id: str
@@ -45,12 +44,12 @@ async def get_workflow_context(
         HTTPException: 401 if token is invalid or expired
     """
     token = credentials.credentials
+    logger.warning(token)
 
     try:
         payload = WorkflowAuthService.validate_token(token)
 
         return WorkflowContext(
-            deployment_id=UUID(payload["deployment_id"]),
             workflow_id=UUID(payload["workflow_id"]),
             namespace_id=UUID(payload["namespace_id"]),
             invocation_id=payload["invocation_id"],

@@ -65,7 +65,7 @@ class WorkflowAuthService:
             settings.WORKFLOW_JWT_SECRET,
             algorithm=settings.WORKFLOW_JWT_ALGORITHM,
         )
-
+        print("token", token)
         return token
 
     @staticmethod
