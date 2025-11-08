@@ -82,8 +82,8 @@ services:
       - AUTH_ISSUER_URL=https://great-gradient-36-staging.authkit.app
       - AWS_REGION=us-east-1
       - RUNTIME_TYPE=docker
-      - DATABASE_USER=admin
-      - DATABASE_HOST=floww-db.c7qb5biyplcn.us-east-1.rds.amazonaws.com
+      - DATABASE_USER=postgres
+      - DATABASE_HOST=floww.cklmackcedxs.us-east-1.rds.amazonaws.com
       - DATABASE_PORT=5432
       - DATABASE_NAME=postgres
       - CENTRIFUGO_HOST=centrifugo_centrifugo

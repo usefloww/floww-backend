@@ -120,8 +120,8 @@ jobs:
             --secret staging_backend_database_password \
             --secret staging_backend_encryption_key \
             --env AUTH_CLIENT_ID="client_01K6QQP8Q721ZX1YM1PBV3EWMR" \
-            --env DATABASE_USER="admin" \
-            --env DATABASE_HOST="floww-db.c7qb5biyplcn.us-east-1.rds.amazonaws.com" \
+            --env DATABASE_USER="postgres" \
+            --env DATABASE_HOST="floww.cklmackcedxs.us-east-1.rds.amazonaws.com" \
             --env DATABASE_PORT="5432" \
             --env DATABASE_NAME="postgres_staging" \
             --env DATABASE_PASSWORD_FILE="/run/secrets/staging_backend_database_password" \
@@ -210,8 +210,8 @@ jobs:
             --secret backend_database_password \
             --secret backend_encryption_key \
             --env AUTH_CLIENT_ID="client_01K6QQP8Q721ZX1YM1PBV3EWMR" \
-            --env DATABASE_USER="admin" \
-            --env DATABASE_HOST="floww-db.c7qb5biyplcn.us-east-1.rds.amazonaws.com" \
+            --env DATABASE_USER="postgres" \
+            --env DATABASE_HOST="floww.cklmackcedxs.us-east-1.rds.amazonaws.com" \
             --env DATABASE_PORT="5432" \
             --env DATABASE_NAME="postgres" \
             --env DATABASE_PASSWORD_FILE="/run/secrets/backend_database_password" \
