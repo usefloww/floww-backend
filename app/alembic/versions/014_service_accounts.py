@@ -46,6 +46,7 @@ def upgrade():
             postgresql.ENUM(
                 "HUMAN", "SERVICE_ACCOUNT", name="usertype", create_type=False
             ),
+            server_default="HUMAN",
             nullable=False,
         ),
     )
