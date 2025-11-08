@@ -1,11 +1,11 @@
 import pytest
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps.auth import get_current_user
+from app.deps.auth import get_current_user, get_current_user_optional
 from app.deps.db import get_async_db, get_committed_db
 from app.main import app
 from app.models import Namespace, User
@@ -37,6 +37,7 @@ async def _get_personal_namespace(session: AsyncSession, user: User) -> Namespac
 
 
 async def mock_get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False)),
     session=Depends(get_async_db),
 ) -> User:
@@ -54,7 +55,7 @@ async def mock_get_current_user(
     if token.startswith("test_user"):
         return await get_or_create_user(session, token)
 
-    return await get_current_user(credentials, session)
+    return await get_current_user(request, session, credentials)
 
 
 @pytest.fixture(scope="function")
@@ -65,6 +66,7 @@ async def dependency_overrides(session: AsyncSession):
     app.dependency_overrides[get_async_db] = override_get_db
     app.dependency_overrides[get_committed_db] = override_get_db
     app.dependency_overrides[get_current_user] = mock_get_current_user
+    app.dependency_overrides[get_current_user_optional] = mock_get_current_user
     yield
     app.dependency_overrides.clear()
 

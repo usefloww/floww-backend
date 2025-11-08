@@ -3,7 +3,8 @@
     "allow": [
       "Read(//Users/rubenh/code/flows/flows-app/sdk/src/cli/auth/**)",
       "Read(//Users/rubenh/code/flows/flows-app/sdk/src/cli/config/**)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(just test-unit:*)"
     ],
     "deny": [],
     "ask": []

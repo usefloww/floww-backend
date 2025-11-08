@@ -18,7 +18,7 @@ from app.models import (
     UserType,
 )
 from app.utils.encryption import (
-    generate_cryptographic_key,
+    generate_api_key,
     hash_api_key,
 )
 from app.utils.query_helpers import UserAccessibleQuery
@@ -353,13 +353,13 @@ async def create_api_key(
         raise HTTPException(status_code=404, detail="Service account not found")
 
     # Generate a 32-byte cryptographic key
-    api_key = generate_cryptographic_key(32)
+    api_key, prefix = generate_api_key()
     hashed_api_key = hash_api_key(api_key)
 
     # Create the API key record
     api_key_record = ApiKey(
         name=data.name,
-        prefix=f"floww_sa_{api_key[:3]}",
+        prefix=prefix,
         hashed_key=hashed_api_key,
         user_id=service_account_id,
     )

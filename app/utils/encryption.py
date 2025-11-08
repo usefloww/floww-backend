@@ -6,6 +6,10 @@ from cryptography.fernet import Fernet
 
 from app.settings import settings
 
+_completely_irrelevant_salt = (
+    b"completely irrelevant salt because the entropy of the api key is high enough"
+)
+
 
 def encrypt_secret(value: str) -> str:
     """
@@ -46,4 +50,14 @@ def hash_api_key(value: str) -> str:
     """No salt needed because entropy of api keys is high enough"""
 
     hasher = argon2.PasswordHasher()
-    return hasher.hash(value)
+    return hasher.hash(value, salt=_completely_irrelevant_salt)
+
+
+def generate_api_key() -> tuple[str, str]:
+    """Generate a random API key."""
+    prepend_part = "floww_sa_"
+    random_key = generate_cryptographic_key(32)
+    prefix = f"{prepend_part}{random_key[:3]}"
+    api_key = f"{prepend_part}{random_key}"
+
+    return api_key, prefix
