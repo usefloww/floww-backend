@@ -5,7 +5,7 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
@@ -17,6 +17,7 @@ from app.models import (
     OrganizationMember,
     OrganizationRole,
     User,
+    UserType,
 )
 from app.services.crud_helpers import CrudHelper
 from app.services.user_service import load_users_from_workos
@@ -189,8 +190,14 @@ async def list_organization_members(
     # Get members with user information
     result = await session.execute(
         select(OrganizationMember)
+        .join(User)
         .options(joinedload(OrganizationMember.user))
-        .where(OrganizationMember.organization_id == organization_id)
+        .where(
+            and_(
+                OrganizationMember.organization_id == organization_id,
+                User.user_type == UserType.HUMAN,
+            )
+        )
         .order_by(OrganizationMember.created_at.desc())
     )
     members = result.scalars().all()

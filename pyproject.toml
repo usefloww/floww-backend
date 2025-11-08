@@ -33,7 +33,6 @@ dependencies = [
     "aiodocker==0.22.2",
     "argon2-cffi>=25.1.0",
     "websockets>=15.0.1",
-    "psycopg[binary]==3.2.12",
 ]
 
 [dependency-groups]

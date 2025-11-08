@@ -46,7 +46,7 @@ class DatabaseConfig(BaseSettings):
     @computed_field
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql+psycopg://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
+        return f"postgresql+asyncpg://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
 
 
 class AuthConfig(BaseSettings):
