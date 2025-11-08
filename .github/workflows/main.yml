@@ -100,6 +100,8 @@ jobs:
     steps:
       - name: Setup SSH Agent
         run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ vars.SERVER_HOST }} >> ~/.ssh/known_hosts
           eval $(ssh-agent -s)
           ssh-add - <<< "${{ secrets.SERVER_PRIVATE_KEY }}"
 
@@ -161,6 +163,8 @@ jobs:
 
       - name: Setup SSH Agent
         run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ vars.SERVER_HOST }} >> ~/.ssh/known_hosts
           eval $(ssh-agent -s)
           ssh-add - <<< "${{ secrets.SERVER_PRIVATE_KEY }}"
 
@@ -179,6 +183,8 @@ jobs:
     steps:
       - name: Setup SSH Agent
         run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ vars.SERVER_HOST }} >> ~/.ssh/known_hosts
           eval $(ssh-agent -s)
           ssh-add - <<< "${{ secrets.SERVER_PRIVATE_KEY }}"
 
@@ -240,6 +246,8 @@ jobs:
 
       - name: Setup SSH Agent
         run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ vars.SERVER_HOST }} >> ~/.ssh/known_hosts
           eval $(ssh-agent -s)
           ssh-add - <<< "${{ secrets.SERVER_PRIVATE_KEY }}"
 
