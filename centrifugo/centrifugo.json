@@ -1,4 +1,7 @@
 {
+  "health": {
+    "enabled": true
+  },
   "http_server": {
     "port": "8000"
   },
