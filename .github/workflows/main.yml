@@ -181,8 +181,45 @@ jobs:
         run: |
           docker stack deploy -c stacks/staging.yml floww-backend-staging --with-registry-auth
 
-  production-migrate:
+  integration-tests:
     needs: [staging-deploy]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    continue-on-error: true
+
+    steps:
+      - name: Checkout SDK repository
+        uses: actions/checkout@v4
+        with:
+          repository: usefloww/floww-sdk
+          path: floww-sdk
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: floww-sdk/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: floww-sdk
+        run: pnpm install --frozen-lockfile
+
+      - name: Run integration tests
+        working-directory: floww-sdk
+        env:
+          FLOWW_BACKEND_URL: https://api.flow.toondn.app
+          FLOWW_WEBSOCKET_URL: wss://wd.flow.toondn.app
+          FLOWW_TOKEN: ${{ secrets.FLOWW_TOKEN }}
+        run: pnpm test:ci:integration
+
+  production-migrate:
+    needs: [integration-tests]
     runs-on: ubuntu-latest
     environment: production
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
