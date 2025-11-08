@@ -111,8 +111,11 @@ jobs:
         env:
           DOCKER_HOST: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
         run: |
+          SHORT_SHA=${GITHUB_SHA:0:8}
+          SERVICE_NAME="backend-staging-migration-${SHORT_SHA}"
+
           docker service create \
-            --name backend-staging-migration-${{ github.sha }} \
+            --name ${SERVICE_NAME} \
             --network traefik-staging-net \
             --secret staging_backend_database_password \
             --secret staging_backend_encryption_key \
@@ -130,21 +133,21 @@ jobs:
 
           timeout 180 bash -c '
             while true; do
-              STATE=$(docker service ps backend-staging-migration-${{ github.sha }} --format "{{.CurrentState}}" --no-trunc | head -n1)
+              STATE=$(docker service ps '"${SERVICE_NAME}"' --format "{{.CurrentState}}" --no-trunc | head -n1)
               echo "Migration state: $STATE"
               if echo "$STATE" | grep -q "Complete"; then
                 echo "Migrations completed successfully!"
                 exit 0
               elif echo "$STATE" | grep -q "Failed"; then
                 echo "Migrations failed!"
-                docker service logs backend-staging-migration-${{ github.sha }}
+                docker service logs '"${SERVICE_NAME}"'
                 exit 1
               fi
               sleep 5
             done
           '
 
-          docker service rm backend-staging-migration-${{ github.sha }}
+          docker service rm ${SERVICE_NAME}
 
   staging-deploy:
     needs: [staging-migrate, build-centrifugo]
@@ -198,8 +201,11 @@ jobs:
         env:
           DOCKER_HOST: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
         run: |
+          SHORT_SHA=${GITHUB_SHA:0:8}
+          SERVICE_NAME="backend-migration-${SHORT_SHA}"
+
           docker service create \
-            --name backend-migration-${{ github.sha }} \
+            --name ${SERVICE_NAME} \
             --network traefik-net \
             --secret backend_database_password \
             --secret backend_encryption_key \
@@ -217,21 +223,21 @@ jobs:
 
           timeout 180 bash -c '
             while true; do
-              STATE=$(docker service ps backend-migration-${{ github.sha }} --format "{{.CurrentState}}" --no-trunc | head -n1)
+              STATE=$(docker service ps '"${SERVICE_NAME}"' --format "{{.CurrentState}}" --no-trunc | head -n1)
               echo "Migration state: $STATE"
               if echo "$STATE" | grep -q "Complete"; then
                 echo "Migrations completed successfully!"
                 exit 0
               elif echo "$STATE" | grep -q "Failed"; then
                 echo "Migrations failed!"
-                docker service logs backend-migration-${{ github.sha }}
+                docker service logs '"${SERVICE_NAME}"'
                 exit 1
               fi
               sleep 5
             done
           '
 
-          docker service rm backend-migration-${{ github.sha }}
+          docker service rm ${SERVICE_NAME}
 
   production-deploy:
     needs: [production-migrate, build-centrifugo]
