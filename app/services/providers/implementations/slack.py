@@ -79,11 +79,12 @@ class SlackProvider(ProviderI):
         Process Slack webhook and return list of triggers that should be executed.
 
         Filters events based on:
-        - Event type (only event_callback with message events)
+        - Event type (only event_callback with message or reaction_added events)
         - Bot messages (filtered out to prevent loops)
         - Message subtypes (only new messages and thread_broadcast)
         - Channel ID (if specified in trigger input)
         - User ID (if specified in trigger input)
+        - Reaction name (if specified in trigger input for reaction events)
         """
         webhook_data = (
             await request.json()
@@ -91,7 +92,7 @@ class SlackProvider(ProviderI):
             else {}
         )
 
-        # Only process message events
+        # Only process event callbacks
         if webhook_data.get("type") != "event_callback":
             logger.debug(
                 "Ignoring non-event_callback Slack webhook",
@@ -100,13 +101,27 @@ class SlackProvider(ProviderI):
             return []
 
         event = webhook_data.get("event", {})
-        if event.get("type") != "message":
-            logger.debug(
-                "Ignoring non-message Slack event",
-                event_type=event.get("type"),
-            )
-            return []
+        event_type = event.get("type")
 
+        # Handle message events
+        if event_type == "message":
+            return await self._process_message_event(event, triggers)
+
+        # Handle reaction_added events
+        if event_type == "reaction_added":
+            return await self._process_reaction_event(event, triggers)
+
+        # Ignore other event types
+        logger.debug(
+            "Ignoring unsupported Slack event type",
+            event_type=event_type,
+        )
+        return []
+
+    async def _process_message_event(
+        self, event: dict, triggers: list["Trigger"]
+    ) -> list["Trigger"]:
+        """Process message events and return matching triggers."""
         # Filter bot messages to avoid loops
         if event.get("bot_id") or event.get("subtype") == "bot_message":
             logger.debug("Ignoring bot message to prevent loops")
@@ -172,10 +187,75 @@ class SlackProvider(ProviderI):
             # This trigger matches!
             matching_triggers.append(trigger)
             logger.info(
-                "Slack event matched trigger",
+                "Slack message event matched trigger",
                 trigger_id=str(trigger.id),
                 channel=event.get("channel"),
                 user=event.get("user"),
+            )
+
+        return matching_triggers
+
+    async def _process_reaction_event(
+        self, event: dict, triggers: list["Trigger"]
+    ) -> list["Trigger"]:
+        """Process reaction_added events and return matching triggers."""
+        # Extract channel from item (reactions are on messages)
+        item = event.get("item", {})
+        channel = item.get("channel")
+
+        # Filter triggers based on their input configuration
+        matching_triggers = []
+        for trigger in triggers:
+            # Only process onReaction triggers
+            if trigger.trigger_type != "onReaction":
+                continue
+
+            trigger_input = trigger.input or {}
+
+            # Apply channel filter if specified
+            if trigger_input.get("channel_id") and channel != trigger_input.get(
+                "channel_id"
+            ):
+                logger.debug(
+                    "Reaction trigger channel filter mismatch",
+                    trigger_id=str(trigger.id),
+                    expected_channel=trigger_input.get("channel_id"),
+                    actual_channel=channel,
+                )
+                continue
+
+            # Apply user filter if specified (user who added the reaction)
+            if trigger_input.get("user_id") and event.get("user") != trigger_input.get(
+                "user_id"
+            ):
+                logger.debug(
+                    "Reaction trigger user filter mismatch",
+                    trigger_id=str(trigger.id),
+                    expected_user=trigger_input.get("user_id"),
+                    actual_user=event.get("user"),
+                )
+                continue
+
+            # Apply reaction name filter if specified
+            if trigger_input.get("reaction") and event.get(
+                "reaction"
+            ) != trigger_input.get("reaction"):
+                logger.debug(
+                    "Reaction trigger reaction name filter mismatch",
+                    trigger_id=str(trigger.id),
+                    expected_reaction=trigger_input.get("reaction"),
+                    actual_reaction=event.get("reaction"),
+                )
+                continue
+
+            # This trigger matches!
+            matching_triggers.append(trigger)
+            logger.info(
+                "Slack reaction event matched trigger",
+                trigger_id=str(trigger.id),
+                channel=channel,
+                user=event.get("user"),
+                reaction=event.get("reaction"),
             )
 
         return matching_triggers
@@ -300,7 +380,121 @@ class OnMessage(TriggerI[OnMessageInput, OnMessageState, SlackProvider]):
         return state
 
 
+#### OnReaction Trigger ####
+class OnReactionInput(BaseModel):
+    channel_id: str | None = None
+    user_id: str | None = None
+    reaction: str | None = None
+
+
+class OnReactionState(BaseModel):
+    channel_id: str | None = None
+    user_id: str | None = None
+    reaction: str | None = None
+    webhook_url: str
+
+
+class OnReaction(TriggerI[OnReactionInput, OnReactionState, SlackProvider]):
+    """
+    Trigger for Slack reaction_added events.
+
+    IMPORTANT: This trigger requires manual configuration in the Slack App dashboard:
+    1. Go to https://api.slack.com/apps and select your Slack app
+    2. Navigate to "Event Subscriptions" in the left sidebar
+    3. Toggle "Enable Events" to On
+    4. Set the "Request URL" to the webhook_url provided during trigger creation
+    5. Under "Subscribe to bot events", add the following event:
+       - reaction_added (a reaction was added to a message)
+    6. Click "Save Changes"
+    7. Reinstall your app to the workspace if prompted
+
+    Required OAuth Scopes (configure in "OAuth & Permissions"):
+    - reactions:read (view emoji reactions and their associated content)
+
+    Note: Slack will send a URL verification challenge to the webhook_url when you save
+    the Event Subscriptions configuration. The webhook handler must respond with the
+    challenge value to complete the setup.
+    """
+
+    async def create(
+        self,
+        provider: SlackProviderState,
+        input: OnReactionInput,
+        register_webhook,
+    ) -> OnReactionState:
+        """
+        Store the webhook configuration for Slack reaction events.
+
+        Since Slack Event Subscriptions are configured manually in the Slack App dashboard,
+        this method only stores the state. The actual webhook setup must be done manually
+        by configuring the Request URL in the Slack App's Event Subscriptions settings.
+
+        Args:
+            provider: Slack provider configuration (workspace_url, bot_token)
+            input: Filter configuration (channel_id, user_id, reaction)
+            register_webhook: Callback to register or reuse a webhook URL
+
+        Returns:
+            State containing the webhook configuration
+        """
+        webhook_registration = await register_webhook(
+            owner="provider", reuse_existing=True
+        )
+        webhook_url = webhook_registration["url"]
+
+        # No API call needed - Slack webhooks are configured manually in the app dashboard
+        # The webhook_url should be used to configure Event Subscriptions in Slack App settings
+        return OnReactionState(
+            channel_id=input.channel_id,
+            user_id=input.user_id,
+            reaction=input.reaction,
+            webhook_url=webhook_url,
+        )
+
+    async def destroy(
+        self,
+        provider: SlackProviderState,
+        input: OnReactionInput,
+        state: OnReactionState,
+    ) -> None:
+        """
+        Clean up the trigger state.
+
+        Since Slack Event Subscriptions are configured manually in the Slack App dashboard,
+        this method only cleans up the stored state. The Event Subscriptions configuration
+        will remain active in the Slack App until manually disabled.
+
+        Note: If multiple workflows use the same Slack app, you should NOT disable
+        Event Subscriptions when destroying one trigger.
+        """
+        # No API call needed - Event Subscriptions remain configured in Slack App
+        # The user can manually disable Event Subscriptions if needed
+        pass
+
+    async def refresh(
+        self,
+        provider: SlackProviderState,
+        input: OnReactionInput,
+        state: OnReactionState,
+    ) -> OnReactionState:
+        """
+        Verify the trigger state is still valid.
+
+        Since Slack Event Subscriptions are configured manually, we cannot programmatically
+        verify if the webhook is still active. We simply return the existing state.
+
+        In a production system, you might want to:
+        1. Call Slack's auth.test API to verify the bot token is still valid
+        2. Check if the configured channels/users still exist
+        3. Verify the app still has the required scopes
+        """
+        # No verification needed - return existing state
+        # In production, you could call Slack API to verify bot token and permissions
+        return state
+
+
 # Registry of Slack trigger types
 SLACK_TRIGGER_TYPES = {
     "onMessage": OnMessage,
+    "onReaction": OnReaction,
 }
