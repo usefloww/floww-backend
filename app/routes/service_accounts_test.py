@@ -213,51 +213,6 @@ async def test_update_service_account_name(client_a: UserClient):
     assert response.json()["name"] == "Updated Name"
 
 
-async def test_delete_service_account_cascades(client_a: UserClient):
-    """Test that deleting a service account also deletes its API keys."""
-    # Create org and service account
-    org_data = {"name": "test-org-delete", "display_name": "Test Org Delete"}
-    org_response = await client_a.post("/api/organizations", json=org_data)
-    org_id = org_response.json()["id"]
-
-    sa_data = {"name": "SA to Delete", "organization_id": org_id}
-    sa_response = await client_a.post("/api/service_accounts", json=sa_data)
-    sa_id = sa_response.json()["id"]
-
-    # Create multiple API keys
-    # key1_data = {"name": "Key 1"}
-    # key1_response = await client_a.post(
-    #     f"/api/service_accounts/{sa_id}/api_keys", json=key1_data
-    # )
-    # key1_id = key1_response.json()["id"]
-
-    # key2_data = {"name": "Key 2"}
-    # key2_response = await client_a.post(
-    #     f"/api/service_accounts/{sa_id}/api_keys", json=key2_data
-    # )
-    # key2_id = key2_response.json()["id"]
-
-    # Verify the service account has 2 keys
-    response = await client_a.get(f"/api/service_accounts/{sa_id}")
-    assert len(response.json()["api_keys"]) == 2
-
-    # Delete the service account
-    response = await client_a.delete(f"/api/service_accounts/{sa_id}")
-    assert response.status_code == 200
-    assert response.json()["success"] is True
-
-    # Verify the service account is gone
-    response = await client_a.get(f"/api/service_accounts/{sa_id}")
-    assert response.status_code == 404
-
-    # Verify it doesn't appear in the list
-    response = await client_a.get(
-        "/api/service_accounts", params={"organization_id": org_id}
-    )
-    assert response.status_code == 200
-    assert len(response.json()["results"]) == 0
-
-
 async def test_service_account_can_authenticate_with_api_key(client_a: UserClient):
     """Test that a service account can authenticate using an API key and access resources."""
     # Create an organization

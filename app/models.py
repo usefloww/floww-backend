@@ -251,7 +251,9 @@ class ApiKey(Base):
         DateTime(timezone=True), nullable=True
     )
     user_id: Mapped[Optional[UUID]] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
     )
 
     __table_args__ = (
@@ -580,9 +582,7 @@ class KeyValueTable(Base):
     )
 
     def __repr__(self):
-        return self._repr(
-            id=self.id, namespace_id=self.namespace_id, name=self.name
-        )
+        return self._repr(id=self.id, namespace_id=self.namespace_id, name=self.name)
 
 
 class KeyValueTablePermission(Base):
@@ -606,15 +606,20 @@ class KeyValueTablePermission(Base):
     workflow: Mapped["Workflow"] = relationship(back_populates="kv_table_permissions")
 
     __table_args__ = (
-        UniqueConstraint("table_id", "workflow_id", name="uq_table_workflow_permission"),
+        UniqueConstraint(
+            "table_id", "workflow_id", name="uq_table_workflow_permission"
+        ),
         Index("idx_kv_permissions_table", "table_id"),
         Index("idx_kv_permissions_workflow", "workflow_id"),
     )
 
     def __repr__(self):
         return self._repr(
-            id=self.id, table_id=self.table_id, workflow_id=self.workflow_id,
-            can_read=self.can_read, can_write=self.can_write
+            id=self.id,
+            table_id=self.table_id,
+            workflow_id=self.workflow_id,
+            can_read=self.can_read,
+            can_write=self.can_write,
         )
 
 
@@ -644,6 +649,4 @@ class KeyValueItem(Base):
     )
 
     def __repr__(self):
-        return self._repr(
-            id=self.id, table_id=self.table_id, key=self.key
-        )
+        return self._repr(id=self.id, table_id=self.table_id, key=self.key)
