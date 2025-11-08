@@ -103,7 +103,9 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ vars.SERVER_HOST }} >> ~/.ssh/known_hosts
           eval $(ssh-agent -s)
-          ssh-add - <<< "${{ secrets.SERVER_PRIVATE_KEY }}"
+          echo "${{ secrets.SERVER_PRIVATE_KEY }}" | ssh-add -
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
 
       - name: Run Migrations
         env:
@@ -166,7 +168,9 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ vars.SERVER_HOST }} >> ~/.ssh/known_hosts
           eval $(ssh-agent -s)
-          ssh-add - <<< "${{ secrets.SERVER_PRIVATE_KEY }}"
+          echo "${{ secrets.SERVER_PRIVATE_KEY }}" | ssh-add -
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
 
       - name: Deploy to Staging Swarm
         env:
@@ -186,7 +190,9 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ vars.SERVER_HOST }} >> ~/.ssh/known_hosts
           eval $(ssh-agent -s)
-          ssh-add - <<< "${{ secrets.SERVER_PRIVATE_KEY }}"
+          echo "${{ secrets.SERVER_PRIVATE_KEY }}" | ssh-add -
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
 
       - name: Run Migrations
         env:
@@ -249,7 +255,9 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ vars.SERVER_HOST }} >> ~/.ssh/known_hosts
           eval $(ssh-agent -s)
-          ssh-add - <<< "${{ secrets.SERVER_PRIVATE_KEY }}"
+          echo "${{ secrets.SERVER_PRIVATE_KEY }}" | ssh-add -
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
 
       - name: Deploy to Production Swarm
         env:
