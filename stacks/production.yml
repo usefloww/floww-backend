@@ -1,0 +1,191 @@
+version: "3.8"
+
+services:
+  centrifugo:
+    image: "ghcr.io/usefloww/floww-centrifugo:latest"
+
+    networks:
+      - traefik-net
+
+    secrets:
+      - backend_centrifugo_api_key
+
+    environment:
+      - CENTRIFUGO_API_KEY_FILE=/run/secrets/backend_centrifugo_api_key
+      - CENTRIFUGO_ADMIN_ENABLED=false
+      - CENTRIFUGO_ADMIN_INSECURE=false
+      - CENTRIFUGO_CONNECT_PROXY_ENDPOINT=http://floww-backend_app:8000/centrifugo/connect
+      - CENTRIFUGO_SUBSCRIBE_PROXY_ENDPOINT=http://floww-backend_app:8000/centrifugo/subscribe
+      - CENTRIFUGO_ALLOWED_ORIGINS=["https://usefloww.dev", "https://dashboard.usefloww.dev", "https://ws.usefloww.dev"]
+      - CENTRIFUGO_ALLOW_ANONYMOUS=true
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.centrifugo.rule=Host(`ws.usefloww.dev`)"
+        - "traefik.http.routers.centrifugo.entrypoints=websecure"
+        - "traefik.http.routers.centrifugo.tls.certresolver=myresolver"
+        - "traefik.http.services.centrifugo-service.loadbalancer.server.port=8000"
+
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  app:
+    image: "ghcr.io/usefloww/floww-backend:latest"
+
+    networks:
+      - traefik-net
+
+    secrets:
+      - backend_auth_client_secret
+      - backend_encryption_key
+      - backend_aws_access_key_id
+      - backend_aws_secret_access_key
+      - backend_database_password
+      - backend_session_secret_key
+      - backend_workflow_jwt_secret
+      - backend_centrifugo_api_key
+      - backend_centrifugo_jwt_secret
+
+    environment:
+      # Non-sensitive configuration
+      - AUTH_CLIENT_ID=client_01K6QQP8Q721ZX1YM1PBV3EWMR
+      - AUTH_ISSUER_URL=https://great-gradient-36-staging.authkit.app
+      - AWS_REGION=us-east-1
+      - RUNTIME_TYPE=docker
+      - DATABASE_USER=admin
+      - DATABASE_HOST=floww-db.c7qb5biyplcn.us-east-1.rds.amazonaws.com
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=postgres
+      - CENTRIFUGO_HOST=centrifugo_centrifugo
+      - CENTRIFUGO_PORT=8000
+      - CENTRIFUGO_PUBLIC_URL=https://ws.usefloww.dev
+      - PUBLIC_API_URL=https://api.usefloww.dev
+
+      # Secret file paths (read by updated settings.py)
+      - AUTH_CLIENT_SECRET_FILE=/run/secrets/backend_auth_client_secret
+      - ENCRYPTION_KEY_FILE=/run/secrets/backend_encryption_key
+      - AWS_ACCESS_KEY_ID_FILE=/run/secrets/backend_aws_access_key_id
+      - AWS_SECRET_ACCESS_KEY_FILE=/run/secrets/backend_aws_secret_access_key
+      - DATABASE_PASSWORD_FILE=/run/secrets/backend_database_password
+      - SESSION_SECRET_KEY_FILE=/run/secrets/backend_session_secret_key
+      - WORKFLOW_JWT_SECRET_FILE=/run/secrets/backend_workflow_jwt_secret
+      - CENTRIFUGO_API_KEY_FILE=/run/secrets/backend_centrifugo_api_key
+      - CENTRIFUGO_JWT_SECRET_FILE=/run/secrets/backend_centrifugo_jwt_secret
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+      labels:
+        - "traefik.enable=true"
+
+        # API Router - exclude /admin paths
+        - "traefik.http.routers.floww-backend-api.rule=Host(`api.usefloww.dev`) && !PathPrefix(`/admin`)"
+        - "traefik.http.routers.floww-backend-api.entrypoints=websecure"
+        - "traefik.http.routers.floww-backend-api.tls.certresolver=myresolver"
+        - "traefik.http.routers.floww-backend-api.service=floww-backend"
+
+        # Admin Router - admin subdomain
+        - "traefik.http.routers.floww-backend-admin.rule=Host(`admin.usefloww.dev`)"
+        - "traefik.http.routers.floww-backend-admin.entrypoints=websecure"
+        - "traefik.http.routers.floww-backend-admin.tls.certresolver=myresolver"
+        - "traefik.http.routers.floww-backend-admin.service=floww-backend"
+        - "traefik.http.routers.floww-backend-admin.middlewares=admin-redirect"
+
+        # Dashboard Router - /api and /auth paths on dashboard domain
+        - "traefik.http.routers.floww-backend-dashboard.rule=(Host(`dashboard.usefloww.dev`) && (PathPrefix(`/api`) || PathPrefix(`/auth`)))"
+        - "traefik.http.routers.floww-backend-dashboard.entrypoints=websecure"
+        - "traefik.http.routers.floww-backend-dashboard.tls.certresolver=myresolver"
+        - "traefik.http.routers.floww-backend-dashboard.service=floww-backend"
+
+        # Docker Registry Router - registry subdomain for /v2 endpoints
+        - "traefik.http.routers.floww-backend-registry.rule=Host(`registry.usefloww.dev`)"
+        - "traefik.http.routers.floww-backend-registry.entrypoints=websecure"
+        - "traefik.http.routers.floww-backend-registry.tls.certresolver=myresolver"
+        - "traefik.http.routers.floww-backend-registry.service=floww-backend"
+
+        # Admin redirect middleware - redirect root to /admin
+        - "traefik.http.middlewares.admin-redirect.redirectregex.regex=^https://admin\\.usefloww\\.dev/?$$"
+        - "traefik.http.middlewares.admin-redirect.redirectregex.replacement=https://admin.usefloww.dev/admin"
+        - "traefik.http.middlewares.admin-redirect.redirectregex.permanent=true"
+
+        # Service definition
+        - "traefik.http.services.floww-backend.loadbalancer.server.port=8000"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+secrets:
+  backend_auth_client_secret:
+    external: true
+  backend_encryption_key:
+    external: true
+  backend_aws_access_key_id:
+    external: true
+  backend_aws_secret_access_key:
+    external: true
+  backend_database_password:
+    external: true
+  backend_session_secret_key:
+    external: true
+  backend_workflow_jwt_secret:
+    external: true
+  backend_centrifugo_api_key:
+    external: true
+  backend_centrifugo_jwt_secret:
+    external: true
+
+networks:
+  traefik-net:
+    external: true

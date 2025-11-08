@@ -1,6 +1,11 @@
 #!/bin/sh
 set -e
 
+# Read API key from file if CENTRIFUGO_API_KEY_FILE is set
+if [ -n "$CENTRIFUGO_API_KEY_FILE" ] && [ -f "$CENTRIFUGO_API_KEY_FILE" ]; then
+    export CENTRIFUGO_API_KEY=$(cat "$CENTRIFUGO_API_KEY_FILE")
+fi
+
 # Set default values for environment variables if not provided
 export CENTRIFUGO_API_KEY="${CENTRIFUGO_API_KEY:-floww-api-key-dev}"
 export CENTRIFUGO_ADMIN_ENABLED="${CENTRIFUGO_ADMIN_ENABLED:-true}"

@@ -1,0 +1,191 @@
+version: "3.8"
+
+services:
+  centrifugo:
+    image: "ghcr.io/usefloww/floww-centrifugo:latest"
+
+    networks:
+      - traefik-staging-net
+
+    secrets:
+      - staging_backend_centrifugo_api_key
+
+    environment:
+      - CENTRIFUGO_API_KEY_FILE=/run/secrets/staging_backend_centrifugo_api_key
+      - CENTRIFUGO_ADMIN_ENABLED=true
+      - CENTRIFUGO_ADMIN_INSECURE=true
+      - CENTRIFUGO_CONNECT_PROXY_ENDPOINT=http://floww-backend-staging_app:8000/centrifugo/connect
+      - CENTRIFUGO_SUBSCRIBE_PROXY_ENDPOINT=http://floww-backend-staging_app:8000/centrifugo/subscribe
+      - CENTRIFUGO_ALLOWED_ORIGINS=["https://flow.toondn.app", "https://dashboard.flow.toondn.app", "https://ws.flow.toondn.app"]
+      - CENTRIFUGO_ALLOW_ANONYMOUS=true
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.centrifugo-staging.rule=Host(`ws.flow.toondn.app`)"
+        - "traefik.http.routers.centrifugo-staging.entrypoints=websecure"
+        - "traefik.http.routers.centrifugo-staging.tls.certresolver=myresolver"
+        - "traefik.http.services.centrifugo-staging-service.loadbalancer.server.port=8000"
+
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  app:
+    image: "ghcr.io/usefloww/floww-backend:latest"
+
+    networks:
+      - traefik-staging-net
+
+    secrets:
+      - staging_backend_auth_client_secret
+      - staging_backend_encryption_key
+      - staging_backend_aws_access_key_id
+      - staging_backend_aws_secret_access_key
+      - staging_backend_database_password
+      - staging_backend_session_secret_key
+      - staging_backend_workflow_jwt_secret
+      - staging_backend_centrifugo_api_key
+      - staging_backend_centrifugo_jwt_secret
+
+    environment:
+      # Non-sensitive configuration
+      - AUTH_CLIENT_ID=client_01K6QQP8Q721ZX1YM1PBV3EWMR
+      - AUTH_ISSUER_URL=https://great-gradient-36-staging.authkit.app
+      - AWS_REGION=us-east-1
+      - RUNTIME_TYPE=docker
+      - DATABASE_USER=admin
+      - DATABASE_HOST=floww-db.c7qb5biyplcn.us-east-1.rds.amazonaws.com
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=postgres_staging
+      - CENTRIFUGO_HOST=centrifugo-staging_centrifugo
+      - CENTRIFUGO_PORT=8000
+      - CENTRIFUGO_PUBLIC_URL=https://ws.flow.toondn.app
+      - PUBLIC_API_URL=https://api.flow.toondn.app
+
+      # Secret file paths (read by updated settings.py)
+      - AUTH_CLIENT_SECRET_FILE=/run/secrets/staging_backend_auth_client_secret
+      - ENCRYPTION_KEY_FILE=/run/secrets/staging_backend_encryption_key
+      - AWS_ACCESS_KEY_ID_FILE=/run/secrets/staging_backend_aws_access_key_id
+      - AWS_SECRET_ACCESS_KEY_FILE=/run/secrets/staging_backend_aws_secret_access_key
+      - DATABASE_PASSWORD_FILE=/run/secrets/staging_backend_database_password
+      - SESSION_SECRET_KEY_FILE=/run/secrets/staging_backend_session_secret_key
+      - WORKFLOW_JWT_SECRET_FILE=/run/secrets/staging_backend_workflow_jwt_secret
+      - CENTRIFUGO_API_KEY_FILE=/run/secrets/staging_backend_centrifugo_api_key
+      - CENTRIFUGO_JWT_SECRET_FILE=/run/secrets/staging_backend_centrifugo_jwt_secret
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+      labels:
+        - "traefik.enable=true"
+
+        # API Router - exclude /admin paths
+        - "traefik.http.routers.floww-backend-staging-api.rule=Host(`api.flow.toondn.app`) && !PathPrefix(`/admin`)"
+        - "traefik.http.routers.floww-backend-staging-api.entrypoints=websecure"
+        - "traefik.http.routers.floww-backend-staging-api.tls.certresolver=myresolver"
+        - "traefik.http.routers.floww-backend-staging-api.service=floww-backend-staging"
+
+        # Admin Router - admin subdomain
+        - "traefik.http.routers.floww-backend-staging-admin.rule=Host(`admin.flow.toondn.app`)"
+        - "traefik.http.routers.floww-backend-staging-admin.entrypoints=websecure"
+        - "traefik.http.routers.floww-backend-staging-admin.tls.certresolver=myresolver"
+        - "traefik.http.routers.floww-backend-staging-admin.service=floww-backend-staging"
+        - "traefik.http.routers.floww-backend-staging-admin.middlewares=admin-redirect-staging"
+
+        # Dashboard Router - /api and /auth paths on dashboard domain
+        - "traefik.http.routers.floww-backend-staging-dashboard.rule=(Host(`dashboard.flow.toondn.app`) && (PathPrefix(`/api`) || PathPrefix(`/auth`)))"
+        - "traefik.http.routers.floww-backend-staging-dashboard.entrypoints=websecure"
+        - "traefik.http.routers.floww-backend-staging-dashboard.tls.certresolver=myresolver"
+        - "traefik.http.routers.floww-backend-staging-dashboard.service=floww-backend-staging"
+
+        # Docker Registry Router - registry subdomain for /v2 endpoints
+        - "traefik.http.routers.floww-backend-staging-registry.rule=Host(`registry.flow.toondn.app`)"
+        - "traefik.http.routers.floww-backend-staging-registry.entrypoints=websecure"
+        - "traefik.http.routers.floww-backend-staging-registry.tls.certresolver=myresolver"
+        - "traefik.http.routers.floww-backend-staging-registry.service=floww-backend-staging"
+
+        # Admin redirect middleware - redirect root to /admin
+        - "traefik.http.middlewares.admin-redirect-staging.redirectregex.regex=^https://admin\\.flow\\.toondn\\.app/?$$"
+        - "traefik.http.middlewares.admin-redirect-staging.redirectregex.replacement=https://admin.flow.toondn.app/admin"
+        - "traefik.http.middlewares.admin-redirect-staging.redirectregex.permanent=true"
+
+        # Service definition
+        - "traefik.http.services.floww-backend-staging.loadbalancer.server.port=8000"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+secrets:
+  staging_backend_auth_client_secret:
+    external: true
+  staging_backend_encryption_key:
+    external: true
+  staging_backend_aws_access_key_id:
+    external: true
+  staging_backend_aws_secret_access_key:
+    external: true
+  staging_backend_database_password:
+    external: true
+  staging_backend_session_secret_key:
+    external: true
+  staging_backend_workflow_jwt_secret:
+    external: true
+  staging_backend_centrifugo_api_key:
+    external: true
+  staging_backend_centrifugo_jwt_secret:
+    external: true
+
+networks:
+  traefik-staging-net:
+    external: true

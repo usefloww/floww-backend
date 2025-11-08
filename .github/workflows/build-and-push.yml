@@ -54,21 +54,199 @@ jobs:
           build-args: |
             BUILDKIT_INLINE_CACHE=1
 
-  deploy:
-    needs: build-and-push
+  build-centrifugo:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Centrifugo
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/usefloww/floww-centrifugo
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Centrifugo image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./centrifugo
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy-staging:
+    needs: [build-and-push, build-centrifugo]
+    runs-on: ubuntu-latest
+    environment: staging
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ vars.SERVER_HOST }}
-          username: ${{ vars.SERVER_USER }}
-          key: ${{ secrets.SERVER_PRIVATE_KEY }}
-          script: |
-            cd /home/ec2-user/infrastructure/services/floww-backend
-            docker compose pull
-            docker compose up migrations
-            docker compose up -d
-            docker image prune -f
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ vars.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Setup Docker Context
+        run: |
+          docker context create remote --docker "host=ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}"
+          docker context use remote
+
+      - name: Deploy Staging Stack
+        run: |
+          docker stack deploy -c stacks/staging.yml floww-backend-staging --with-registry-auth
+
+      - name: Wait for Service Convergence
+        run: |
+          echo "Waiting for staging backend service to converge..."
+          timeout 300 bash -c '
+            until [ "$(docker service ls --filter name=floww-backend-staging_app --format "{{.Replicas}}")" == "1/1" ]; do
+              echo "Current state: $(docker service ls --filter name=floww-backend-staging_app --format "{{.Replicas}}")"
+              sleep 5
+            done
+          '
+
+      - name: Run Staging Migrations
+        run: |
+          docker service create \
+            --name backend-staging-migration-${{ github.sha }} \
+            --network traefik-staging-net \
+            --secret staging_backend_database_password \
+            --secret staging_backend_encryption_key \
+            --env AUTH_CLIENT_ID="client_01K6QQP8Q721ZX1YM1PBV3EWMR" \
+            --env DATABASE_USER="admin" \
+            --env DATABASE_HOST="floww-db.c7qb5biyplcn.us-east-1.rds.amazonaws.com" \
+            --env DATABASE_PORT="5432" \
+            --env DATABASE_NAME="postgres_staging" \
+            --env DATABASE_PASSWORD_FILE="/run/secrets/staging_backend_database_password" \
+            --env ENCRYPTION_KEY_FILE="/run/secrets/staging_backend_encryption_key" \
+            --restart-condition none \
+            --detach \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            python -m alembic upgrade head
+
+          timeout 180 bash -c '
+            while true; do
+              STATE=$(docker service ps backend-staging-migration-${{ github.sha }} --format "{{.CurrentState}}" --no-trunc | head -n1)
+              echo "Migration state: $STATE"
+              if echo "$STATE" | grep -q "Complete"; then
+                echo "Migrations completed successfully!"
+                exit 0
+              elif echo "$STATE" | grep -q "Failed"; then
+                echo "Migrations failed!"
+                docker service logs backend-staging-migration-${{ github.sha }}
+                exit 1
+              fi
+              sleep 5
+            done
+          '
+
+          docker service rm backend-staging-migration-${{ github.sha }}
+
+      - name: Verify Staging Deployment
+        run: |
+          docker service ps floww-backend-staging_app --no-trunc
+          docker service logs --tail 50 floww-backend-staging_app
+
+  deploy-production:
+    needs: [deploy-staging, build-centrifugo]
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ vars.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Setup Docker Context
+        run: |
+          docker context create remote --docker "host=ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}"
+          docker context use remote
+
+      - name: Deploy Production Stack
+        run: |
+          docker stack deploy -c stacks/production.yml floww-backend --with-registry-auth
+
+      - name: Wait for Service Convergence
+        run: |
+          echo "Waiting for production backend service to converge..."
+          timeout 300 bash -c '
+            until [ "$(docker service ls --filter name=floww-backend_app --format "{{.Replicas}}")" == "1/1" ]; do
+              echo "Current state: $(docker service ls --filter name=floww-backend_app --format "{{.Replicas}}")"
+              sleep 5
+            done
+          '
+
+      - name: Run Production Migrations
+        run: |
+          docker service create \
+            --name backend-migration-${{ github.sha }} \
+            --network traefik-net \
+            --secret backend_database_password \
+            --secret backend_encryption_key \
+            --env AUTH_CLIENT_ID="client_01K6QQP8Q721ZX1YM1PBV3EWMR" \
+            --env DATABASE_USER="admin" \
+            --env DATABASE_HOST="floww-db.c7qb5biyplcn.us-east-1.rds.amazonaws.com" \
+            --env DATABASE_PORT="5432" \
+            --env DATABASE_NAME="postgres" \
+            --env DATABASE_PASSWORD_FILE="/run/secrets/backend_database_password" \
+            --env ENCRYPTION_KEY_FILE="/run/secrets/backend_encryption_key" \
+            --restart-condition none \
+            --detach \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            python -m alembic upgrade head
+
+          timeout 180 bash -c '
+            while true; do
+              STATE=$(docker service ps backend-migration-${{ github.sha }} --format "{{.CurrentState}}" --no-trunc | head -n1)
+              echo "Migration state: $STATE"
+              if echo "$STATE" | grep -q "Complete"; then
+                echo "Migrations completed successfully!"
+                exit 0
+              elif echo "$STATE" | grep -q "Failed"; then
+                echo "Migrations failed!"
+                docker service logs backend-migration-${{ github.sha }}
+                exit 1
+              fi
+              sleep 5
+            done
+          '
+
+          docker service rm backend-migration-${{ github.sha }}
+
+      - name: Verify Production Deployment
+        run: |
+          docker service ps floww-backend_app --no-trunc
+          docker service logs --tail 50 floww-backend_app
+
+      - name: Cleanup Old Images
+        run: |
+          docker image prune -f
