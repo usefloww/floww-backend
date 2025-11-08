@@ -1,15 +1,18 @@
 import uuid
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Runtime, RuntimeCreationStatus
+from app.packages.runtimes.runtime_types import (
+    RuntimeCreationStatus as RuntimeCreationStatusResult,
+)
 from app.tests.fixtures_clients import UserClient
 
 
 async def test_create_runtime_success(client_a: UserClient):
     with (
-        patch("app.routes.runtimes.deploy_lambda_function") as mock_deploy,
+        patch("app.routes.runtimes.runtime_factory") as mock_runtime_factory,
         patch("app.routes.runtimes.get_image_uri") as mock_get_image_uri,
     ):
         # Mock image exists in ECR
@@ -17,10 +20,19 @@ async def test_create_runtime_success(client_a: UserClient):
             "123456789.dkr.ecr.us-east-1.amazonaws.com/trigger-lambda:test-hash"
         )
 
-        # Mock successful Lambda deployment
-        mock_deploy.return_value = (
-            None  # deploy_lambda_function doesn't return anything
+        # Mock runtime implementation
+        mock_runtime_impl = AsyncMock()
+        mock_runtime_impl.create_runtime.return_value = RuntimeCreationStatusResult(
+            status="IN_PROGRESS",
+            new_logs=[
+                {
+                    "timestamp": "2024-01-01T00:00:00Z",
+                    "message": "Lambda deployment initiated",
+                    "level": "info",
+                }
+            ],
         )
+        mock_runtime_factory.return_value = mock_runtime_impl
 
         import time
 
@@ -46,16 +58,15 @@ async def test_create_runtime_success(client_a: UserClient):
             in created_runtime["creation_logs"][0]["message"]
         )
 
-        # Verify the deploy function was called with runtime_id and image_uri
-        mock_deploy.assert_called_once()
-        call_args = mock_deploy.call_args
-        assert "runtime_id" in call_args.kwargs
-        assert "image_uri" in call_args.kwargs
+        # Verify the runtime factory was called
+        mock_runtime_factory.assert_called_once()
+        # Verify create_runtime was called on the runtime implementation
+        mock_runtime_impl.create_runtime.assert_called_once()
 
 
 async def test_create_runtime_returns_409_for_existing(client_a: UserClient):
     with (
-        patch("app.routes.runtimes.deploy_lambda_function") as mock_deploy,
+        patch("app.routes.runtimes.runtime_factory") as mock_runtime_factory,
         patch("app.routes.runtimes.get_image_uri") as mock_get_image_uri,
     ):
         # Mock image exists in ECR
@@ -63,8 +74,19 @@ async def test_create_runtime_returns_409_for_existing(client_a: UserClient):
             "123456789.dkr.ecr.us-east-1.amazonaws.com/trigger-lambda:duplicate-hash"
         )
 
-        # Mock successful Lambda deployment
-        mock_deploy.return_value = None
+        # Mock runtime implementation
+        mock_runtime_impl = AsyncMock()
+        mock_runtime_impl.create_runtime.return_value = RuntimeCreationStatusResult(
+            status="IN_PROGRESS",
+            new_logs=[
+                {
+                    "timestamp": "2024-01-01T00:00:00Z",
+                    "message": "Lambda deployment initiated",
+                    "level": "info",
+                }
+            ],
+        )
+        mock_runtime_factory.return_value = mock_runtime_impl
 
         runtime_data = {
             "config": {"image_hash": "duplicate-hash"},
@@ -86,8 +108,8 @@ async def test_create_runtime_returns_409_for_existing(client_a: UserClient):
         assert "runtime_id" in error_response["detail"]
         assert error_response["detail"]["runtime_id"] == runtime1["id"]
 
-        # Verify deploy was only called once (for the first creation)
-        assert mock_deploy.call_count == 1
+        # Verify create_runtime was only called once (for the first creation)
+        assert mock_runtime_impl.create_runtime.call_count == 1
 
 
 async def test_get_runtime_basic(client_a: UserClient, session: AsyncSession):
@@ -115,7 +137,7 @@ async def test_get_runtime_basic(client_a: UserClient, session: AsyncSession):
     runtime_data = response.json()
     assert runtime_data["id"] == str(runtime.id)
     assert runtime_data["config"]["image_hash"] == "test-hash-latest"
-    assert runtime_data["creation_status"] == "COMPLETED"
+    assert runtime_data["creation_status"] == "completed"
     assert len(runtime_data["creation_logs"]) == 1
 
 
@@ -146,7 +168,7 @@ async def test_get_runtime_triggers_background_update(
     runtime_data = response.json()
     assert runtime_data["id"] == str(runtime.id)
     assert (
-        runtime_data["creation_status"] == "IN_PROGRESS"
+        runtime_data["creation_status"] == "in_progress"
     )  # Should be immediate response
     assert runtime_data["config"]["image_hash"] == "in-progress-hash-latest"
 

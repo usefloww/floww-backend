@@ -6,10 +6,10 @@ from sqlalchemy.pool import NullPool
 from app.models import Base  # Replace with your actual imports
 from app.settings import settings
 
-pytest_plugins = [
-    "app.tests.fixtures_db",
-    "app.tests.fixtures_clients",
-]
+# pytest_plugins = [
+#     "app.tests.fixtures_db",
+#     "app.tests.fixtures_clients",
+# ]
 
 
 def get_test_database_url():

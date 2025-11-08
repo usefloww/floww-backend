@@ -11,6 +11,7 @@ from app.routes import (
     config,
     dev,
     docker_proxy,
+    executions,
     health,
     kv_store,
     namespaces,
@@ -170,6 +171,7 @@ api_router.include_router(organizations.router)
 api_router.include_router(dev.router)
 api_router.include_router(service_accounts.router)
 api_router.include_router(kv_store.router)
+api_router.include_router(executions.router)
 app.include_router(docker_proxy.router)
 app.include_router(webhooks.router)
 app.include_router(admin_auth.router)

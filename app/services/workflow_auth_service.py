@@ -91,3 +91,21 @@ class WorkflowAuthService:
         )
 
         return payload
+
+    @staticmethod
+    def verify_invocation_token(token: str) -> uuid.UUID:
+        """
+        Verify a workflow invocation token and return the workflow ID.
+
+        Args:
+            token: JWT token string to verify
+
+        Returns:
+            UUID of the workflow
+
+        Raises:
+            jwt.ExpiredSignatureError: Token has expired
+            jwt.InvalidTokenError: Token is invalid
+        """
+        payload = WorkflowAuthService.validate_token(token)
+        return uuid.UUID(payload["workflow_id"])

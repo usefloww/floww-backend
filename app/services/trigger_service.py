@@ -165,6 +165,7 @@ async def _refresh_trigger(session: AsyncSession, trigger: Trigger) -> None:
 
 async def _collect_webhooks(
     session: AsyncSession,
+    workflow_id: UUID,
     existing_map: dict[tuple, Trigger],
     new_map: dict[tuple, dict],
     added: set[tuple],
@@ -174,8 +175,15 @@ async def _collect_webhooks(
     webhooks_info = []
     seen_ids = set()
 
-    for identity in kept:
-        trigger = existing_map[identity]
+    all_current_triggers = await _load_existing_triggers(session, workflow_id)
+    current_trigger_map = await _build_identity_map(session, all_current_triggers)
+
+    # Collect webhooks from both kept and newly added triggers
+    for identity in kept | added:
+        trigger = current_trigger_map.get(identity)
+        if not trigger:
+            continue
+
         result = await session.execute(
             select(IncomingWebhook).where(
                 (IncomingWebhook.trigger_id == trigger.id)
@@ -369,7 +377,7 @@ class TriggerService:
             await _refresh_trigger(self.session, existing_map[identity])
 
         webhooks_info = await _collect_webhooks(
-            self.session, existing_map, new_map, to_add, to_keep
+            self.session, workflow_id, existing_map, new_map, to_add, to_keep
         )
 
         if errors:

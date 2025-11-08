@@ -71,6 +71,15 @@ class UserType(str, Enum):
     SERVICE_ACCOUNT = "service_account"
 
 
+class ExecutionStatus(str, Enum):
+    RECEIVED = "received"  # Webhook received, execution record created
+    STARTED = "started"  # Runtime invocation initiated
+    COMPLETED = "completed"  # Execution completed successfully
+    FAILED = "failed"  # Execution failed with error
+    TIMEOUT = "timeout"  # Execution timed out
+    NO_DEPLOYMENT = "no_deployment"  # No active deployment found
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -132,7 +141,7 @@ class Organization(Base):
         back_populates="organization", cascade="all, delete-orphan"
     )
     owned_namespaces: Mapped[list["Namespace"]] = relationship(
-        back_populates="organization_owner"
+        back_populates="organization_owner", cascade="all, delete-orphan"
     )
 
     def __repr__(self):
@@ -650,3 +659,63 @@ class KeyValueItem(Base):
 
     def __repr__(self):
         return self._repr(id=self.id, table_id=self.table_id, key=self.key)
+
+
+class ExecutionHistory(Base):
+    """
+    Minimal execution history tracking for workflow invocations.
+    All contextual data is retrieved via relationships to avoid duplication.
+    """
+
+    __tablename__ = "execution_history"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    workflow_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("workflows.id", ondelete="CASCADE")
+    )
+    trigger_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("triggers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    deployment_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workflow_deployments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    status: Mapped[ExecutionStatus] = mapped_column(
+        SQLEnum(ExecutionStatus), nullable=False, default=ExecutionStatus.RECEIVED
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_stack: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    workflow: Mapped["Workflow"] = relationship("Workflow")
+    trigger: Mapped[Optional["Trigger"]] = relationship("Trigger")
+    deployment: Mapped[Optional["WorkflowDeployment"]] = relationship(
+        "WorkflowDeployment"
+    )
+
+    __table_args__ = (
+        Index("idx_execution_history_workflow", "workflow_id"),
+        Index("idx_execution_history_trigger", "trigger_id"),
+        Index("idx_execution_history_deployment", "deployment_id"),
+        Index("idx_execution_history_status", "status"),
+        Index("idx_execution_history_received_at", "received_at"),
+        Index("idx_execution_history_workflow_status", "workflow_id", "status"),
+        Index("idx_execution_history_workflow_received", "workflow_id", "received_at"),
+    )
+
+    def __repr__(self):
+        return self._repr(id=self.id, workflow_id=self.workflow_id, status=self.status)

@@ -12,6 +12,7 @@ class RuntimeWebhookPayload(BaseModel):
     query: dict
     params: dict
     auth_token: str | None = None  # Short-lived JWT for workflow-to-backend auth
+    execution_id: str | None = None  # Execution history record ID
 
 
 class RuntimeConfig(BaseModel):

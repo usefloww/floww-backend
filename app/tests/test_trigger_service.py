@@ -2,6 +2,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
+from fastapi import HTTPException
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -372,7 +373,7 @@ async def test_sync_triggers_provider_not_found(session):
 
     trigger_service = TriggerService(session)
 
-    with pytest.raises(ValueError, match="Provider gitlab:nonexistent not found"):
+    with pytest.raises(HTTPException, match="Provider gitlab:nonexistent not found"):
         await trigger_service.sync_triggers(
             workflow_id=workflow_id,
             namespace_id=namespace_id,

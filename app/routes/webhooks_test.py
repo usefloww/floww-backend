@@ -61,7 +61,7 @@ async def trigger(workflow: Workflow, provider: Provider, session: AsyncSession)
 async def incoming_webhook(trigger: Trigger, session: AsyncSession):
     webhook = IncomingWebhook(
         trigger_id=trigger.id,
-        path="/test-webhook-path",
+        path="/webhook/test-webhook-path",  # Full path with /webhook prefix
         method="POST",
     )
     session.add(webhook)
@@ -113,9 +113,9 @@ async def test_webhook_not_found(client_a: UserClient):
     "app.routes.webhooks.centrifugo_service.publish_dev_webhook_event",
     new_callable=AsyncMock,
 )
-@patch("app.routes.webhooks.run_user_code")
+@patch("app.routes.webhooks.runtime_factory")
 async def test_webhook_successful_invocation(
-    mock_run_user_code,
+    mock_runtime_factory,
     mock_centrifugo,
     client_a: UserClient,
     session: AsyncSession,
@@ -123,8 +123,10 @@ async def test_webhook_successful_invocation(
     active_deployment: WorkflowDeployment,
 ):
     """Test successful webhook invocation with active deployment."""
-    # Mock successful Lambda invocation
-    mock_run_user_code.return_value = {"success": True}
+    # Mock runtime implementation
+    mock_runtime_impl = AsyncMock()
+    mock_runtime_impl.invoke_trigger.return_value = None
+    mock_runtime_factory.return_value = mock_runtime_impl
 
     # Test webhook payload
     webhook_payload = {
@@ -150,15 +152,16 @@ async def test_webhook_successful_invocation(
     centrifugo_args = mock_centrifugo.call_args[1]
     assert centrifugo_args["workflow_id"] == incoming_webhook.trigger.workflow_id
     assert centrifugo_args["webhook_data"]["body"] == webhook_payload
-    assert centrifugo_args["webhook_data"]["path"] == "/test-webhook-path"
+    assert centrifugo_args["webhook_data"]["path"] == "/webhook/test-webhook-path"
     assert centrifugo_args["webhook_data"]["method"] == "POST"
 
-    # Verify Lambda was invoked
-    mock_run_user_code.assert_called_once()
-    run_user_code_args = mock_run_user_code.call_args[1]
-    assert run_user_code_args["runtime_id"] == str(active_deployment.runtime_id)
-    assert run_user_code_args["event_payload"]["triggerType"] == "webhook"
-    assert run_user_code_args["event_payload"]["body"] == webhook_payload
+    # Verify runtime factory was called
+    mock_runtime_factory.assert_called_once()
+    # Verify invoke_trigger was called on the runtime implementation
+    mock_runtime_impl.invoke_trigger.assert_called_once()
+    invoke_trigger_args = mock_runtime_impl.invoke_trigger.call_args[1]
+    assert invoke_trigger_args["trigger_id"] == str(incoming_webhook.trigger.id)
+    assert invoke_trigger_args["payload"].body == webhook_payload
 
 
 @patch(
@@ -171,7 +174,7 @@ async def test_webhook_no_active_deployment(
     session: AsyncSession,
     incoming_webhook: IncomingWebhook,
 ):
-    """Test webhook returns 503 when no active deployment exists."""
+    """Test webhook returns 200 when no active deployment exists (only dev mode)."""
     webhook_payload = {"test": "data"}
 
     response = await client_a.post(
@@ -180,8 +183,8 @@ async def test_webhook_no_active_deployment(
         headers={"content-type": "application/json"},
     )
 
-    assert response.status_code == 503
-    assert response.json() == {"error": "No active deployment found"}
+    assert response.status_code == 200
+    assert response.json() == {"message": "No active deployment found, only sent to dev mode."}
 
     # Verify Centrifugo was still called for dev webhook event
     mock_centrifugo.assert_called_once()

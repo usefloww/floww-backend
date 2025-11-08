@@ -1,3 +1,5 @@
+from uuid import UUID
+
 import structlog
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -14,6 +16,11 @@ from app.models import (
 )
 from app.packages.runtimes.runtime_types import RuntimeConfig, RuntimeWebhookPayload
 from app.services.centrifugo_service import centrifugo_service
+from app.services.execution_history_service import (
+    create_execution_record,
+    update_execution_no_deployment,
+    update_execution_started,
+)
 from app.services.providers.provider_registry import PROVIDER_TYPES_MAP
 from app.services.workflow_auth_service import WorkflowAuthService
 from app.utils.encryption import decrypt_secret
@@ -28,6 +35,7 @@ async def _execute_trigger(
     trigger: Trigger,
     normalized_path: str,
     webhook_data: dict,
+    execution_id: UUID,
 ) -> dict | None:
     """
     Execute a single trigger by invoking its Lambda deployment.
@@ -70,12 +78,18 @@ async def _execute_trigger(
     deployment = deployment_result.scalar_one_or_none()
 
     if not deployment:
+        # Update execution history: no deployment found
+        await update_execution_no_deployment(session, execution_id)
         logger.warning(
             "No active deployment found for trigger",
             trigger_id=str(trigger.id),
             workflow_id=str(trigger.workflow_id),
+            execution_id=str(execution_id),
         )
         return None
+
+    # Update execution history: started
+    await update_execution_started(session, execution_id, deployment.id)
 
     runtime_impl = runtime_factory()
     await runtime_impl.invoke_trigger(
@@ -93,12 +107,14 @@ async def _execute_trigger(
             method=request.method,
             params=dict(request.query_params),
             auth_token=auth_token,
+            execution_id=str(execution_id),
         ),
     )
 
     return {
         "trigger_id": str(trigger.id),
         "workflow_id": str(trigger.workflow_id),
+        "execution_id": str(execution_id),
         "status": "invoked",
     }
 
@@ -260,8 +276,15 @@ async def _handle_provider_webhook(
     # Execute all matching triggers
     results = []
     for trigger in matching_triggers:
+        # Create execution record for this trigger (minimal)
+        execution = await create_execution_record(
+            session=session,
+            workflow_id=trigger.workflow_id,
+            trigger_id=trigger.id,
+        )
+
         result = await _execute_trigger(
-            session, request, trigger, normalized_path, webhook_data
+            session, request, trigger, normalized_path, webhook_data, execution.id
         )
         if result:
             results.append(result)
@@ -291,9 +314,16 @@ async def _handle_trigger_webhook(
         trigger_id=str(trigger.id),
     )
 
-    # Execute the trigger
+    # Create execution history record (minimal - just IDs and status)
+    execution = await create_execution_record(
+        session=session,
+        workflow_id=trigger.workflow_id,
+        trigger_id=trigger.id,
+    )
+
+    # Execute the trigger with execution tracking
     result = await _execute_trigger(
-        session, request, trigger, normalized_path, webhook_data
+        session, request, trigger, normalized_path, webhook_data, execution.id
     )
 
     if not result:
