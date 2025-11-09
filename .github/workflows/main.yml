@@ -214,7 +214,7 @@ jobs:
         working-directory: floww-sdk
         env:
           FLOWW_BACKEND_URL: https://api.flow.toondn.app
-          FLOWW_WEBSOCKET_URL: wss://wd.flow.toondn.app
+          FLOWW_WEBSOCKET_URL: wss://ws.flow.toondn.app
           FLOWW_TOKEN: ${{ secrets.FLOWW_TOKEN }}
         run: pnpm test:ci:integration
 
