@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 from app.deps.db import SessionDep
 from app.models import User
-from app.utils.auth import get_user_from_token
+from app.utils.auth import get_user_from_api_key, get_user_from_token
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -47,14 +47,14 @@ async def get_docker_user(
     request: Request,
     session: SessionDep,
 ) -> User:
-    """Extract and validate WorkOS token from Docker Basic Auth.
+    """Extract and validate authentication token from Docker Basic Auth.
 
     Docker CLI sends credentials as:
         Authorization: Basic base64(username:password)
 
     We expect:
         username: any value (typically "token" or user email)
-        password: WorkOS JWT token
+        password: WorkOS JWT token OR API key (starting with 'floww_sa_')
 
     Returns:
         Authenticated User object
@@ -113,14 +113,25 @@ async def get_docker_user(
             },
         )
 
-    # Validate WorkOS token
+    # Validate token (API key or WorkOS JWT)
     try:
-        user = await get_user_from_token(session, workos_token)
-        logger.info(
-            "Docker authentication successful",
-            user_id=str(user.id),
-            username=username,
-        )
+        # Check if this is a service account API key
+        if workos_token.startswith("floww_sa_"):
+            user = await get_user_from_api_key(session, workos_token)
+            logger.info(
+                "Docker authentication successful (API key)",
+                user_id=str(user.id),
+                username=username,
+            )
+        else:
+            # Otherwise, validate as WorkOS JWT token
+            user = await get_user_from_token(session, workos_token)
+            logger.info(
+                "Docker authentication successful (JWT)",
+                user_id=str(user.id),
+                username=username,
+            )
+
         structlog.contextvars.bind_contextvars(user_id=user.id)
         return user
 

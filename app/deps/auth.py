@@ -6,10 +6,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 
 from app.deps.db import SessionDep
-from app.models import ApiKey, User
+from app.models import User
 from app.settings import settings
-from app.utils.auth import get_user_from_token
-from app.utils.encryption import hash_api_key
+from app.utils.auth import get_user_from_api_key, get_user_from_token
 from app.utils.session import get_jwt_from_session_cookie
 
 security = HTTPBearer(auto_error=False)
@@ -44,28 +43,12 @@ async def get_current_user(
 
     # Check if this is a service account API key
     if jwt_token.startswith("floww_sa_"):
-        # Hash the API key
-        hashed_key = hash_api_key(jwt_token)
-
-        # Look up the API key in the database
-        api_key_query = select(ApiKey).where(ApiKey.hashed_key == hashed_key)
-        result = await session.execute(api_key_query)
-        api_key = result.scalar_one_or_none()
-
-        # Verify it exists and is not revoked
-        if not api_key or api_key.revoked_at is not None:
+        try:
+            user = await get_user_from_api_key(session, jwt_token)
+            structlog.contextvars.bind_contextvars(user_id=user.id)
+            return user
+        except HTTPException:
             raise _credentials_exception("Invalid API key")
-
-        # Load the user (service account)
-        user_query = select(User).where(User.id == api_key.user_id)
-        user_result = await session.execute(user_query)
-        user = user_result.scalar_one_or_none()
-
-        if not user:
-            raise _credentials_exception("Invalid API key")
-
-        structlog.contextvars.bind_contextvars(user_id=user.id)
-        return user
 
     # Otherwise, try JWT authentication
     try:
