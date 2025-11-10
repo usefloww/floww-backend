@@ -18,26 +18,59 @@ from app.utils.encryption import decrypt_secret, encrypt_secret
 logger = structlog.get_logger(__name__)
 
 
-async def _ensure_builtin_provider(session: AsyncSession, namespace_id: UUID) -> None:
+async def _ensure_provider_exists(
+    session: AsyncSession, namespace_id: UUID, provider_type: str, provider_alias: str
+) -> None:
+    """
+    Ensure a provider exists, auto-creating it if:
+    1. It doesn't exist
+    2. The provider type has no setup steps (like builtin, kvstore)
+    """
+    # Check if provider already exists
     result = await session.execute(
         select(Provider).where(
             Provider.namespace_id == namespace_id,
-            Provider.type == "builtin",
-            Provider.alias == "default",
+            Provider.type == provider_type,
+            Provider.alias == provider_alias,
         )
     )
 
-    if not result.scalar_one_or_none():
-        session.add(
-            Provider(
-                namespace_id=namespace_id,
-                type="builtin",
-                alias="default",
-                encrypted_config=encrypt_secret("{}"),
-            )
+    if result.scalar_one_or_none():
+        return  # Provider already exists
+
+    # Check if this provider type requires setup
+    provider_class = PROVIDER_TYPES_MAP.get(provider_type)
+    if not provider_class:
+        logger.warning(f"Unknown provider type: {provider_type}")
+        return
+
+    # Only auto-create providers with no setup steps
+    if len(provider_class.setup_steps) > 0:
+        logger.warning(
+            f"Provider {provider_type}:{provider_alias} requires setup and cannot be auto-created"
         )
-        await session.flush()
-        logger.info("Auto-created builtin provider", namespace_id=str(namespace_id))
+        return
+
+    # Auto-create the provider
+    session.add(
+        Provider(
+            namespace_id=namespace_id,
+            type=provider_type,
+            alias=provider_alias,
+            encrypted_config=encrypt_secret("{}"),
+        )
+    )
+    await session.flush()
+    logger.info(
+        f"Auto-created {provider_type} provider",
+        namespace_id=str(namespace_id),
+        alias=provider_alias,
+    )
+
+
+async def _ensure_builtin_provider(session: AsyncSession, namespace_id: UUID) -> None:
+    """Legacy function - redirects to _ensure_provider_exists"""
+    await _ensure_provider_exists(session, namespace_id, "builtin", "default")
 
 
 async def _load_existing_triggers(
@@ -323,6 +356,7 @@ class TriggerService:
         Sync triggers for a workflow.
         Returns list of webhook info for created/existing webhooks.
         """
+        # Ensure builtin provider exists (legacy compatibility)
         await _ensure_builtin_provider(self.session, namespace_id)
 
         existing_triggers = await _load_existing_triggers(self.session, workflow_id)
@@ -331,6 +365,15 @@ class TriggerService:
             for t in new_triggers_metadata
             if t.get("provider_type") and t.get("provider_alias")
         ]
+
+        # Auto-create any providers with no setup steps that don't exist yet
+        unique_providers = {
+            (t["provider_type"], t["provider_alias"]) for t in new_triggers
+        }
+        for provider_type, provider_alias in unique_providers:
+            await _ensure_provider_exists(
+                self.session, namespace_id, provider_type, provider_alias
+            )
 
         existing_map = await _build_identity_map(self.session, existing_triggers)
         new_map = {_trigger_identity(t): t for t in new_triggers}

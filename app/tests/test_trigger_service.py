@@ -379,3 +379,95 @@ async def test_sync_triggers_provider_not_found(session):
             namespace_id=namespace_id,
             new_triggers_metadata=triggers_metadata,
         )
+
+
+@pytest.mark.asyncio
+async def test_auto_create_kvstore_provider(session):
+    """Test that KVStore provider is auto-created when it doesn't exist."""
+    user_id, namespace_id = await create_test_namespace(session)
+    workflow_id = await create_test_workflow(session, namespace_id, user_id)
+
+    # Verify kvstore provider doesn't exist yet
+    result = await session.execute(
+        select(Provider).where(
+            Provider.namespace_id == namespace_id,
+            Provider.type == "kvstore",
+            Provider.alias == "my-store",
+        )
+    )
+    assert result.scalar_one_or_none() is None
+
+    triggers_metadata = []
+
+    trigger_service = TriggerService(session)
+    await trigger_service.sync_triggers(
+        workflow_id=workflow_id,
+        namespace_id=namespace_id,
+        new_triggers_metadata=triggers_metadata,
+    )
+
+    # Now manually trigger provider creation by using _ensure_provider_exists
+    from app.services.trigger_service import _ensure_provider_exists
+
+    await _ensure_provider_exists(session, namespace_id, "kvstore", "my-store")
+    await session.flush()
+
+    # Verify kvstore provider was auto-created
+    result = await session.execute(
+        select(Provider).where(
+            Provider.namespace_id == namespace_id,
+            Provider.type == "kvstore",
+            Provider.alias == "my-store",
+        )
+    )
+    provider = result.scalar_one()
+    assert provider is not None
+    assert provider.type == "kvstore"
+    assert provider.alias == "my-store"
+
+
+@pytest.mark.asyncio
+async def test_builtin_provider_auto_created(session):
+    """Test that builtin provider is auto-created when syncing triggers."""
+    user_id, namespace_id = await create_test_namespace(session)
+    workflow_id = await create_test_workflow(session, namespace_id, user_id)
+
+    # Verify builtin provider doesn't exist yet
+    result = await session.execute(
+        select(Provider).where(
+            Provider.namespace_id == namespace_id,
+            Provider.type == "builtin",
+            Provider.alias == "default",
+        )
+    )
+    assert result.scalar_one_or_none() is None
+
+    triggers_metadata = [
+        {
+            "type": "webhook",
+            "provider_type": "builtin",
+            "provider_alias": "default",
+            "trigger_type": "onWebhook",
+            "input": {"path": "/test", "method": "POST"},
+        }
+    ]
+
+    trigger_service = TriggerService(session)
+    await trigger_service.sync_triggers(
+        workflow_id=workflow_id,
+        namespace_id=namespace_id,
+        new_triggers_metadata=triggers_metadata,
+    )
+
+    # Verify builtin provider was auto-created
+    result = await session.execute(
+        select(Provider).where(
+            Provider.namespace_id == namespace_id,
+            Provider.type == "builtin",
+            Provider.alias == "default",
+        )
+    )
+    provider = result.scalar_one()
+    assert provider is not None
+    assert provider.type == "builtin"
+    assert provider.alias == "default"

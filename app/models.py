@@ -216,9 +216,6 @@ class Namespace(Base):
     providers: Mapped[list["Provider"]] = relationship(
         back_populates="namespace", cascade="all, delete-orphan"
     )
-    kv_tables: Mapped[list["KeyValueTable"]] = relationship(
-        back_populates="namespace", cascade="all, delete-orphan"
-    )
 
     @property
     def namespace_owner(self) -> Union["User", "Organization", None]:
@@ -567,8 +564,8 @@ class KeyValueTable(Base):
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
-    namespace_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("namespaces.id", ondelete="CASCADE")
+    provider_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("providers.id", ondelete="CASCADE")
     )
     name: Mapped[str] = mapped_column(Text(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -577,7 +574,7 @@ class KeyValueTable(Base):
     )
 
     # Relationships
-    namespace: Mapped["Namespace"] = relationship(back_populates="kv_tables")
+    provider: Mapped["Provider"] = relationship()
     items: Mapped[list["KeyValueItem"]] = relationship(
         back_populates="table", cascade="all, delete-orphan"
     )
@@ -586,12 +583,12 @@ class KeyValueTable(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("namespace_id", "name", name="uq_namespace_table_name"),
-        Index("idx_kv_tables_namespace", "namespace_id"),
+        UniqueConstraint("provider_id", "name", name="uq_provider_table_name"),
+        Index("idx_kv_tables_provider", "provider_id"),
     )
 
     def __repr__(self):
-        return self._repr(id=self.id, namespace_id=self.namespace_id, name=self.name)
+        return self._repr(id=self.id, provider_id=self.provider_id, name=self.name)
 
 
 class KeyValueTablePermission(Base):

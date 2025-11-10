@@ -1,6 +1,7 @@
 from app.services.providers.implementations.builtin import BuiltinProvider
 from app.services.providers.implementations.gitlab import GitlabProvider
 from app.services.providers.implementations.jira import JiraProvider
+from app.services.providers.implementations.kvstore import KVStoreProvider
 from app.services.providers.implementations.slack import SlackProvider
 from app.services.providers.implementations.todoist import TodoistProvider
 from app.services.providers.ai_openai import OpenAIProvider
@@ -11,6 +12,7 @@ ALL_PROVIDER_TYPES = [
     BuiltinProvider,
     GitlabProvider,
     JiraProvider,
+    KVStoreProvider,
     SlackProvider,
     TodoistProvider,
     OpenAIProvider,
