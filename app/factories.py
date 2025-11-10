@@ -2,7 +2,12 @@ from functools import lru_cache
 
 import boto3
 
-from app.packages.auth.providers import AuthProvider, OIDCProvider, WorkOSProvider
+from app.packages.auth.providers import (
+    AuthProvider,
+    OIDCProvider,
+    PasswordAuthProvider,
+    WorkOSProvider,
+)
 from app.packages.runtimes.implementations.docker_runtime import DockerRuntime
 from app.packages.runtimes.implementations.kubernetes_runtime import KubernetesRuntime
 from app.packages.runtimes.implementations.lambda_runtime import LambdaRuntime
@@ -42,6 +47,9 @@ def auth_provider_factory() -> AuthProvider:
             "Cannot get auth provider when AUTH_TYPE='none'. "
             "Authentication endpoints should not be called in anonymous mode."
         )
+
+    if settings.AUTH_TYPE == "password":
+        return PasswordAuthProvider()
 
     if settings.AUTH_TYPE == "oidc":
         return OIDCProvider(

@@ -1,5 +1,6 @@
 import urllib.parse
 from abc import ABC, abstractmethod
+from datetime import datetime, timedelta, timezone
 
 import jwt as pyjwt
 from pydantic import BaseModel
@@ -191,3 +192,104 @@ class WorkOSProvider(AuthProvider):
         except Exception as e:
             # Don't fail logout if revocation fails
             print(f"Failed to revoke WorkOS session: {e}")
+
+
+class PasswordAuthProvider(AuthProvider):
+    """
+    Password-based authentication provider.
+
+    Uses JWT tokens signed with HS256 algorithm for session management.
+    Does not support OAuth flows (authorization URL, code exchange).
+    """
+
+    def __init__(self):
+        self.jwt_secret = settings.WORKFLOW_JWT_SECRET
+        self.jwt_algorithm = "HS256"
+        self.jwt_expiration = timedelta(days=30)  # Match session cookie expiration
+
+    async def get_config(self) -> AuthConfig:
+        """
+        Password auth doesn't use OAuth config, but we need to implement this
+        for interface compatibility. Returns minimal config.
+        """
+        return AuthConfig(
+            client_id="password-auth",
+            client_secret=self.jwt_secret,
+            device_authorization_endpoint="",
+            token_endpoint="",
+            authorization_endpoint="",
+            issuer="floww-password-auth",
+            jwks_uri="",
+            audience=None,
+        )
+
+    async def validate_token(self, token: str) -> str:
+        """
+        Validate JWT token signed with HS256.
+
+        Args:
+            token: The JWT token to validate
+
+        Returns:
+            The user ID (sub claim) from the token
+
+        Raises:
+            jwt.InvalidTokenError: If token is invalid or expired
+        """
+        try:
+            decoded = pyjwt.decode(
+                token,
+                self.jwt_secret,
+                algorithms=[self.jwt_algorithm],
+                options={"verify_signature": True, "verify_exp": True},
+            )
+            return decoded["sub"]  # User ID
+        except pyjwt.InvalidTokenError as e:
+            raise e
+
+    def create_token(self, user_id: str) -> str:
+        """
+        Create a JWT token for an authenticated user.
+
+        Args:
+            user_id: The user's UUID as a string
+
+        Returns:
+            Encoded JWT token
+        """
+        now = datetime.now(timezone.utc)
+        payload = {
+            "sub": user_id,  # Subject (user ID)
+            "iat": now,  # Issued at
+            "exp": now + self.jwt_expiration,  # Expiration
+            "iss": "floww-password-auth",  # Issuer
+        }
+        return pyjwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
+
+    async def get_authorization_url(
+        self, redirect_uri: str, state: str, prompt: str | None = None
+    ) -> str:
+        """
+        Password auth doesn't use OAuth authorization flow.
+        This method should not be called for password auth.
+        """
+        raise NotImplementedError(
+            "Password authentication does not support OAuth authorization flow"
+        )
+
+    async def exchange_code_for_token(self, code: str, redirect_uri: str) -> dict:
+        """
+        Password auth doesn't use OAuth code exchange.
+        This method should not be called for password auth.
+        """
+        raise NotImplementedError(
+            "Password authentication does not support OAuth code exchange"
+        )
+
+    async def revoke_session(self, jwt_token: str) -> None:
+        """
+        Password auth uses stateless JWT tokens, so there's no server-side session to revoke.
+        The client should simply delete the session cookie.
+        """
+        # No-op for stateless JWT auth
+        pass

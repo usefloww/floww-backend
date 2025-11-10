@@ -2,6 +2,19 @@
 
 This document outlines the architectural and coding preferences for this project to ensure consistency and maintainability.
 
+
+## Development
+
+### Testing
+
+Run tests by using `just test-unit <space seperated file paths>`
+
+### Migrations
+
+Don't write migrations yourself, use `just generate-migrations` and afterwards rename the file to contain an appropriate number and name.
+
+To run the migrations after you created them you can run `just migrate`
+
 ## Architecture Principles
 
 ### Composition Over Inheritance

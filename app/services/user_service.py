@@ -12,6 +12,7 @@ from app.models import (
     User,
 )
 from app.settings import settings
+from app.utils.password import hash_password
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -289,3 +290,106 @@ async def load_users_from_workos(
         )
         await session.rollback()
         raise
+
+
+async def create_password_user(
+    session: SessionDep,
+    username: str,
+    password: str,
+) -> User:
+    """
+    Create a new user with password-based authentication.
+
+    Args:
+        session: Database session
+        username: Username (must be unique)
+        password: User's plaintext password (will be hashed)
+
+    Returns:
+        The created User object
+
+    Raises:
+        ValueError: If a user with this username already exists
+    """
+    # Check if user with this username already exists
+    result = await session.execute(select(User).where(User.username == username))
+    existing_user = result.scalar_one_or_none()
+    if existing_user:
+        raise ValueError(f"Username '{username}' is already taken")
+
+    # Create user without password_hash first to get the user_id
+    user = User(
+        username=username,
+        workos_user_id=None,  # Password users don't have WorkOS ID
+    )
+    session.add(user)
+    await session.flush()  # Flush to get the user.id
+
+    # Now hash the password with the user_id as salt
+    user.password_hash = hash_password(password, user.id)
+    await session.flush()
+
+    # Handle namespace and organization membership based on mode
+    if settings.SINGLE_ORG_MODE:
+        # Single-org mode: skip personal namespace, add user to default org
+        if not settings.SINGLE_ORG_ALLOW_PERSONAL_NAMESPACES:
+            # Get the default organization
+            from app.utils.single_org import get_default_organization_id
+
+            default_org_id = await get_default_organization_id(session)
+
+            # Map string role to enum
+            role_map = {
+                "owner": OrganizationRole.OWNER,
+                "admin": OrganizationRole.ADMIN,
+                "member": OrganizationRole.MEMBER,
+            }
+            role = role_map.get(
+                settings.SINGLE_ORG_DEFAULT_ROLE.lower(),
+                OrganizationRole.MEMBER,
+            )
+
+            org_member = OrganizationMember(
+                organization_id=default_org_id,
+                user_id=user.id,
+                role=role,
+            )
+            session.add(org_member)
+            await session.flush()
+            logger.info(
+                "Added password user to default organization",
+                user_id=user.id,
+                username=username,
+                organization_id=default_org_id,
+                role=role,
+            )
+        else:
+            # Create personal namespace even in single-org mode (if configured)
+            namespace = Namespace(user_owner_id=user.id)
+            session.add(namespace)
+            await session.flush()
+    else:
+        # Multi-tenant mode: create personal namespace (original behavior)
+        namespace = Namespace(user_owner_id=user.id)
+        session.add(namespace)
+        await session.flush()
+
+    await session.commit()
+
+    logger.info("Created password-based user", user_id=user.id, username=username)
+    return user
+
+
+async def get_user_by_username(session: SessionDep, username: str) -> Optional[User]:
+    """
+    Get a user by their username.
+
+    Args:
+        session: Database session
+        username: Username to search for
+
+    Returns:
+        User object if found, None otherwise
+    """
+    result = await session.execute(select(User).where(User.username == username))
+    return result.scalar_one_or_none()

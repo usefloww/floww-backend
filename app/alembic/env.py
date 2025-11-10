@@ -83,8 +83,18 @@ def run_migrations_offline():
 def run_migrations_online():
     """
     Entry point for running migrations in 'online' mode.
+
+    If a connection is passed via config.attributes (programmatic call),
+    use it directly. Otherwise, create a new engine (CLI call).
     """
-    asyncio.run(run_async_migrations())
+    connectable = config.attributes.get("connection", None)
+
+    if connectable is None:
+        # Called from CLI - create new engine with asyncio.run
+        asyncio.run(run_async_migrations())
+    else:
+        # Called programmatically - use provided connection
+        do_run_migrations(connectable)
 
 
 if context.is_offline_mode():

@@ -92,9 +92,13 @@ class User(Base):
     workos_user_id: Mapped[Optional[str]] = mapped_column(
         String(255), unique=True, nullable=True
     )
+    username: Mapped[Optional[str]] = mapped_column(
+        String(255), unique=True, nullable=True
+    )
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     last_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    password_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()

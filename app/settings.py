@@ -61,6 +61,7 @@ class DockerSecretsSettingsSource(PydanticBaseSettingsSource):
 class GeneralConfig(BaseSettings):
     PUBLIC_API_URL: str = "http://localhost:8000"
     RUNTIME_TYPE: Literal["lambda", "docker", "kubernetes"] = "lambda"
+    RUN_MIGRATIONS_ON_STARTUP: bool = False
 
 
 class LambdaConfig(BaseSettings):
@@ -104,8 +105,7 @@ class DatabaseConfig(BaseSettings):
 
 
 class AuthConfig(BaseSettings):
-    AUTH_TYPE: Literal["oidc", "workos", "admin_user", "none"] = "workos"
-    ADMIN_PASSWORD: str = ""
+    AUTH_TYPE: Literal["oidc", "workos", "password"] = "workos"
 
     # OIDC settings (works with any OIDC-compliant provider: WorkOS, Auth0, Keycloak, etc.)
     AUTH_CLIENT_ID: str = ""

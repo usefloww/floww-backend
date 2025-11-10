@@ -1,12 +1,16 @@
 import secrets
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Form, HTTPException, Query, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 from itsdangerous import BadSignature
 
+from app.deps.db import SessionDep
 from app.factories import auth_provider_factory
+from app.packages.auth.providers import PasswordAuthProvider
+from app.services.user_service import create_password_user, get_user_by_username
 from app.settings import settings
+from app.utils.password import verify_password
 from app.utils.session import (
     create_session_cookie,
     get_jwt_from_session_cookie,
@@ -17,11 +21,13 @@ from app.utils.session import (
 router = APIRouter(tags=["Admin Auth"])
 
 
-@router.get("/auth/login")
+@router.get("/auth/login", response_class=HTMLResponse)
 async def admin_login(
+    session: SessionDep,
     request: Request,
     next_url: Optional[str] = Query(None, alias="next"),
     prompt: Optional[str] = Query(None),
+    error: Optional[str] = Query(None),
 ):
     # If AUTH_TYPE is 'none', redirect to home since no authentication is needed
     if settings.AUTH_TYPE == "none":
@@ -32,6 +38,24 @@ async def admin_login(
     if not next_url or not is_safe_redirect_url(next_url, request):
         next_url = "/"
 
+    # If AUTH_TYPE is 'password', check if we need setup or login
+    if settings.AUTH_TYPE == "password":
+        # Check if any users exist
+        from sqlalchemy import func, select
+
+        from app.models import User
+
+        result = await session.execute(select(func.count(User.id)))
+        user_count = result.scalar()
+
+        error_message = error if error else ""
+        is_setup = user_count == 0
+
+        return HTMLResponse(
+            content=_get_password_login_html(next_url, error_message, is_setup)
+        )
+
+    # OAuth flow for OIDC/WorkOS
     state = secrets.token_urlsafe(32)
     state_data = {"csrf": state, "next": next_url}
     signed_state = session_serializer.dumps(state_data)
@@ -134,3 +158,278 @@ async def admin_logout(request: Request):
     )
     response.delete_cookie("session")
     return response
+
+
+@router.post("/auth/login")
+async def password_login(
+    session: SessionDep,
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    next_url: Optional[str] = Form("/"),
+):
+    """Handle password-based login (only works when AUTH_TYPE='password')."""
+    if settings.AUTH_TYPE != "password":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password authentication is not enabled",
+        )
+
+    # Validate redirect URL
+    if not next_url or not is_safe_redirect_url(next_url, request):
+        next_url = "/"
+
+    # Get user by username
+    user = await get_user_by_username(session, username)
+    if not user or not user.password_hash:
+        # Redirect back to login with error
+        return RedirectResponse(
+            url=f"/auth/login?next={next_url}&error=Invalid username or password",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    # Verify password
+    if not verify_password(password, user.password_hash, user.id):
+        # Redirect back to login with error
+        return RedirectResponse(
+            url=f"/auth/login?next={next_url}&error=Invalid username or password",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    # Create JWT token
+    auth_provider = auth_provider_factory()
+    if not isinstance(auth_provider, PasswordAuthProvider):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Password auth provider not configured correctly",
+        )
+
+    jwt_token = auth_provider.create_token(str(user.id))
+
+    # Create session cookie
+    session_cookie_value = create_session_cookie(jwt_token)
+    response = RedirectResponse(url=next_url, status_code=status.HTTP_302_FOUND)
+
+    response.set_cookie(
+        key="session",
+        value=session_cookie_value,
+        max_age=30 * 24 * 3600,
+        httponly=True,
+        secure=False,  # Set to True in production with HTTPS
+        samesite="lax",
+    )
+
+    return response
+
+
+@router.post("/auth/setup")
+async def password_setup(
+    session: SessionDep,
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    confirm_password: str = Form(...),
+    next_url: Optional[str] = Form("/"),
+):
+    """
+    Handle initial admin user setup (only works when no users exist).
+
+    This endpoint only works for the first user (admin setup).
+    Once a user exists, registration is disabled.
+    """
+    if settings.AUTH_TYPE != "password":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password authentication is not enabled",
+        )
+
+    # Check if any users exist - only allow setup if no users
+    from sqlalchemy import func, select
+
+    from app.models import User
+
+    result = await session.execute(select(func.count(User.id)))
+    user_count = result.scalar()
+
+    if user_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Setup is only allowed when no users exist",
+        )
+
+    # Validate redirect URL
+    if not next_url or not is_safe_redirect_url(next_url, request):
+        next_url = "/"
+
+    # Check if passwords match
+    if password != confirm_password:
+        return RedirectResponse(
+            url=f"/auth/login?next={next_url}&error=Passwords do not match",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    # Create admin user
+    try:
+        user = await create_password_user(
+            session=session,
+            username=username,
+            password=password,
+        )
+    except ValueError as e:
+        # User already exists (shouldn't happen, but handle it)
+        return RedirectResponse(
+            url=f"/auth/login?next={next_url}&error={str(e)}",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    # Auto-login: create JWT token
+    auth_provider = auth_provider_factory()
+    if not isinstance(auth_provider, PasswordAuthProvider):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Password auth provider not configured correctly",
+        )
+
+    jwt_token = auth_provider.create_token(str(user.id))
+
+    # Create session cookie
+    session_cookie_value = create_session_cookie(jwt_token)
+    response = RedirectResponse(url=next_url, status_code=status.HTTP_302_FOUND)
+
+    response.set_cookie(
+        key="session",
+        value=session_cookie_value,
+        max_age=30 * 24 * 3600,
+        httponly=True,
+        secure=False,  # Set to True in production with HTTPS
+        samesite="lax",
+    )
+
+    return response
+
+
+def _get_password_login_html(
+    next_url: str, error: str = "", is_setup: bool = False
+) -> str:
+    """
+    Generate the HTML for password-based login or setup page.
+
+    Simple, minimal design for self-hosted setups.
+    If is_setup=True, shows setup form for first admin user.
+    Otherwise, shows login form only.
+    """
+    error_html = f'<p style="color: red;">{error}</p>' if error else ""
+
+    if is_setup:
+        # First-time setup page
+        return f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Floww - Setup</title>
+    <style>
+        body {{
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 400px;
+            margin: 50px auto;
+            padding: 20px;
+        }}
+        h1 {{
+            text-align: center;
+        }}
+        p {{
+            text-align: center;
+            color: #666;
+        }}
+        input {{
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0 15px 0;
+            box-sizing: border-box;
+        }}
+        button[type="submit"] {{
+            width: 100%;
+            padding: 10px;
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }}
+        button[type="submit"]:hover {{
+            background: #0056b3;
+        }}
+    </style>
+</head>
+<body>
+    <h1>Floww Setup</h1>
+    <p>Create your admin account</p>
+    {error_html}
+
+    <form action="/auth/setup" method="POST">
+        <input type="hidden" name="next_url" value="{next_url}">
+        <label>Username</label>
+        <input type="text" name="username" required autofocus>
+        <label>Password</label>
+        <input type="password" name="password" required>
+        <label>Confirm Password</label>
+        <input type="password" name="confirm_password" required>
+        <button type="submit">Create Admin Account</button>
+    </form>
+</body>
+</html>
+"""
+    else:
+        # Normal login page
+        return f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Floww - Login</title>
+    <style>
+        body {{
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 400px;
+            margin: 50px auto;
+            padding: 20px;
+        }}
+        h1 {{
+            text-align: center;
+        }}
+        input {{
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0 15px 0;
+            box-sizing: border-box;
+        }}
+        button[type="submit"] {{
+            width: 100%;
+            padding: 10px;
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }}
+        button[type="submit"]:hover {{
+            background: #0056b3;
+        }}
+    </style>
+</head>
+<body>
+    <h1>Floww</h1>
+    {error_html}
+
+    <form action="/auth/login" method="POST">
+        <input type="hidden" name="next_url" value="{next_url}">
+        <label>Username</label>
+        <input type="text" name="username" required autofocus>
+        <label>Password</label>
+        <input type="password" name="password" required>
+        <button type="submit">Login</button>
+    </form>
+</body>
+</html>
+"""
