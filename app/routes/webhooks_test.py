@@ -73,7 +73,7 @@ async def incoming_webhook(trigger: Trigger, session: AsyncSession):
 @pytest.fixture(scope="function")
 async def runtime(session: AsyncSession):
     runtime = Runtime(
-        config={"image_uri": "test-image:latest"},
+        config={"image_hash": "test-hash-123"},
         config_hash=uuid.uuid4(),
     )
     session.add(runtime)
@@ -114,7 +114,9 @@ async def test_webhook_not_found(client_a: UserClient):
     new_callable=AsyncMock,
 )
 @patch("app.routes.webhooks.runtime_factory")
+@patch("app.routes.webhooks.get_image_uri")
 async def test_webhook_successful_invocation(
+    mock_get_image_uri,
     mock_runtime_factory,
     mock_centrifugo,
     client_a: UserClient,
@@ -123,6 +125,9 @@ async def test_webhook_successful_invocation(
     active_deployment: WorkflowDeployment,
 ):
     """Test successful webhook invocation with active deployment."""
+    # Mock get_image_uri to return a valid image URI
+    mock_get_image_uri.return_value = "test-registry.amazonaws.com/test-image@sha256:abc123"
+
     # Mock runtime implementation
     mock_runtime_impl = AsyncMock()
     mock_runtime_impl.invoke_trigger.return_value = None

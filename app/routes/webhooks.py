@@ -23,6 +23,8 @@ from app.services.execution_history_service import (
 )
 from app.services.providers.provider_registry import PROVIDER_TYPES_MAP
 from app.services.workflow_auth_service import WorkflowAuthService
+from app.settings import settings
+from app.utils.aws_ecr import get_image_uri
 from app.utils.encryption import decrypt_secret
 
 router = APIRouter()
@@ -91,12 +93,34 @@ async def _execute_trigger(
     # Update execution history: started
     await update_execution_started(session, execution_id, deployment.id)
 
+    # Get image_hash from runtime config and compute image_uri
+    if not deployment.runtime.config or "image_hash" not in deployment.runtime.config:
+        logger.error(
+            "Runtime config missing image_hash",
+            runtime_id=str(deployment.runtime.id),
+            deployment_id=str(deployment.id),
+            execution_id=str(execution_id),
+        )
+        return None
+
+    image_hash = deployment.runtime.config["image_hash"]
+    image_uri = get_image_uri(settings.ECR_REGISTRY_URL, image_hash)
+
+    if not image_uri:
+        logger.error(
+            "Image not found in ECR",
+            runtime_id=str(deployment.runtime.id),
+            image_hash=image_hash,
+            execution_id=str(execution_id),
+        )
+        return None
+
     runtime_impl = runtime_factory()
     await runtime_impl.invoke_trigger(
         trigger_id=str(trigger.id),
         runtime_config=RuntimeConfig(
             runtime_id=str(deployment.runtime.id),
-            image_uri=deployment.runtime.config["image_uri"],  # pyright: ignore[reportOptionalSubscript]
+            image_uri=image_uri,
         ),
         user_code=deployment.user_code,
         payload=RuntimeWebhookPayload(
