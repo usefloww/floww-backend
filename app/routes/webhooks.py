@@ -130,9 +130,9 @@ async def _execute_trigger(
         provider_config_json = decrypt_secret(provider.encrypted_config)
         provider_config = json.loads(provider_config_json)
 
-        if provider.type not in provider_configs_dict:
-            provider_configs_dict[provider.type] = {}
-        provider_configs_dict[provider.type][provider.alias] = provider_config
+        # SDK expects format: "providerType:alias" -> config
+        key = f"{provider.type}:{provider.alias}"
+        provider_configs_dict[key] = provider_config
 
     runtime_impl = runtime_factory()
     await runtime_impl.invoke_trigger(
