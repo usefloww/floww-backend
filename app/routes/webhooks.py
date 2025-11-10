@@ -115,6 +115,25 @@ async def _execute_trigger(
         )
         return None
 
+    # Fetch and decrypt provider configs for this workflow's namespace
+    from app.models import Provider
+    import json
+
+    provider_configs_dict = {}
+
+    providers_result = await session.execute(
+        select(Provider).where(Provider.namespace_id == trigger.workflow.namespace_id)
+    )
+    providers = providers_result.scalars().all()
+
+    for provider in providers:
+        provider_config_json = decrypt_secret(provider.encrypted_config)
+        provider_config = json.loads(provider_config_json)
+
+        if provider.type not in provider_configs_dict:
+            provider_configs_dict[provider.type] = {}
+        provider_configs_dict[provider.type][provider.alias] = provider_config
+
     runtime_impl = runtime_factory()
     await runtime_impl.invoke_trigger(
         trigger_id=str(trigger.id),
@@ -133,6 +152,7 @@ async def _execute_trigger(
             auth_token=auth_token,
             execution_id=str(execution_id),
         ),
+        provider_configs=provider_configs_dict,
     )
 
     return {

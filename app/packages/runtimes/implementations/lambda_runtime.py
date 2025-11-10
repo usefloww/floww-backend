@@ -65,12 +65,13 @@ class LambdaRuntime(RuntimeI):
         runtime_config: RuntimeConfig,
         user_code: dict[str, str],
         payload: RuntimeWebhookPayload,
+        provider_configs: dict[str, dict[str, str]] | None = None,
     ) -> None:
         event_payload = {
             **payload.model_dump(),
             "userCode": user_code,
             "triggerType": "webhook",
-            "providerConfigs": {},
+            "providerConfigs": provider_configs or {},
         }
         invoke_lambda_async(
             self.lambda_client,

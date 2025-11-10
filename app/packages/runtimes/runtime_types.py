@@ -45,4 +45,5 @@ class RuntimeI(ABC):
         runtime_config: RuntimeConfig,
         user_code: dict[str, str],
         payload: RuntimeWebhookPayload,
+        provider_configs: dict[str, dict[str, str]] | None = None,
     ) -> None: ...
