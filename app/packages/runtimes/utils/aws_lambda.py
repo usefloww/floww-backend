@@ -14,9 +14,14 @@ def deploy_lambda_function(
     runtime_id: str,
     image_uri: str,
     execution_role_arn: str,
+    backend_url: str | None = None,
 ):
     """Deploy a Lambda function with container image."""
     function_name = f"floww-runtime-{runtime_id}"
+
+    environment = {}
+    if backend_url:
+        environment = {"Variables": {"BACKEND_URL": backend_url}}
 
     lambda_client.create_function(
         FunctionName=function_name,
@@ -26,11 +31,13 @@ def deploy_lambda_function(
         Timeout=30,
         MemorySize=512,
         Publish=True,
+        **({"Environment": environment} if environment else {}),
     )
     logger.info(
         "Created Lambda function",
         function_name=function_name,
         image_uri=image_uri,
+        backend_url=backend_url,
     )
 
 

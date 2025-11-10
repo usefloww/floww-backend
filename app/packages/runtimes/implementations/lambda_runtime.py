@@ -6,6 +6,7 @@ from app.packages.runtimes.utils.aws_lambda import (
     get_lambda_deploy_status,
     invoke_lambda_async,
 )
+from app.settings import settings
 
 from ..runtime_types import (
     RuntimeConfig,
@@ -32,6 +33,7 @@ class LambdaRuntime(RuntimeI):
             runtime_config.runtime_id,
             runtime_config.image_uri,
             self.execution_role_arn,
+            backend_url=settings.PUBLIC_API_URL,
         )
         return RuntimeCreationStatus(
             status="IN_PROGRESS",

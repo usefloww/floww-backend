@@ -1,3 +1,4 @@
+import json
 from uuid import UUID
 
 import structlog
@@ -10,6 +11,7 @@ from app.deps.db import SessionDep
 from app.factories import runtime_factory
 from app.models import (
     IncomingWebhook,
+    Provider,
     Trigger,
     WorkflowDeployment,
     WorkflowDeploymentStatus,
@@ -93,6 +95,9 @@ async def _execute_trigger(
     # Update execution history: started
     await update_execution_started(session, execution_id, deployment.id)
 
+    # Commit the session to ensure execution record exists before Lambda reports completion
+    await session.commit()
+
     # Get image_hash from runtime config and compute image_uri
     if not deployment.runtime.config or "image_hash" not in deployment.runtime.config:
         logger.error(
@@ -116,9 +121,6 @@ async def _execute_trigger(
         return None
 
     # Fetch and decrypt provider configs for this workflow's namespace
-    from app.models import Provider
-    import json
-
     provider_configs_dict = {}
 
     providers_result = await session.execute(
