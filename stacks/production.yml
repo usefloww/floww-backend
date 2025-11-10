@@ -86,7 +86,7 @@ services:
       - DATABASE_HOST=floww.cklmackcedxs.us-east-1.rds.amazonaws.com
       - DATABASE_PORT=5432
       - DATABASE_NAME=postgres
-      - CENTRIFUGO_HOST=centrifugo_centrifugo
+      - CENTRIFUGO_HOST=centrifugo
       - CENTRIFUGO_PORT=8000
       - CENTRIFUGO_PUBLIC_URL=https://ws.usefloww.dev
       - PUBLIC_API_URL=https://api.usefloww.dev

@@ -160,7 +160,6 @@ class CentrifugoService:
         }
 
         # Fire and forget - don't wait for response
-        print(event_data)
         await self.publish_to_channel(channel, event_data)
 
     async def close(self):
