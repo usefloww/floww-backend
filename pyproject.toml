@@ -33,6 +33,10 @@ dependencies = [
     "aiodocker==0.22.2",
     "argon2-cffi>=25.1.0",
     "websockets>=15.0.1",
+    "atomic-agents>=2.2.1",
+    "instructor>=1.9.2",
+    "openai>=1.109.1",
+    "pydantic>=2.12.3",
 ]
 
 [dependency-groups]

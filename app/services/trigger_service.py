@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import IncomingWebhook, Provider, Trigger
 from app.services.providers.implementations.builtin import BUILTIN_TRIGGER_TYPES
 from app.services.providers.implementations.discord import DISCORD_TRIGGER_TYPES
+from app.services.providers.implementations.github import GITHUB_TRIGGER_TYPES
 from app.services.providers.implementations.gitlab import GITLAB_TRIGGER_TYPES
 from app.services.providers.implementations.jira import JIRA_TRIGGER_TYPES
 from app.services.providers.implementations.slack import SLACK_TRIGGER_TYPES
@@ -273,6 +274,7 @@ def _get_trigger_handler(provider_type: str, trigger_type: str):
     handlers = {
         "builtin": BUILTIN_TRIGGER_TYPES,
         "discord": DISCORD_TRIGGER_TYPES,
+        "github": GITHUB_TRIGGER_TYPES,
         "gitlab": GITLAB_TRIGGER_TYPES,
         "jira": JIRA_TRIGGER_TYPES,
         "slack": SLACK_TRIGGER_TYPES,
