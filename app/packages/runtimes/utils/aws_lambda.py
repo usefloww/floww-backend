@@ -1,3 +1,4 @@
+import json
 from typing import TYPE_CHECKING
 
 import structlog
@@ -82,8 +83,6 @@ def invoke_lambda_async(
     lambda_client: "LambdaClient", runtime_id: str, event_payload: dict
 ):
     """Invoke a Lambda function asynchronously (fire-and-forget)."""
-    import json
-
     function_name = f"floww-runtime-{runtime_id}"
 
     try:

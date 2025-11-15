@@ -1,3 +1,4 @@
+import json
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -14,6 +15,7 @@ from app.models import (
     WorkflowDeploymentStatus,
 )
 from app.tests.fixtures_clients import UserClient
+from app.utils.encryption import encrypt_secret
 
 
 @pytest.fixture(scope="function")
@@ -35,7 +37,9 @@ async def provider(client_a: UserClient, session: AsyncSession):
         namespace_id=client_a.personal_namespace.id,
         type="gitlab",
         alias="test-gitlab",
-        encrypted_config="encrypted_config_data",
+        encrypted_config=encrypt_secret(
+            json.dumps({"url": "https://gitlab.com", "accessToken": "test-token"})
+        ),
     )
     session.add(provider)
     await session.flush()

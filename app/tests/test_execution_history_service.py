@@ -59,9 +59,7 @@ async def create_test_workflow(session: AsyncSession, user: User) -> Workflow:
     return workflow
 
 
-async def create_test_trigger(
-    session: AsyncSession, workflow: Workflow
-) -> Trigger:
+async def create_test_trigger(session: AsyncSession, workflow: Workflow) -> Trigger:
     """Create a test trigger with provider."""
     # Fetch the workflow's namespace
     namespace_result = await session.execute(
@@ -110,7 +108,10 @@ async def create_test_deployment(
         id=uuid4(),
         workflow_id=workflow.id,
         runtime_id=runtime.id,
-        user_code={"files": {"main.ts": "export default () => {}"}, "entrypoint": "main.ts"},
+        user_code={
+            "files": {"main.ts": "export default () => {}"},
+            "entrypoint": "main.ts",
+        },
     )
     session.add(deployment)
     await session.flush()
@@ -321,7 +322,10 @@ async def test_update_execution_no_deployment(session):
 
     # Verify status updated
     assert updated_execution.status == ExecutionStatus.NO_DEPLOYMENT
-    assert updated_execution.error_message == "No active deployment found for this workflow"
+    assert (
+        updated_execution.error_message
+        == "No active deployment found for this workflow"
+    )
 
     # Refetch to get server-generated timestamp
     await session.refresh(updated_execution)
@@ -577,7 +581,9 @@ async def test_serialize_execution_complete(session):
     )
     await session.refresh(execution)  # Get started_at
 
-    execution = await update_execution_completed(session=session, execution_id=execution.id)
+    execution = await update_execution_completed(
+        session=session, execution_id=execution.id
+    )
     await session.refresh(execution)  # Get completed_at
 
     # Retrieve with relationships
@@ -618,7 +624,9 @@ async def test_serialize_execution_duration_calculation(session):
     )
     await session.refresh(execution)  # Get started_at
 
-    execution = await update_execution_completed(session=session, execution_id=execution.id)
+    execution = await update_execution_completed(
+        session=session, execution_id=execution.id
+    )
     await session.refresh(execution)  # Get completed_at
 
     # Retrieve with relationships

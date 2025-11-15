@@ -1,9 +1,11 @@
+import json
 from typing import Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator, model_validator
+from sqlalchemy import update
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep, TransactionSessionDep
@@ -29,8 +31,6 @@ class ProviderRead(BaseModel):
     def decrypt_config(cls, data):
         if hasattr(data, "encrypted_config"):
             # If it's a database model instance
-            import json
-
             decrypted_config = decrypt_secret(data.encrypted_config)
             # Convert to dict for pydantic processing
             model_data = {
@@ -102,8 +102,6 @@ async def create_provider(
     session: TransactionSessionDep,
 ):
     """Create a new provider."""
-    import json
-
     # Encrypt the config before saving
     encrypted_config = encrypt_secret(json.dumps(data.config))
 
@@ -144,10 +142,6 @@ async def update_provider(
     data: ProviderUpdate,
 ):
     """Update a specific provider."""
-    import json
-
-    from sqlalchemy import update
-
     # Build the update data
     update_data = {}
     if data.type is not None:
@@ -176,8 +170,6 @@ async def update_provider(
 
     provider = result.scalar_one_or_none()
     if not provider:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail="Provider not found")
 
     await session.refresh(provider)

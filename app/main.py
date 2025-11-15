@@ -1,10 +1,16 @@
+import os
+
 import sentry_sdk
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 
+from app.deps.db import AsyncSessionLocal
+from app.models import OrganizationMember, OrganizationRole, User
 from app.routes import (
     admin_auth,
+    billing,
     centrifugo,
     config,
     dev,
@@ -19,6 +25,7 @@ from app.routes import (
     runtimes,
     secrets,
     service_accounts,
+    subscriptions,
     webhooks,
     whoami,
     workflow_deployments,
@@ -30,12 +37,21 @@ from app.utils.logging_utils import setup_logger
 from app.utils.migrations import run_migrations
 from app.utils.single_org import setup_single_org_mode
 
-sentry_sdk.init(
-    dsn=settings.SENTRY_DSN,
-    environment=settings.SENTRY_ENVIRONMENT,
-    enable_tracing=False,
-    send_default_pii=False,
-)
+
+def init_sentry():
+    environment = os.getenv("SENTRY_ENVIRONMENT", default="")
+    if environment not in {"production", "staging"}:
+        dsn = ""
+    else:
+        dsn = os.getenv("SENTRY_DSN", default="")
+
+    sentry_sdk.init(
+        dsn=dsn,
+        traces_sample_rate=0.01,
+        profiles_sample_rate=0.01,
+        enable_tracing=True,
+        send_default_pii=False,
+    )
 
 app = FastAPI()
 
@@ -88,6 +104,8 @@ api_router.include_router(dev.router)
 api_router.include_router(service_accounts.router)
 api_router.include_router(kv_store.router)
 api_router.include_router(executions.router)
+api_router.include_router(subscriptions.router)
+api_router.include_router(billing.router)
 app.include_router(docker_proxy.router)
 app.include_router(webhooks.router)
 app.include_router(admin_auth.router)

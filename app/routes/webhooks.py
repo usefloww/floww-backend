@@ -2,10 +2,10 @@ import json
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.deps.db import SessionDep
 from app.factories import registry_client_factory, runtime_factory
@@ -13,10 +13,12 @@ from app.models import (
     IncomingWebhook,
     Provider,
     Trigger,
+    Workflow,
     WorkflowDeployment,
     WorkflowDeploymentStatus,
 )
 from app.packages.runtimes.runtime_types import RuntimeConfig, RuntimeWebhookPayload
+from app.services import billing_service
 from app.services.centrifugo_service import centrifugo_service
 from app.services.execution_history_service import (
     create_execution_record,
@@ -25,6 +27,7 @@ from app.services.execution_history_service import (
 )
 from app.services.providers.provider_registry import PROVIDER_TYPES_MAP
 from app.services.workflow_auth_service import WorkflowAuthService
+from app.settings import settings
 from app.utils.encryption import decrypt_secret
 
 router = APIRouter()
@@ -32,6 +35,46 @@ logger = structlog.stdlib.get_logger(__name__)
 
 # Get registry client based on runtime configuration
 registry_client = registry_client_factory()
+
+
+async def _check_execution_limit_for_workflow(
+    session: SessionDep,
+    workflow_id: UUID,
+) -> None:
+    """
+    Check if the workflow owner has reached their execution limit.
+    Raises HTTPException if limit is reached.
+    """
+    if not settings.IS_CLOUD:
+        return
+
+    result = await session.execute(
+        select(Workflow)
+        .options(joinedload(Workflow.namespace))
+        .where(Workflow.id == workflow_id)
+    )
+    workflow = result.scalar_one_or_none()
+
+    if workflow and workflow.namespace and workflow.namespace.user_owner:
+        user = workflow.namespace.user_owner
+        can_execute, message = await billing_service.check_execution_limit(
+            session, user
+        )
+
+        if not can_execute:
+            logger.warning(
+                "Execution limit reached for user",
+                user_id=user.id,
+                workflow_id=workflow_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail={
+                    "title": "Execution limit reached",
+                    "description": message,
+                    "upgrade_required": True,
+                },
+            )
 
 
 async def _execute_trigger(
@@ -323,6 +366,9 @@ async def _handle_provider_webhook(
     # Execute all matching triggers
     results = []
     for trigger in matching_triggers:
+        # Check execution limit before creating record
+        await _check_execution_limit_for_workflow(session, trigger.workflow_id)
+
         # Create execution record for this trigger (minimal)
         execution = await create_execution_record(
             session=session,
@@ -360,6 +406,9 @@ async def _handle_trigger_webhook(
         webhook_id=str(webhook.id),
         trigger_id=str(trigger.id),
     )
+
+    # Check execution limit before creating record
+    await _check_execution_limit_for_workflow(session, trigger.workflow_id)
 
     # Create execution history record (minimal - just IDs and status)
     execution = await create_execution_record(

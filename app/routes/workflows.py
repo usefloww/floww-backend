@@ -3,14 +3,15 @@ from typing import Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.deps.auth import CurrentUser
+from app.deps.billing import check_can_create_workflow
 from app.deps.db import SessionDep, TransactionSessionDep
 from app.models import Namespace, Workflow, WorkflowDeployment
-from app.services.crud_helpers import CrudHelper
+from app.services.crud_helpers import CrudHelper, ListResult
 from app.utils.query_helpers import UserAccessibleQuery
 
 logger = structlog.stdlib.get_logger(__name__)
@@ -83,8 +84,6 @@ async def list_workflows(
         }
 
         # Update workflows with last_deployed_at
-        from app.services.crud_helpers import ListResult
-
         updated_workflows = [
             workflow.model_copy(
                 update={"last_deployed_at": deployment_map.get(workflow.id)}
@@ -101,6 +100,7 @@ async def create_workflow(
     data: WorkflowCreate,
     current_user: CurrentUser,
     session: TransactionSessionDep,
+    _: None = Depends(check_can_create_workflow),
 ):
     """Create a new workflow."""
     # Verify user has access to the namespace

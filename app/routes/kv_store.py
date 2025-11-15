@@ -5,18 +5,26 @@ Workflows can store and retrieve key-value pairs organized into tables.
 Each table has permissions controlling which workflows can read/write.
 """
 
+import json
 import re
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import and_, select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.deps.db import SessionDep, TransactionSessionDep
 from app.deps.workflow_auth import WorkflowContextDep
-from app.models import KeyValueItem, KeyValueTable, KeyValueTablePermission, Provider
+from app.models import (
+    KeyValueItem,
+    KeyValueTable,
+    KeyValueTablePermission,
+    Provider,
+    Workflow,
+)
+from app.utils.encryption import encrypt_secret
 
 router = APIRouter(tags=["kv-store"])
 
@@ -30,13 +38,13 @@ MAX_VALUE_SIZE = 1_000_000  # 1MB in bytes (approximate JSON size)
 
 # Pydantic Schemas
 class SetValueRequest(BaseModel):
-    value: Any = Field(..., description="The value to store (any JSON-serializable data)")
+    value: Any = Field(
+        ..., description="The value to store (any JSON-serializable data)"
+    )
 
     @field_validator("value")
     @classmethod
     def validate_value_size(cls, v: Any) -> Any:
-        import json
-
         value_str = json.dumps(v)
         if len(value_str) > MAX_VALUE_SIZE:
             raise ValueError(
@@ -102,13 +110,11 @@ async def get_or_create_kv_provider(
         return provider
 
     # Auto-create provider (empty config for KV)
-    from app.services.providers.provider_utils import encrypt_provider_config
-
     provider = Provider(
         namespace_id=namespace_id,
         type="kvstore",
         alias=provider_credential,
-        encrypted_config=encrypt_provider_config({}),
+        encrypted_config=encrypt_secret(json.dumps({})),
     )
     session.add(provider)
     await session.flush()
@@ -248,24 +254,24 @@ async def get_or_create_table(
 # CRUD Endpoints
 
 
-@router.get("/kv")
+@router.get("/kv/{provider}")
 async def list_tables(
+    provider: str,
     ctx: WorkflowContextDep,
     session: TransactionSessionDep,
-    x_kv_provider: str = Header(alias="X-KV-Provider"),
 ) -> TableListResponse:
     """
     List all tables in the KV provider namespace that this workflow has access to.
     """
     # Get or create the KV provider
-    provider = await get_or_create_kv_provider(session, ctx.namespace_id, x_kv_provider)
+    kv_provider = await get_or_create_kv_provider(session, ctx.namespace_id, provider)
 
     stmt = (
         select(KeyValueTable.name)
         .join(KeyValueTablePermission)
         .where(
             and_(
-                KeyValueTable.provider_id == provider.id,
+                KeyValueTable.provider_id == kv_provider.id,
                 KeyValueTablePermission.workflow_id == ctx.workflow_id,
             )
         )
@@ -281,12 +287,12 @@ async def list_tables(
 # Note: These must be defined BEFORE the /kv/{table}/{key} endpoint to match first
 
 
-@router.get("/kv/permissions/{table}")
+@router.get("/kv/{provider}/permissions/{table}")
 async def list_permissions(
+    provider: str,
     table: str,
     ctx: WorkflowContextDep,
     session: TransactionSessionDep,
-    x_kv_provider: str = Header(alias="X-KV-Provider"),
 ) -> list[PermissionResponse]:
     """
     List all permissions for a table. Requires read access to the table.
@@ -294,11 +300,11 @@ async def list_permissions(
     validate_table_name(table)
 
     # Get or create the KV provider
-    provider = await get_or_create_kv_provider(session, ctx.namespace_id, x_kv_provider)
+    kv_provider = await get_or_create_kv_provider(session, ctx.namespace_id, provider)
 
     # Check table and read permission
     kv_table, _ = await get_table_with_permission(
-        session, provider.id, table, ctx.workflow_id, require_read=True
+        session, kv_provider.id, table, ctx.workflow_id, require_read=True
     )
 
     # Get all permissions
@@ -319,13 +325,13 @@ async def list_permissions(
     ]
 
 
-@router.post("/kv/permissions/{table}")
+@router.post("/kv/{provider}/permissions/{table}")
 async def grant_permission(
+    provider: str,
     table: str,
     request: GrantPermissionRequest,
     ctx: WorkflowContextDep,
     session: TransactionSessionDep,
-    x_kv_provider: str = Header(alias="X-KV-Provider"),
 ) -> PermissionResponse:
     """
     Grant read/write permissions to a workflow for a table.
@@ -334,16 +340,14 @@ async def grant_permission(
     validate_table_name(table)
 
     # Get or create the KV provider
-    provider = await get_or_create_kv_provider(session, ctx.namespace_id, x_kv_provider)
+    kv_provider = await get_or_create_kv_provider(session, ctx.namespace_id, provider)
 
     # Check table and write permission
     kv_table, _ = await get_table_with_permission(
-        session, provider.id, table, ctx.workflow_id, require_write=True
+        session, kv_provider.id, table, ctx.workflow_id, require_write=True
     )
 
     # Verify target workflow exists and is in same namespace
-    from app.models import Workflow
-
     workflow_stmt = select(Workflow).where(
         and_(
             Workflow.id == request.workflow_id,
@@ -384,13 +388,13 @@ async def grant_permission(
     )
 
 
-@router.delete("/kv/permissions/{table}/{workflow_id}")
+@router.delete("/kv/{provider}/permissions/{table}/{workflow_id}")
 async def revoke_permission(
+    provider: str,
     table: str,
     workflow_id: UUID,
     ctx: WorkflowContextDep,
     session: TransactionSessionDep,
-    x_kv_provider: str = Header(alias="X-KV-Provider"),
 ) -> dict:
     """
     Revoke a workflow's permissions for a table.
@@ -399,11 +403,11 @@ async def revoke_permission(
     validate_table_name(table)
 
     # Get or create the KV provider
-    provider = await get_or_create_kv_provider(session, ctx.namespace_id, x_kv_provider)
+    kv_provider = await get_or_create_kv_provider(session, ctx.namespace_id, provider)
 
     # Check table and write permission
     kv_table, _ = await get_table_with_permission(
-        session, provider.id, table, ctx.workflow_id, require_write=True
+        session, kv_provider.id, table, ctx.workflow_id, require_write=True
     )
 
     # Get permission
@@ -435,13 +439,13 @@ async def revoke_permission(
 # Table/Key CRUD operations - these come after permission routes
 
 
-@router.get("/kv/{table}")
+@router.get("/kv/{provider}/{table}")
 async def list_keys(
+    provider: str,
     table: str,
     ctx: WorkflowContextDep,
     session: TransactionSessionDep,
     include_values: bool = False,
-    x_kv_provider: str = Header(alias="X-KV-Provider"),
 ) -> KeyListResponse | KeysWithValuesResponse:
     """
     List all keys in a table. Optionally include values with ?include_values=true.
@@ -449,11 +453,11 @@ async def list_keys(
     validate_table_name(table)
 
     # Get or create the KV provider
-    provider = await get_or_create_kv_provider(session, ctx.namespace_id, x_kv_provider)
+    kv_provider = await get_or_create_kv_provider(session, ctx.namespace_id, provider)
 
     # Check table and read permission
     kv_table, _ = await get_table_with_permission(
-        session, provider.id, table, ctx.workflow_id, require_read=True
+        session, kv_provider.id, table, ctx.workflow_id, require_read=True
     )
 
     if include_values:
@@ -490,13 +494,13 @@ async def list_keys(
         return KeyListResponse(keys=keys)
 
 
-@router.get("/kv/{table}/{key}")
+@router.get("/kv/{provider}/{table}/{key}")
 async def get_value(
+    provider: str,
     table: str,
     key: str,
     ctx: WorkflowContextDep,
     session: TransactionSessionDep,
-    x_kv_provider: str = Header(alias="X-KV-Provider"),
 ) -> KeyValueResponse:
     """
     Get a value from the KV store.
@@ -505,11 +509,11 @@ async def get_value(
     validate_key(key)
 
     # Get or create the KV provider
-    provider = await get_or_create_kv_provider(session, ctx.namespace_id, x_kv_provider)
+    kv_provider = await get_or_create_kv_provider(session, ctx.namespace_id, provider)
 
     # Check table and read permission
     kv_table, _ = await get_table_with_permission(
-        session, provider.id, table, ctx.workflow_id, require_read=True
+        session, kv_provider.id, table, ctx.workflow_id, require_read=True
     )
 
     # Get item
@@ -533,14 +537,14 @@ async def get_value(
     )
 
 
-@router.put("/kv/{table}/{key}")
+@router.put("/kv/{provider}/{table}/{key}")
 async def set_value(
+    provider: str,
     table: str,
     key: str,
     request: SetValueRequest,
     ctx: WorkflowContextDep,
     session: TransactionSessionDep,
-    x_kv_provider: str = Header(alias="X-KV-Provider"),
 ) -> KeyValueResponse:
     """
     Set a value in the KV store. Creates the table if it doesn't exist.
@@ -549,11 +553,11 @@ async def set_value(
     validate_key(key)
 
     # Get or create the KV provider
-    provider = await get_or_create_kv_provider(session, ctx.namespace_id, x_kv_provider)
+    kv_provider = await get_or_create_kv_provider(session, ctx.namespace_id, provider)
 
     # Get or create table (auto-grants permissions if created)
     kv_table = await get_or_create_table(
-        session, provider.id, table, ctx.workflow_id
+        session, kv_provider.id, table, ctx.workflow_id
     )
 
     # Check write permission (will have it if just created)
@@ -597,13 +601,13 @@ async def set_value(
     )
 
 
-@router.delete("/kv/{table}/{key}")
+@router.delete("/kv/{provider}/{table}/{key}")
 async def delete_value(
+    provider: str,
     table: str,
     key: str,
     ctx: WorkflowContextDep,
     session: TransactionSessionDep,
-    x_kv_provider: str = Header(alias="X-KV-Provider"),
 ) -> dict:
     """
     Delete a value from the KV store.
@@ -612,11 +616,11 @@ async def delete_value(
     validate_key(key)
 
     # Get or create the KV provider
-    provider = await get_or_create_kv_provider(session, ctx.namespace_id, x_kv_provider)
+    kv_provider = await get_or_create_kv_provider(session, ctx.namespace_id, provider)
 
     # Check table and write permission
     kv_table, _ = await get_table_with_permission(
-        session, provider.id, table, ctx.workflow_id, require_write=True
+        session, kv_provider.id, table, ctx.workflow_id, require_write=True
     )
 
     # Get item

@@ -25,6 +25,7 @@ class ConfigRead(BaseModel):
     docker: DockerConfig
     websocket_url: str
     """url to centrifugo"""
+    is_cloud: bool
 
 
 @router.get("/config")
@@ -49,4 +50,5 @@ async def get_config():
             registry_url=settings.DOCKER_REGISTRY_URL,
         ),
         websocket_url=websocket_url,
+        is_cloud=settings.IS_CLOUD,
     )

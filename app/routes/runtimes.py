@@ -5,17 +5,19 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.deps.auth import CurrentUser
-from app.deps.db import SessionDep, TransactionSessionDep
+from app.deps.auth import CurrentUser, security
+from app.deps.db import AsyncSessionLocal, SessionDep, TransactionSessionDep
 from app.factories import registry_client_factory, runtime_factory
 from app.models import (
     Runtime,
     RuntimeCreationStatus,
 )
 from app.packages.runtimes.runtime_types import RuntimeConfig
+from app.routes.admin_auth import get_jwt_from_session_cookie
 from app.settings import settings
 
 logger = structlog.stdlib.get_logger(__name__)
@@ -77,10 +79,6 @@ async def get_push_token(
 
     # Extract WorkOS token from request
     # Same logic as get_current_user in app/deps/auth.py
-    from fastapi.security import HTTPAuthorizationCredentials
-
-    from app.deps.auth import security
-
     credentials: HTTPAuthorizationCredentials | None = await security(request)
 
     workos_token = None
@@ -88,8 +86,6 @@ async def get_push_token(
         workos_token = credentials.credentials
     else:
         # Try session cookie
-        from app.routes.admin_auth import get_jwt_from_session_cookie
-
         session_cookie = request.cookies.get("session")
         if session_cookie:
             workos_token = get_jwt_from_session_cookie(session_cookie)
@@ -185,8 +181,6 @@ async def create_runtime(
 
 async def update_runtime_status_background(runtime_id: UUID):
     """Background task to check and update runtime status"""
-    from app.deps.db import AsyncSessionLocal
-
     async with AsyncSessionLocal() as session:
         # Get the runtime from DB
         runtime_result = await session.execute(

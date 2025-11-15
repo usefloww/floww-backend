@@ -13,6 +13,7 @@ from app.models import (
 )
 from app.settings import settings
 from app.utils.password import hash_password
+from app.utils.single_org import get_default_organization_id
 
 logger = structlog.stdlib.get_logger(__name__)
 
@@ -58,8 +59,6 @@ async def get_or_create_user(
             # Single-org mode: skip personal namespace, add user to default org
             if not settings.SINGLE_ORG_ALLOW_PERSONAL_NAMESPACES:
                 # Get the default organization
-                from app.utils.single_org import get_default_organization_id
-
                 default_org_id = await get_default_organization_id(session)
 
                 # Check if user is already a member (shouldn't happen for new user, but be safe)

@@ -5,3 +5,4 @@
 
 from app.tests.fixtures_db import *  # noqa
 from app.tests.fixtures_clients import *  # noqa
+from app.tests.fixtures_billing import *  # noqa

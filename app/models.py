@@ -80,6 +80,19 @@ class ExecutionStatus(str, Enum):
     NO_DEPLOYMENT = "no_deployment"  # No active deployment found
 
 
+class SubscriptionTier(str, Enum):
+    FREE = "free"
+    HOBBY = "hobby"
+
+
+class SubscriptionStatus(str, Enum):
+    ACTIVE = "active"  # Active paid subscription
+    TRIALING = "trialing"  # In trial period
+    PAST_DUE = "past_due"  # Payment failed but in grace period
+    CANCELED = "canceled"  # Subscription canceled
+    INCOMPLETE = "incomplete"  # Checkout session not completed
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -117,10 +130,98 @@ class User(Base):
     deployments: Mapped[list["WorkflowDeployment"]] = relationship(
         foreign_keys="WorkflowDeployment.deployed_by_id", back_populates="deployed_by"
     )
+    subscription: Mapped[Optional["Subscription"]] = relationship(
+        back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return self._repr(
             id=self.id, email=self.email, workos_user_id=self.workos_user_id
+        )
+
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True
+    )
+    stripe_customer_id: Mapped[Optional[str]] = mapped_column(
+        String(255), unique=True, nullable=True
+    )
+    stripe_subscription_id: Mapped[Optional[str]] = mapped_column(
+        String(255), unique=True, nullable=True
+    )
+    tier: Mapped[SubscriptionTier] = mapped_column(
+        SQLEnum(SubscriptionTier), nullable=False, default=SubscriptionTier.FREE
+    )
+    status: Mapped[SubscriptionStatus] = mapped_column(
+        SQLEnum(SubscriptionStatus), nullable=False, default=SubscriptionStatus.ACTIVE
+    )
+    trial_ends_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    current_period_end: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    grace_period_ends_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancel_at_period_end: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="subscription")
+    billing_events: Mapped[list["BillingEvent"]] = relationship(
+        back_populates="subscription", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (Index("idx_subscriptions_user", "user_id"),)
+
+    def __repr__(self):
+        return self._repr(
+            id=self.id, user_id=self.user_id, tier=self.tier, status=self.status
+        )
+
+
+class BillingEvent(Base):
+    __tablename__ = "billing_events"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    subscription_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("subscriptions.id", ondelete="CASCADE")
+    )
+    event_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    stripe_event_id: Mapped[Optional[str]] = mapped_column(
+        String(255), unique=True, nullable=True
+    )
+    payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # Relationships
+    subscription: Mapped["Subscription"] = relationship(back_populates="billing_events")
+
+    __table_args__ = (
+        Index("idx_billing_events_subscription", "subscription_id"),
+        Index("idx_billing_events_event_type", "event_type"),
+        Index("idx_billing_events_created_at", "created_at"),
+    )
+
+    def __repr__(self):
+        return self._repr(
+            id=self.id, subscription_id=self.subscription_id, event_type=self.event_type
         )
 
 

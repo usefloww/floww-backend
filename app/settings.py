@@ -143,6 +143,22 @@ class SingleOrgConfig(BaseSettings):
     SINGLE_ORG_ALLOW_PERSONAL_NAMESPACES: bool = False
 
 
+class BillingConfig(BaseSettings):
+    IS_CLOUD: bool = False
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_PUBLISHABLE_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_PRICE_ID_PRO: str = ""
+
+    FREE_TIER_WORKFLOW_LIMIT: int = 3
+    FREE_TIER_EXECUTION_LIMIT_PER_MONTH: int = 100
+    PRO_TIER_WORKFLOW_LIMIT: int = 100
+    PRO_TIER_EXECUTION_LIMIT_PER_MONTH: int = 10000
+
+    TRIAL_PERIOD_DAYS: int = 0
+    GRACE_PERIOD_DAYS: int = 7
+
+
 class Settings(
     AuthConfig,
     CentrifugoConfig,
@@ -152,6 +168,7 @@ class Settings(
     KubernetesConfig,
     LambdaConfig,
     SingleOrgConfig,
+    BillingConfig,
     BaseSettings,
 ):
     model_config = SettingsConfigDict(env_file=(".env", ".env.prod", ".env.test"))

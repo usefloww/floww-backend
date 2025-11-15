@@ -65,9 +65,7 @@ def upgrade():
             "table_id", "workflow_id", name="uq_table_workflow_permission"
         ),
     )
-    op.create_index(
-        "idx_kv_permissions_table", "kv_table_permissions", ["table_id"]
-    )
+    op.create_index("idx_kv_permissions_table", "kv_table_permissions", ["table_id"])
     op.create_index(
         "idx_kv_permissions_workflow", "kv_table_permissions", ["workflow_id"]
     )

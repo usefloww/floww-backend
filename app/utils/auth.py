@@ -15,19 +15,6 @@ async def get_user_from_token(session: AsyncSession, token: str) -> User:
     return await get_or_create_user(session, external_user_id)
 
 
-def get_user_from_cookie(token: str) -> User:
-    import asyncio
-
-    from app.deps.db import get_session
-
-    session = next(get_session())
-
-    try:
-        return asyncio.run(get_user_from_token(session, token))
-    finally:
-        session.close()
-
-
 async def get_user_from_api_key(session: AsyncSession, api_key: str) -> User:
     """Validate an API key and return the associated user.
 

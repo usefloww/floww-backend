@@ -47,7 +47,7 @@ async def test_set_and_get_value(client_a: UserClient, workflow_a: Workflow):
     token = get_workflow_token(workflow_a)
 
     response = await client_a.put(
-        "/api/kv/my_table/test_key",
+        "/api/kv/default/my_table/test_key",
         json={"value": "test_value"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -60,7 +60,7 @@ async def test_set_and_get_value(client_a: UserClient, workflow_a: Workflow):
 
     # Verify we can read it back
     response = await client_a.get(
-        "/api/kv/my_table/test_key",
+        "/api/kv/default/my_table/test_key",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200
@@ -75,14 +75,14 @@ async def test_update_existing_value(client_a: UserClient, workflow_a: Workflow)
 
     # Create initial value
     await client_a.put(
-        "/api/kv/my_table/counter",
+        "/api/kv/default/my_table/counter",
         json={"value": 1},
         headers={"Authorization": f"Bearer {token}"},
     )
 
     # Update value
     response = await client_a.put(
-        "/api/kv/my_table/counter",
+        "/api/kv/default/my_table/counter",
         json={"value": 2},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -92,7 +92,7 @@ async def test_update_existing_value(client_a: UserClient, workflow_a: Workflow)
 
     # Verify updated value
     response = await client_a.get(
-        "/api/kv/my_table/counter",
+        "/api/kv/default/my_table/counter",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200
@@ -103,14 +103,14 @@ async def test_delete_value(client_a: UserClient, workflow_a: Workflow):
     """Test deleting a value."""
     # Create value
     await client_a.put(
-        "/api/kv/my_table/temp_key",
+        "/api/kv/default/my_table/temp_key",
         json={"value": "temporary"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
 
     # Delete value
     response = await client_a.delete(
-        "/api/kv/my_table/temp_key",
+        "/api/kv/default/my_table/temp_key",
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
     assert response.status_code == 200
@@ -120,7 +120,7 @@ async def test_delete_value(client_a: UserClient, workflow_a: Workflow):
 
     # Verify it's gone
     response = await client_a.get(
-        "/api/kv/my_table/temp_key",
+        "/api/kv/default/my_table/temp_key",
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
     assert response.status_code == 404
@@ -130,19 +130,19 @@ async def test_list_tables(client_a: UserClient, workflow_a: Workflow):
     """Test listing tables shows only accessible tables."""
     # Create values in two different tables
     await client_a.put(
-        "/api/kv/table_one/key1",
+        "/api/kv/default/table_one/key1",
         json={"value": "data1"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
     await client_a.put(
-        "/api/kv/table_two/key2",
+        "/api/kv/default/table_two/key2",
         json={"value": "data2"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
 
     # List tables
     response = await client_a.get(
-        "/api/kv",
+        "/api/kv/default",
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
     assert response.status_code == 200
@@ -155,25 +155,27 @@ async def test_list_tables(client_a: UserClient, workflow_a: Workflow):
 # Permission Model Tests
 
 
-async def test_creator_auto_gets_permissions(client_a: UserClient, workflow_a: Workflow):
+async def test_creator_auto_gets_permissions(
+    client_a: UserClient, workflow_a: Workflow
+):
     """Test that creating a table automatically grants read+write permissions."""
     # Create table via PUT
     await client_a.put(
-        "/api/kv/auto_table/key1",
+        "/api/kv/default/auto_table/key1",
         json={"value": "data"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
 
     # Verify we can read (requires read permission)
     response = await client_a.get(
-        "/api/kv/auto_table/key1",
+        "/api/kv/default/auto_table/key1",
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
     assert response.status_code == 200
 
     # Verify we can write (requires write permission)
     response = await client_a.put(
-        "/api/kv/auto_table/key2",
+        "/api/kv/default/auto_table/key2",
         json={"value": "more_data"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
@@ -186,21 +188,21 @@ async def test_grant_permission_to_another_workflow(
     """Test granting permissions to another workflow."""
     # Create table with workflow_a
     await client_a.put(
-        "/api/kv/shared_table/data",
+        "/api/kv/default/shared_table/data",
         json={"value": "shared"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
 
     # Initially workflow_b can't access
     response = await client_a.get(
-        "/api/kv/shared_table/data",
+        "/api/kv/default/shared_table/data",
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_b)}"},
     )
     assert response.status_code == 403
 
     # Grant read permission to workflow_b
     response = await client_a.post(
-        "/api/kv/permissions/shared_table",
+        "/api/kv/default/permissions/shared_table",
         json={"workflow_id": str(workflow_b.id), "can_read": True, "can_write": False},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
@@ -212,14 +214,14 @@ async def test_grant_permission_to_another_workflow(
 
     # Now workflow_b can read
     response = await client_a.get(
-        "/api/kv/shared_table/data",
+        "/api/kv/default/shared_table/data",
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_b)}"},
     )
     assert response.status_code == 200
 
     # But workflow_b still can't write
     response = await client_a.put(
-        "/api/kv/shared_table/other",
+        "/api/kv/default/shared_table/other",
         json={"value": "attempt"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_b)}"},
     )
@@ -232,21 +234,21 @@ async def test_access_denied_without_permission(
     """Test that accessing a table without permission returns 403."""
     # Create table with workflow_a
     await client_a.put(
-        "/api/kv/private_table/secret",
+        "/api/kv/default/private_table/secret",
         json={"value": "private_data"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
 
     # workflow_b can't read
     response = await client_a.get(
-        "/api/kv/private_table/secret",
+        "/api/kv/default/private_table/secret",
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_b)}"},
     )
     assert response.status_code == 403
 
     # workflow_b can't write
     response = await client_a.put(
-        "/api/kv/private_table/other",
+        "/api/kv/default/private_table/other",
         json={"value": "attempt"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_b)}"},
     )
@@ -259,21 +261,21 @@ async def test_write_permission_required_to_grant(
     """Test that write permission is required to grant/revoke permissions."""
     # Create table with workflow_a
     await client_a.put(
-        "/api/kv/perm_table/data",
+        "/api/kv/default/perm_table/data",
         json={"value": "data"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
 
     # Grant read-only to workflow_b
     await client_a.post(
-        "/api/kv/permissions/perm_table",
+        "/api/kv/default/permissions/perm_table",
         json={"workflow_id": str(workflow_b.id), "can_read": True, "can_write": False},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
 
     # workflow_b can't grant permissions (needs write permission)
     response = await client_a.post(
-        "/api/kv/permissions/perm_table",
+        "/api/kv/default/permissions/perm_table",
         json={"workflow_id": str(workflow_a.id), "can_read": True, "can_write": True},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_b)}"},
     )
@@ -287,7 +289,7 @@ async def test_invalid_table_name(client_a: UserClient, workflow_a: Workflow):
     """Test that invalid table names return 400."""
     # Table name with invalid characters
     response = await client_a.put(
-        "/api/kv/invalid@table/key",
+        "/api/kv/default/invalid@table/key",
         json={"value": "data"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
@@ -299,7 +301,7 @@ async def test_invalid_key(client_a: UserClient, workflow_a: Workflow):
     """Test that invalid keys return 400."""
     # Key with invalid characters
     response = await client_a.put(
-        "/api/kv/my_table/invalid key with spaces",
+        "/api/kv/default/my_table/invalid key with spaces",
         json={"value": "data"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
@@ -313,7 +315,7 @@ async def test_oversized_value(client_a: UserClient, workflow_a: Workflow):
     large_value = "x" * (1_000_001)  # Just over 1MB
 
     response = await client_a.put(
-        "/api/kv/my_table/large_key",
+        "/api/kv/default/my_table/large_key",
         json={"value": large_value},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
@@ -321,27 +323,31 @@ async def test_oversized_value(client_a: UserClient, workflow_a: Workflow):
     assert response.status_code >= 400  # Any error code indicates rejection
 
 
-async def test_get_nonexistent_key_returns_404(client_a: UserClient, workflow_a: Workflow):
+async def test_get_nonexistent_key_returns_404(
+    client_a: UserClient, workflow_a: Workflow
+):
     """Test that getting a non-existent key returns 404."""
     response = await client_a.get(
-        "/api/kv/my_table/nonexistent",
+        "/api/kv/default/my_table/nonexistent",
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
     assert response.status_code == 404
 
 
-async def test_delete_nonexistent_key_returns_404(client_a: UserClient, workflow_a: Workflow):
+async def test_delete_nonexistent_key_returns_404(
+    client_a: UserClient, workflow_a: Workflow
+):
     """Test that deleting a non-existent key returns 404."""
     # Create table first so we have permission
     await client_a.put(
-        "/api/kv/my_table/existing",
+        "/api/kv/default/my_table/existing",
         json={"value": "data"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
 
     # Try to delete non-existent key
     response = await client_a.delete(
-        "/api/kv/my_table/nonexistent",
+        "/api/kv/default/my_table/nonexistent",
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
     assert response.status_code == 404
@@ -356,14 +362,14 @@ async def test_user_cannot_list_other_users_tables(
     """Test that users can't see tables from other users' namespaces."""
     # client_a creates a table
     await client_a.put(
-        "/api/kv/client_a_table/data",
+        "/api/kv/default/client_a_table/data",
         json={"value": "a_data"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
 
     # client_a can see the table
     response = await client_a.get(
-        "/api/kv",
+        "/api/kv/default",
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
     assert response.status_code == 200
@@ -375,7 +381,10 @@ async def test_user_cannot_list_other_users_tables(
 
 
 async def test_workflow_cannot_access_table_from_other_namespace(
-    client_a: UserClient, client_b: UserClient, workflow_a: Workflow, session: AsyncSession
+    client_a: UserClient,
+    client_b: UserClient,
+    workflow_a: Workflow,
+    session: AsyncSession,
 ):
     """Test workflows can't access tables from other namespaces."""
     from uuid import UUID
@@ -384,7 +393,7 @@ async def test_workflow_cannot_access_table_from_other_namespace(
 
     # client_a creates a table in their namespace
     await client_a.put(
-        "/api/kv/namespace_a_table/data",
+        "/api/kv/default/namespace_a_table/data",
         json={"value": "a_data"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
@@ -405,7 +414,7 @@ async def test_workflow_cannot_access_table_from_other_namespace(
 
     # client_b's workflow can't access client_a's table (different namespace)
     response = await client_b.get(
-        "/api/kv/namespace_a_table/data",
+        "/api/kv/default/namespace_a_table/data",
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_b)}"},
     )
     assert response.status_code == 404  # Table not found in their namespace
@@ -418,19 +427,19 @@ async def test_list_keys_without_values(client_a: UserClient, workflow_a: Workfl
     """Test listing keys without values."""
     # Create multiple keys
     await client_a.put(
-        "/api/kv/my_table/key1",
+        "/api/kv/default/my_table/key1",
         json={"value": "value1"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
     await client_a.put(
-        "/api/kv/my_table/key2",
+        "/api/kv/default/my_table/key2",
         json={"value": "value2"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
 
     # List keys without values
     response = await client_a.get(
-        "/api/kv/my_table",
+        "/api/kv/default/my_table",
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
     assert response.status_code == 200
@@ -446,19 +455,19 @@ async def test_list_keys_with_values(client_a: UserClient, workflow_a: Workflow)
     """Test listing keys with values using include_values=true."""
     # Create multiple keys
     await client_a.put(
-        "/api/kv/my_table/key1",
+        "/api/kv/default/my_table/key1",
         json={"value": "value1"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
     await client_a.put(
-        "/api/kv/my_table/key2",
+        "/api/kv/default/my_table/key2",
         json={"value": {"nested": "object"}},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
 
     # List keys with values
     response = await client_a.get(
-        "/api/kv/my_table?include_values=true",
+        "/api/kv/default/my_table?include_values=true",
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
     assert response.status_code == 200
@@ -478,19 +487,19 @@ async def test_list_empty_table(client_a: UserClient, workflow_a: Workflow):
     """Test listing keys in an empty table."""
     # Create table
     await client_a.put(
-        "/api/kv/empty_table/temp",
+        "/api/kv/default/empty_table/temp",
         json={"value": "data"},
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
     # Delete the only key
     await client_a.delete(
-        "/api/kv/empty_table/temp",
+        "/api/kv/default/empty_table/temp",
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
 
     # List should return empty array
     response = await client_a.get(
-        "/api/kv/empty_table",
+        "/api/kv/default/empty_table",
         headers={"Authorization": f"Bearer {get_workflow_token(workflow_a)}"},
     )
     assert response.status_code == 200

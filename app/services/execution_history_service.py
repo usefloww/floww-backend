@@ -216,8 +216,8 @@ async def get_executions_for_workflow(
     if status:
         query = query.where(ExecutionHistory.status == status)
 
-    query = query.order_by(ExecutionHistory.received_at.desc()).limit(limit).offset(
-        offset
+    query = (
+        query.order_by(ExecutionHistory.received_at.desc()).limit(limit).offset(offset)
     )
 
     result = await session.execute(query)
@@ -289,7 +289,9 @@ def serialize_execution(execution: ExecutionHistory) -> dict:
         ),
         "status": execution.status.value,
         "received_at": execution.received_at.isoformat(),
-        "started_at": execution.started_at.isoformat() if execution.started_at else None,
+        "started_at": execution.started_at.isoformat()
+        if execution.started_at
+        else None,
         "completed_at": (
             execution.completed_at.isoformat() if execution.completed_at else None
         ),

@@ -76,6 +76,8 @@ services:
       - backend_centrifugo_api_key
       - backend_centrifugo_jwt_secret
       - backend_sentry_dsn
+      - backend_stripe_secret_key
+      - backend_stripe_webhook_secret
 
     environment:
       # Non-sensitive configuration
@@ -92,6 +94,9 @@ services:
       - CENTRIFUGO_PUBLIC_URL=https://ws.usefloww.dev
       - PUBLIC_API_URL=https://api.usefloww.dev
       - SENTRY_ENVIRONMENT=production
+      - IS_CLOUD=true
+      - STRIPE_PUBLISHABLE_KEY=pk_test_51SToIL6Sf2jh0J7U2zK8kB10riNkBMYt0l29srRSjhDcH0fVq1wkvJsz5NVrrHAKJuikDg5ZmOeAKFv2AkghqR0h006yNZRHDx
+      - STRIPE_PRICE_ID_PRO=price_1SU3bw6Sf2jh0J7UfLrKH0a0
 
       # Secret file paths (read by updated settings.py)
       - AUTH_CLIENT_SECRET_FILE=/run/secrets/backend_auth_client_secret
@@ -104,6 +109,8 @@ services:
       - CENTRIFUGO_API_KEY_FILE=/run/secrets/backend_centrifugo_api_key
       - CENTRIFUGO_JWT_SECRET_FILE=/run/secrets/backend_centrifugo_jwt_secret
       - SENTRY_DSN_FILE=/run/secrets/backend_sentry_dsn
+      - STRIPE_SECRET_KEY_FILE=/run/secrets/backend_stripe_secret_key
+      - STRIPE_WEBHOOK_SECRET_FILE=/run/secrets/backend_stripe_webhook_secret
 
     deploy:
       mode: replicated
@@ -189,6 +196,10 @@ secrets:
   backend_centrifugo_jwt_secret:
     external: true
   backend_sentry_dsn:
+    external: true
+  backend_stripe_secret_key:
+    external: true
+  backend_stripe_webhook_secret:
     external: true
 
 networks:

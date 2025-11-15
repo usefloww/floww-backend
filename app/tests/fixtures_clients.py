@@ -52,7 +52,7 @@ async def mock_get_current_user(
 
     token = credentials.credentials
 
-    if token.startswith("test_user"):
+    if token.startswith("test_"):
         return await get_or_create_user(session, token)
 
     return await get_current_user(request, session, credentials)
