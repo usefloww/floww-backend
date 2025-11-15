@@ -72,6 +72,7 @@ class LambdaConfig(BaseSettings):
     AWS_REGION: str = "us-east-1"
 
     LAMBDA_EXECUTION_ROLE_ARN: str = "arn:aws:iam::501046919403:role/LambdaRole"
+    LAMBDA_REPOSITORY_NAME: str = "trigger-lambda"
     ECR_REGISTRY_URL: str = (
         "501046919403.dkr.ecr.us-east-1.amazonaws.com/trigger-lambda"
     )
@@ -81,6 +82,7 @@ class DockerConfig(BaseSettings):
     DOCKER_REGISTRY_URL: str = ""
     DOCKER_REGISTRY_USER: str = ""
     DOCKER_REGISTRY_PASSWORD: str = ""
+    DOCKER_REPOSITORY_NAME: str = "trigger-lambda"
 
 
 class KubernetesConfig(BaseSettings):

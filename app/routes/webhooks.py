@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.deps.db import SessionDep
-from app.factories import runtime_factory
+from app.factories import registry_client_factory, runtime_factory
 from app.models import (
     IncomingWebhook,
     Provider,
@@ -25,12 +25,13 @@ from app.services.execution_history_service import (
 )
 from app.services.providers.provider_registry import PROVIDER_TYPES_MAP
 from app.services.workflow_auth_service import WorkflowAuthService
-from app.settings import settings
-from app.utils.aws_ecr import get_image_uri
 from app.utils.encryption import decrypt_secret
 
 router = APIRouter()
 logger = structlog.stdlib.get_logger(__name__)
+
+# Get registry client based on runtime configuration
+registry_client = registry_client_factory()
 
 
 async def _execute_trigger(
@@ -109,11 +110,11 @@ async def _execute_trigger(
         return None
 
     image_hash = deployment.runtime.config["image_hash"]
-    image_uri = get_image_uri(settings.ECR_REGISTRY_URL, image_hash)
+    image_uri = await registry_client.get_image_uri(image_hash)
 
     if not image_uri:
         logger.error(
-            "Image not found in ECR",
+            "Image not found in registry",
             runtime_id=str(deployment.runtime.id),
             image_hash=image_hash,
             execution_id=str(execution_id),

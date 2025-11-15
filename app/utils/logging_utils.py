@@ -103,8 +103,10 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         response = Response(status_code=500)
         try:
             response: StreamingResponse = await call_next(request)
-        except Exception:
-            structlog.stdlib.get_logger("api.error").exception("Uncaught exception")
+        except Exception as e:
+            structlog.stdlib.get_logger("api.error").exception(
+                "Uncaught exception", error=e
+            )
             raise
         finally:
             process_time = time.perf_counter() - start_time

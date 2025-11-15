@@ -13,12 +13,12 @@ from app.tests.fixtures_clients import UserClient
 async def test_create_runtime_success(client_a: UserClient):
     with (
         patch("app.routes.runtimes.runtime_factory") as mock_runtime_factory,
-        patch("app.routes.runtimes.get_image_uri") as mock_get_image_uri,
+        patch(
+            "app.routes.runtimes.registry_client.get_image_uri", new_callable=AsyncMock
+        ) as mock_get_image_uri,
     ):
-        # Mock image exists in ECR
-        mock_get_image_uri.return_value = (
-            "123456789.dkr.ecr.us-east-1.amazonaws.com/trigger-lambda:test-hash"
-        )
+        # Mock image exists in registry
+        mock_get_image_uri.return_value = "test-registry.com/test-repo@sha256:abc123"
 
         # Mock runtime implementation
         mock_runtime_impl = AsyncMock()
@@ -67,11 +67,13 @@ async def test_create_runtime_success(client_a: UserClient):
 async def test_create_runtime_returns_409_for_existing(client_a: UserClient):
     with (
         patch("app.routes.runtimes.runtime_factory") as mock_runtime_factory,
-        patch("app.routes.runtimes.get_image_uri") as mock_get_image_uri,
+        patch(
+            "app.routes.runtimes.registry_client.get_image_uri", new_callable=AsyncMock
+        ) as mock_get_image_uri,
     ):
-        # Mock image exists in ECR
+        # Mock image exists in registry
         mock_get_image_uri.return_value = (
-            "123456789.dkr.ecr.us-east-1.amazonaws.com/trigger-lambda:duplicate-hash"
+            "test-registry.com/test-repo@sha256:duplicate123"
         )
 
         # Mock runtime implementation
@@ -177,8 +179,10 @@ async def test_get_runtime_triggers_background_update(
 
 
 async def test_create_runtime_image_not_exists(client_a: UserClient):
-    with patch("app.routes.runtimes.get_image_uri") as mock_get_image_uri:
-        # Mock image does not exist in ECR
+    with patch(
+        "app.routes.runtimes.registry_client.get_image_uri", new_callable=AsyncMock
+    ) as mock_get_image_uri:
+        # Mock image does not exist in registry
         mock_get_image_uri.return_value = None
 
         import time

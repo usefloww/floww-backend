@@ -69,7 +69,7 @@ def llm_json(model: str, prompt: str, temperature=0.0):
     raw = resp.choices[0].message["content"]
     try:
         return json.loads(raw)
-    except:
+    except Exception:
         start = raw.find("{")
         end = raw.rfind("}") + 1
         return json.loads(raw[start:end])

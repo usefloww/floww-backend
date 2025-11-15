@@ -10,19 +10,21 @@ from sqlalchemy import select
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep, TransactionSessionDep
-from app.factories import runtime_factory
+from app.factories import registry_client_factory, runtime_factory
 from app.models import (
     Runtime,
     RuntimeCreationStatus,
 )
 from app.packages.runtimes.runtime_types import RuntimeConfig
 from app.settings import settings
-from app.utils.aws_ecr import get_image_uri
 
 logger = structlog.stdlib.get_logger(__name__)
 
 
 router = APIRouter(prefix="/runtimes", tags=["Runtimes"])
+
+# Get registry client based on runtime configuration
+registry_client = registry_client_factory()
 
 
 class RuntimeCreateConfig(BaseModel):
@@ -64,11 +66,11 @@ async def get_push_token(
     the internal Docker registry proxy.
     """
 
-    # Check if image already exists in ECR
-    image_uri = get_image_uri(settings.ECR_REGISTRY_URL, push_request.image_hash)
+    # Check if image already exists in registry
+    image_uri = await registry_client.get_image_uri(push_request.image_hash)
     if image_uri is not None:
         logger.info(
-            "Image hash already exists in ECR, refusing push token",
+            "Image hash already exists in registry, refusing push token",
             image_hash=push_request.image_hash,
         )
         raise HTTPException(status_code=409, detail="Image already exists in registry")
@@ -143,9 +145,7 @@ async def create_runtime(
             },
         )
 
-    image_uri = get_image_uri(
-        repository_name=settings.ECR_REGISTRY_URL, tag=runtime_data.config.image_hash
-    )
+    image_uri = await registry_client.get_image_uri(runtime_data.config.image_hash)
 
     if image_uri is None:
         raise HTTPException(400, "Image does not exist")

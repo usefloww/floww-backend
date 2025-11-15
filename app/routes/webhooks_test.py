@@ -114,7 +114,7 @@ async def test_webhook_not_found(client_a: UserClient):
     new_callable=AsyncMock,
 )
 @patch("app.routes.webhooks.runtime_factory")
-@patch("app.routes.webhooks.get_image_uri")
+@patch("app.routes.webhooks.registry_client.get_image_uri", new_callable=AsyncMock)
 async def test_webhook_successful_invocation(
     mock_get_image_uri,
     mock_runtime_factory,
@@ -126,7 +126,7 @@ async def test_webhook_successful_invocation(
 ):
     """Test successful webhook invocation with active deployment."""
     # Mock get_image_uri to return a valid image URI
-    mock_get_image_uri.return_value = "test-registry.amazonaws.com/test-image@sha256:abc123"
+    mock_get_image_uri.return_value = "test-registry.com/test-repo@sha256:abc123"
 
     # Mock runtime implementation
     mock_runtime_impl = AsyncMock()
@@ -189,7 +189,9 @@ async def test_webhook_no_active_deployment(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"message": "No active deployment found, only sent to dev mode."}
+    assert response.json() == {
+        "message": "No active deployment found, only sent to dev mode."
+    }
 
     # Verify Centrifugo was still called for dev webhook event
     mock_centrifugo.assert_called_once()

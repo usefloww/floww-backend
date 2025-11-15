@@ -1,7 +1,7 @@
 """Docker Registry v2 API Proxy.
 
 This module implements the Docker Registry HTTP API V2 specification,
-proxying authenticated requests to AWS ECR.
+proxying authenticated requests to the configured container registry.
 
 See: https://docs.docker.com/registry/spec/api/
 """
@@ -11,11 +11,13 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from app.deps.docker_auth import DockerUser
-from app.services.ecr_proxy_service import proxy_to_ecr
+from app.factories import registry_client_factory
 
 logger = structlog.stdlib.get_logger(__name__)
 
 router = APIRouter(tags=["Docker Proxy"])
+
+registry_client = registry_client_factory()
 
 
 @router.get("/v2/")
@@ -43,7 +45,7 @@ async def get_manifest(
     reference: str,
     current_user: DockerUser,
 ):
-    """Pull image manifest from ECR.
+    """Pull image manifest from registry.
 
     Args:
         repository: Docker repository name (e.g., "trigger-lambda")
@@ -51,7 +53,7 @@ async def get_manifest(
         current_user: Authenticated user from WorkOS token
 
     Returns:
-        Image manifest JSON from ECR
+        Image manifest JSON from registry
     """
     logger.info(
         "Docker pull manifest",
@@ -60,7 +62,7 @@ async def get_manifest(
         user_id=str(current_user.id),
     )
 
-    return await proxy_to_ecr(
+    return await registry_client.proxy(
         request=request,
         repository=repository,
         path_suffix=f"/manifests/{reference}",
@@ -74,7 +76,7 @@ async def check_manifest(
     reference: str,
     current_user: DockerUser,
 ):
-    """Check if image manifest exists in ECR.
+    """Check if image manifest exists in registry.
 
     Args:
         repository: Docker repository name
@@ -91,7 +93,7 @@ async def check_manifest(
         user_id=str(current_user.id),
     )
 
-    return await proxy_to_ecr(
+    return await registry_client.proxy(
         request=request,
         repository=repository,
         path_suffix=f"/manifests/{reference}",
@@ -105,7 +107,7 @@ async def push_manifest(
     reference: str,
     current_user: DockerUser,
 ):
-    """Push image manifest to ECR.
+    """Push image manifest to registry.
 
     Args:
         repository: Docker repository name
@@ -113,7 +115,7 @@ async def push_manifest(
         current_user: Authenticated user
 
     Returns:
-        Success response from ECR
+        Success response from registry
     """
     logger.info(
         "Docker push manifest",
@@ -122,7 +124,7 @@ async def push_manifest(
         user_id=str(current_user.id),
     )
 
-    return await proxy_to_ecr(
+    return await registry_client.proxy(
         request=request,
         repository=repository,
         path_suffix=f"/manifests/{reference}",
@@ -136,7 +138,7 @@ async def delete_manifest(
     reference: str,
     current_user: DockerUser,
 ):
-    """Delete image manifest from ECR.
+    """Delete image manifest from registry.
 
     Args:
         repository: Docker repository name
@@ -144,7 +146,7 @@ async def delete_manifest(
         current_user: Authenticated user
 
     Returns:
-        Success response from ECR
+        Success response from registry
     """
     logger.info(
         "Docker delete manifest",
@@ -153,7 +155,7 @@ async def delete_manifest(
         user_id=str(current_user.id),
     )
 
-    return await proxy_to_ecr(
+    return await registry_client.proxy(
         request=request,
         repository=repository,
         path_suffix=f"/manifests/{reference}",
@@ -167,7 +169,7 @@ async def get_blob(
     digest: str,
     current_user: DockerUser,
 ):
-    """Download image layer blob from ECR.
+    """Download image layer blob from registry.
 
     Args:
         repository: Docker repository name
@@ -175,7 +177,7 @@ async def get_blob(
         current_user: Authenticated user
 
     Returns:
-        Streaming blob data from ECR
+        Streaming blob data from registry
     """
     logger.info(
         "Docker pull blob",
@@ -184,7 +186,7 @@ async def get_blob(
         user_id=str(current_user.id),
     )
 
-    return await proxy_to_ecr(
+    return await registry_client.proxy(
         request=request,
         repository=repository,
         path_suffix=f"/blobs/{digest}",
@@ -198,7 +200,7 @@ async def check_blob(
     digest: str,
     current_user: DockerUser,
 ):
-    """Check if blob exists in ECR.
+    """Check if blob exists in registry.
 
     Args:
         repository: Docker repository name
@@ -215,7 +217,7 @@ async def check_blob(
         user_id=str(current_user.id),
     )
 
-    return await proxy_to_ecr(
+    return await registry_client.proxy(
         request=request,
         repository=repository,
         path_suffix=f"/blobs/{digest}",
@@ -229,7 +231,7 @@ async def delete_blob(
     digest: str,
     current_user: DockerUser,
 ):
-    """Delete blob from ECR.
+    """Delete blob from registry.
 
     Args:
         repository: Docker repository name
@@ -237,7 +239,7 @@ async def delete_blob(
         current_user: Authenticated user
 
     Returns:
-        Success response from ECR
+        Success response from registry
     """
     logger.info(
         "Docker delete blob",
@@ -246,7 +248,7 @@ async def delete_blob(
         user_id=str(current_user.id),
     )
 
-    return await proxy_to_ecr(
+    return await registry_client.proxy(
         request=request,
         repository=repository,
         path_suffix=f"/blobs/{digest}",
@@ -276,7 +278,7 @@ async def initiate_blob_upload(
         user_id=str(current_user.id),
     )
 
-    return await proxy_to_ecr(
+    return await registry_client.proxy(
         request=request,
         repository=repository,
         path_suffix="/blobs/uploads/",
@@ -309,7 +311,7 @@ async def upload_blob_chunk(
         user_id=str(current_user.id),
     )
 
-    return await proxy_to_ecr(
+    return await registry_client.proxy(
         request=request,
         repository=repository,
         path_suffix=f"/blobs/uploads/{upload_uuid}",
@@ -342,7 +344,7 @@ async def complete_blob_upload(
         user_id=str(current_user.id),
     )
 
-    return await proxy_to_ecr(
+    return await registry_client.proxy(
         request=request,
         repository=repository,
         path_suffix=f"/blobs/uploads/{upload_uuid}",
@@ -370,7 +372,7 @@ async def list_tags(
         user_id=str(current_user.id),
     )
 
-    return await proxy_to_ecr(
+    return await registry_client.proxy(
         request=request,
         repository=repository,
         path_suffix="/tags/list",
@@ -396,7 +398,7 @@ async def list_repositories(
     )
 
     # This endpoint doesn't have a repository prefix
-    return await proxy_to_ecr(
+    return await registry_client.proxy(
         request=request,
         repository="",  # No repository for catalog
         path_suffix="/_catalog",

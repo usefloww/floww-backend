@@ -8,6 +8,12 @@ from app.packages.auth.providers import (
     PasswordAuthProvider,
     WorkOSProvider,
 )
+from app.packages.registry_proxy import (
+    DockerRegistryClient,
+    ECRRegistryClient,
+    RegistryClient,
+    RegistryConfig,
+)
 from app.packages.runtimes.implementations.docker_runtime import DockerRuntime
 from app.packages.runtimes.implementations.kubernetes_runtime import KubernetesRuntime
 from app.packages.runtimes.implementations.lambda_runtime import LambdaRuntime
@@ -64,3 +70,41 @@ def auth_provider_factory() -> AuthProvider:
         client_secret=settings.AUTH_CLIENT_SECRET,
         issuer_url=settings.AUTH_ISSUER_URL,
     )
+
+
+@lru_cache
+def registry_client_factory() -> RegistryClient:
+    """Factory function for creating registry clients based on runtime type.
+
+    Returns:
+        RegistryClient instance configured for the current runtime
+
+    Raises:
+        ValueError: If runtime type is invalid
+    """
+    if settings.RUNTIME_TYPE == "lambda":
+        ecr_client = aws_session_factory().client("ecr")
+        config = RegistryConfig(
+            registry_url=settings.ECR_REGISTRY_URL,
+            public_api_url=settings.PUBLIC_API_URL,
+        )
+        return ECRRegistryClient(
+            config=config,
+            ecr_client=ecr_client,
+            repository_name=settings.LAMBDA_REPOSITORY_NAME,
+        )
+
+    elif settings.RUNTIME_TYPE in ["docker", "kubernetes"]:
+        config = RegistryConfig(
+            registry_url=settings.DOCKER_REGISTRY_URL,
+            public_api_url=settings.PUBLIC_API_URL,
+        )
+        return DockerRegistryClient(
+            config=config,
+            username=settings.DOCKER_REGISTRY_USER,
+            password=settings.DOCKER_REGISTRY_PASSWORD,
+            repository_name=settings.DOCKER_REPOSITORY_NAME,
+        )
+
+    else:
+        raise ValueError(f"Invalid runtime type: {settings.RUNTIME_TYPE}")
