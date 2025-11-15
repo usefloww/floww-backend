@@ -62,6 +62,8 @@ class GeneralConfig(BaseSettings):
     PUBLIC_API_URL: str = "http://localhost:8000"
     RUNTIME_TYPE: Literal["lambda", "docker", "kubernetes"] = "lambda"
     RUN_MIGRATIONS_ON_STARTUP: bool = False
+    SENTRY_DSN: str = ""
+    SENTRY_ENVIRONMENT: str = ""
 
 
 class LambdaConfig(BaseSettings):

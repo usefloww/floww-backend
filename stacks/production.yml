@@ -75,6 +75,7 @@ services:
       - backend_workflow_jwt_secret
       - backend_centrifugo_api_key
       - backend_centrifugo_jwt_secret
+      - backend_sentry_dsn
 
     environment:
       # Non-sensitive configuration
@@ -90,6 +91,7 @@ services:
       - CENTRIFUGO_PORT=8000
       - CENTRIFUGO_PUBLIC_URL=https://ws.usefloww.dev
       - PUBLIC_API_URL=https://api.usefloww.dev
+      - SENTRY_ENVIRONMENT=production
 
       # Secret file paths (read by updated settings.py)
       - AUTH_CLIENT_SECRET_FILE=/run/secrets/backend_auth_client_secret
@@ -101,6 +103,7 @@ services:
       - WORKFLOW_JWT_SECRET_FILE=/run/secrets/backend_workflow_jwt_secret
       - CENTRIFUGO_API_KEY_FILE=/run/secrets/backend_centrifugo_api_key
       - CENTRIFUGO_JWT_SECRET_FILE=/run/secrets/backend_centrifugo_jwt_secret
+      - SENTRY_DSN_FILE=/run/secrets/backend_sentry_dsn
 
     deploy:
       mode: replicated

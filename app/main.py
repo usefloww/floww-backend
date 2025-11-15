@@ -1,5 +1,3 @@
-import os
-
 import sentry_sdk
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -32,22 +30,12 @@ from app.utils.logging_utils import setup_logger
 from app.utils.migrations import run_migrations
 from app.utils.single_org import setup_single_org_mode
 
-
-def init_sentry():
-    environment = os.getenv("SENTRY_ENVIRONMENT", default="")
-    if environment not in {"production", "staging"}:
-        dsn = ""
-    else:
-        dsn = os.getenv("SENTRY_DSN", default="")
-
-    sentry_sdk.init(
-        dsn=dsn,
-        traces_sample_rate=0.01,
-        profiles_sample_rate=0.01,
-        enable_tracing=True,
-        send_default_pii=False,
-    )
-
+sentry_sdk.init(
+    dsn=settings.SENTRY_DSN,
+    environment=settings.SENTRY_ENVIRONMENT,
+    enable_tracing=False,
+    send_default_pii=False,
+)
 
 app = FastAPI()
 

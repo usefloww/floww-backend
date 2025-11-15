@@ -30,6 +30,7 @@ def load_provider_documentation(provider_name: str) -> Optional[str]:
     Returns:
         Raw file content as string, or None if file not found
     """
+    provider_name = provider_name.lower()
     providers_path = get_sdk_providers_path()
     provider_file = providers_path / f"{provider_name}.ts"
 

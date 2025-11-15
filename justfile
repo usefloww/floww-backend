@@ -26,3 +26,10 @@ test-unit files:
         echo "Running $file"
         pytest $file
     done
+
+
+test-ai-generator:
+    #!/bin/bash
+    source .venv/bin/activate
+    export PYTHONPATH=$(pwd)
+    python -m app.packages.ai_generator.ai_generator
