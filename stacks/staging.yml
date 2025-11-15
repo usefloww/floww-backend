@@ -188,6 +188,8 @@ secrets:
     external: true
   staging_backend_centrifugo_jwt_secret:
     external: true
+  backend_sentry_dsn:
+    external: true
 
 networks:
   traefik-staging-net:
