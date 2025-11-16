@@ -94,6 +94,8 @@ services:
       - CENTRIFUGO_PUBLIC_URL=https://ws.usefloww.dev
       - PUBLIC_API_URL=https://api.usefloww.dev
       - SENTRY_ENVIRONMENT=production
+      - REGISTRY_URL=501046919403.dkr.ecr.us-east-1.amazonaws.com
+      - REGISTRY_REPOSITORY_NAME=trigger-lambda
       - IS_CLOUD=true
       - STRIPE_PUBLISHABLE_KEY=pk_test_51SToIL6Sf2jh0J7U2zK8kB10riNkBMYt0l29srRSjhDcH0fVq1wkvJsz5NVrrHAKJuikDg5ZmOeAKFv2AkghqR0h006yNZRHDx
       - STRIPE_PRICE_ID_PRO=price_1SU3bw6Sf2jh0J7UfLrKH0a0
