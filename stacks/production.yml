@@ -97,8 +97,8 @@ services:
       - REGISTRY_URL=501046919403.dkr.ecr.us-east-1.amazonaws.com
       - REGISTRY_REPOSITORY_NAME=trigger-lambda
       - IS_CLOUD=true
-      - STRIPE_PUBLISHABLE_KEY=pk_test_51SToIL6Sf2jh0J7U2zK8kB10riNkBMYt0l29srRSjhDcH0fVq1wkvJsz5NVrrHAKJuikDg5ZmOeAKFv2AkghqR0h006yNZRHDx
-      - STRIPE_PRICE_ID_PRO=price_1SU3bw6Sf2jh0J7UfLrKH0a0
+      - STRIPE_PUBLISHABLE_KEY=pk_live_51SToIG9QR0ekoyxExl6rbZdjKrPubJFpPMe2dCiG7BxsVrJuQ04GP5QsMWQwg1L1s1tz255LV0JQMw2izZfHyeKZ00stQnGCze
+      - STRIPE_PRICE_ID_PRO=price_1SU76M9QR0ekoyxE5zIOKROn
 
       # Secret file paths (read by updated settings.py)
       - AUTH_CLIENT_SECRET_FILE=/run/secrets/backend_auth_client_secret
@@ -201,8 +201,10 @@ secrets:
     external: true
   backend_stripe_secret_key:
     external: true
+    name: backend_stripe_secret_key_v2
   backend_stripe_webhook_secret:
     external: true
+    name: backend_stripe_webhook_secret_v2
 
 networks:
   traefik-net:
