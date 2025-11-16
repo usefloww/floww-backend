@@ -1,13 +1,12 @@
+import logging
 import os
 
 import sentry_sdk
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
 
-from app.deps.db import AsyncSessionLocal
-from app.models import OrganizationMember, OrganizationRole, User
+from app.factories import scheduler_factory
 from app.routes import (
     admin_auth,
     billing,
@@ -53,6 +52,7 @@ def init_sentry():
         send_default_pii=False,
     )
 
+
 app = FastAPI()
 
 setup_logger(app)
@@ -63,11 +63,36 @@ init_admin(app)
 @app.on_event("startup")
 async def startup_event():
     """Run migrations and initialize single-org mode if enabled."""
+    logger = logging.getLogger(__name__)
+
     if settings.RUN_MIGRATIONS_ON_STARTUP:
         await run_migrations()
 
     if settings.SINGLE_ORG_MODE:
         await setup_single_org_mode(app)
+
+    # Initialize APScheduler if enabled
+    if settings.SCHEDULER_ENABLED:
+        scheduler = scheduler_factory()
+
+        scheduler.start()
+        logger.info(
+            "AsyncIOScheduler started successfully",
+            extra={"jobs_count": len(scheduler.get_jobs())},
+        )
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Gracefully shutdown AsyncIOScheduler if enabled."""
+    if settings.SCHEDULER_ENABLED:
+        logger = logging.getLogger(__name__)
+        logger.info("Shutting down AsyncIOScheduler")
+
+        scheduler = scheduler_factory()
+        scheduler.shutdown(wait=True)
+
+        logger.info("AsyncIOScheduler shut down successfully")
 
 
 api_router = APIRouter(prefix="/api")

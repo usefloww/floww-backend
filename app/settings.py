@@ -156,6 +156,26 @@ class BillingConfig(BaseSettings):
     GRACE_PERIOD_DAYS: int = 7
 
 
+class SchedulerConfig(BaseSettings):
+    SCHEDULER_ENABLED: bool = True
+    SCHEDULER_JOB_STORE_TABLE: str = "apscheduler_jobs"
+
+    @computed_field
+    @property
+    def SYNC_DATABASE_URL(self) -> str:
+        """
+        Convert async database URL to sync URL for APScheduler.
+
+        APScheduler 3.x requires synchronous database access, so we convert
+        postgresql+asyncpg:// to postgresql+psycopg2://
+        """
+        # Access DATABASE_URL from Settings through self
+        # This will be available when SchedulerConfig is mixed into Settings
+        if hasattr(self, "DATABASE_USER"):
+            return f"postgresql+psycopg2://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
+        return ""
+
+
 class Settings(
     AuthConfig,
     CentrifugoConfig,
@@ -165,6 +185,7 @@ class Settings(
     LambdaConfig,
     SingleOrgConfig,
     BillingConfig,
+    SchedulerConfig,
     BaseSettings,
 ):
     model_config = SettingsConfigDict(env_file=(".env", ".env.prod", ".env.test"))

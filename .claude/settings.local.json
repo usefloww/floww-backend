@@ -4,7 +4,8 @@
       "Read(//Users/rubenh/code/flows/flows-app/sdk/src/cli/auth/**)",
       "Read(//Users/rubenh/code/flows/flows-app/sdk/src/cli/config/**)",
       "WebSearch",
-      "Bash(just test-unit:*)"
+      "Bash(just test-unit:*)",
+      "Bash(python -m py_compile:*)"
     ],
     "deny": [],
     "ask": []

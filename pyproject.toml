@@ -37,6 +37,8 @@ dependencies = [
     "litellm>=1.79.3",
     "stripe>=13.2.0",
     "docker>=7.1.0",
+    "apscheduler>=3.11.1",
+    "psycopg2-binary>=2.9.10",
 ]
 
 [dependency-groups]

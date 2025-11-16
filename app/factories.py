@@ -108,3 +108,19 @@ def registry_client_factory() -> RegistryClient:
 
     else:
         raise ValueError(f"Invalid runtime type: {settings.RUNTIME_TYPE}")
+
+
+@lru_cache
+def scheduler_factory():
+    """Factory function for creating APScheduler instance.
+
+    Returns:
+        AsyncIOScheduler: Configured scheduler with PostgreSQL job store
+
+    Note:
+        The scheduler is cached as a singleton. Only one instance will be created
+        per worker process.
+    """
+    from app.services.scheduler_service import get_scheduler
+
+    return get_scheduler()
