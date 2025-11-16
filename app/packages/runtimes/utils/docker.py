@@ -6,6 +6,7 @@ of idle containers.
 """
 
 import asyncio
+import socket
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -25,6 +26,9 @@ LABEL_IMAGE_HASH = "floww.runtime.image_hash"
 # Container idle timeout (in seconds) - containers idle longer than this will be cleaned up
 CONTAINER_IDLE_TIMEOUT = 300  # 5 minutes
 
+# Cached network name for the backend container (detected at runtime)
+_backend_network: Optional[str] = None
+
 
 async def get_docker_client() -> aiodocker.Docker:
     """Get a Docker client instance."""
@@ -34,6 +38,141 @@ async def get_docker_client() -> aiodocker.Docker:
 def _get_container_name(runtime_id: str) -> str:
     """Get the container name for a runtime ID."""
     return f"{CONTAINER_NAME_PREFIX}{runtime_id}"
+
+
+async def get_backend_network() -> str:
+    """Detect which Docker network the backend container is on.
+
+    Uses the container's hostname to inspect itself via the Docker API
+    and determine which network it's connected to.
+
+    Returns:
+        Network name (e.g., "test_floww-network" or "bridge")
+        Falls back to "bridge" if detection fails.
+    """
+    try:
+        # Get the hostname (which should be the container name)
+        hostname = socket.gethostname()
+
+        async with aiodocker.Docker() as docker:
+            try:
+                # Inspect the current container
+                container = await docker.containers.get(hostname)
+                container_info = await container.show()
+
+                # Get the networks this container is connected to
+                networks = container_info.get("NetworkSettings", {}).get("Networks", {})
+                if networks:
+                    # Return the first network name
+                    network_name = list(networks.keys())[0]
+                    logger.info(
+                        "Detected backend network",
+                        network=network_name,
+                        hostname=hostname,
+                    )
+                    return network_name
+                else:
+                    logger.warning(
+                        "No networks found for backend container, using bridge",
+                        hostname=hostname,
+                    )
+            except aiodocker.exceptions.DockerError as e:
+                logger.warning(
+                    "Could not inspect backend container, falling back to bridge",
+                    hostname=hostname,
+                    error=str(e),
+                )
+    except Exception as e:
+        logger.warning(
+            "Could not detect backend network, falling back to bridge",
+            error=str(e),
+        )
+
+    # Fallback to bridge if detection fails
+    return "bridge"
+
+
+async def create_container(runtime_id: str, image_hash: str) -> None:
+    """Create and start a new container for the runtime.
+
+    This function is idempotent - if the container already exists, it will
+    not recreate it. The container is started but this function does not
+    wait for it to be healthy/ready.
+
+    Args:
+        runtime_id: Unique identifier for the runtime
+        image_hash: Docker image hash/tag to use
+
+    Raises:
+        Exception: If container creation or start fails
+    """
+    global _backend_network
+
+    # Detect backend network on first use
+    if _backend_network is None:
+        _backend_network = await get_backend_network()
+        logger.info("Using network for runtime containers", network=_backend_network)
+
+    container_name = _get_container_name(runtime_id)
+
+    async with aiodocker.Docker() as docker:
+        try:
+            # Check if container already exists
+            container = await docker.containers.get(container_name)
+            logger.info(
+                "Container already exists, skipping creation",
+                runtime_id=runtime_id,
+                container_name=container_name,
+            )
+            return
+
+        except aiodocker.exceptions.DockerError as e:
+            if e.status == 404:
+                # Container doesn't exist, create it
+                logger.info(
+                    "Creating new container",
+                    runtime_id=runtime_id,
+                    container_name=container_name,
+                    image_hash=image_hash,
+                )
+
+                # Create container configuration
+                config = {
+                    "Image": image_hash,
+                    "Hostname": container_name,
+                    "Labels": {
+                        LABEL_RUNTIME_ID: runtime_id,
+                        LABEL_LAST_USED: datetime.now(timezone.utc).isoformat(),
+                        LABEL_IMAGE_HASH: image_hash,
+                    },
+                    "HostConfig": {
+                        # No port mapping needed - containers communicate via Docker network
+                        "NetworkMode": _backend_network,
+                        # Resource limits (optional, can be adjusted)
+                        "Memory": 512 * 1024 * 1024,  # 512 MB
+                        "CpuQuota": 100000,  # 100% of one CPU
+                    },
+                }
+
+                # Create and start the container
+                container = await docker.containers.create(
+                    config=config,
+                    name=container_name,
+                )
+
+                await container.start()
+                logger.info(
+                    "Container created and started",
+                    runtime_id=runtime_id,
+                    container_name=container_name,
+                )
+            else:
+                logger.error(
+                    "Docker error while creating container",
+                    runtime_id=runtime_id,
+                    error=str(e),
+                )
+                raise
 
 
 async def get_or_create_container(runtime_id: str, image_hash: str) -> str:
@@ -49,6 +188,13 @@ async def get_or_create_container(runtime_id: str, image_hash: str) -> str:
     Raises:
         Exception: If container creation or start fails
     """
+    global _backend_network
+
+    # Detect backend network on first use
+    if _backend_network is None:
+        _backend_network = await get_backend_network()
+        logger.info("Using network for runtime containers", network=_backend_network)
+
     container_name = _get_container_name(runtime_id)
 
     async with aiodocker.Docker() as docker:
@@ -90,7 +236,7 @@ async def get_or_create_container(runtime_id: str, image_hash: str) -> str:
                 )
 
                 # Pull image if needed
-                await _ensure_image_exists(docker, image_hash)
+                # await _ensure_image_exists(docker, image_hash)
 
                 # Create container configuration
                 config = {
@@ -103,7 +249,7 @@ async def get_or_create_container(runtime_id: str, image_hash: str) -> str:
                     },
                     "HostConfig": {
                         # No port mapping needed - containers communicate via Docker network
-                        "NetworkMode": "bridge",
+                        "NetworkMode": _backend_network,
                         # Resource limits (optional, can be adjusted)
                         "Memory": 512 * 1024 * 1024,  # 512 MB
                         "CpuQuota": 100000,  # 100% of one CPU
@@ -157,6 +303,144 @@ async def _ensure_image_exists(docker: aiodocker.Docker, image_hash: str):
             logger.info("Docker image pulled successfully", image_hash=image_hash)
         else:
             raise
+
+
+async def _check_container_health(container_name: str) -> bool:
+    """Check if a container is healthy and ready to accept requests.
+
+    Performs a single health check without retrying.
+
+    Args:
+        container_name: Name of the container
+
+    Returns:
+        True if container is healthy, False otherwise
+    """
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"http://{container_name}:8000/health",
+                timeout=2.0,
+            )
+            return response.status_code == 200
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError):
+            return False
+
+
+async def get_container_status(runtime_id: str) -> dict:
+    """Get the status of a runtime container.
+
+    Checks if the container exists, is running, and is healthy.
+
+    Args:
+        runtime_id: Runtime ID
+
+    Returns:
+        Dict with 'status' (IN_PROGRESS/COMPLETED/FAILED) and 'logs' (str)
+    """
+    container_name = _get_container_name(runtime_id)
+
+    async with aiodocker.Docker() as docker:
+        try:
+            # Check if container exists
+            container = await docker.containers.get(container_name)
+            container_info = await container.show()
+            state = container_info["State"]
+
+            # Check if container is running
+            if not state["Running"]:
+                return {
+                    "status": "FAILED",
+                    "logs": f"Container exists but is not running (Status: {state.get('Status', 'unknown')})",
+                }
+
+            # Check if container is healthy
+            is_healthy = await _check_container_health(container_name)
+            if is_healthy:
+                return {
+                    "status": "COMPLETED",
+                    "logs": "Container is ready to accept requests",
+                }
+            else:
+                return {
+                    "status": "IN_PROGRESS",
+                    "logs": "Waiting for container to be healthy",
+                }
+
+        except aiodocker.exceptions.DockerError as e:
+            if e.status == 404:
+                return {
+                    "status": "FAILED",
+                    "logs": f"Container not found: {container_name}",
+                }
+            else:
+                logger.error(
+                    "Error checking container status",
+                    runtime_id=runtime_id,
+                    error=str(e),
+                )
+                return {
+                    "status": "FAILED",
+                    "logs": f"Error checking container status: {str(e)}",
+                }
+
+
+async def start_container_if_stopped(runtime_id: str) -> None:
+    """Start a container if it's stopped, or do nothing if already running.
+
+    This function assumes the container already exists. It will raise an
+    error if the container doesn't exist.
+
+    Args:
+        runtime_id: Runtime ID
+
+    Raises:
+        Exception: If container doesn't exist or fails to start
+    """
+    container_name = _get_container_name(runtime_id)
+
+    async with aiodocker.Docker() as docker:
+        try:
+            # Get the container (will raise 404 if doesn't exist)
+            container = await docker.containers.get(container_name)
+            container_info = await container.show()
+            state = container_info["State"]
+
+            if state["Running"]:
+                logger.debug(
+                    "Container already running",
+                    runtime_id=runtime_id,
+                    container_name=container_name,
+                )
+                return
+            else:
+                logger.info(
+                    "Container stopped, starting it",
+                    runtime_id=runtime_id,
+                    container_name=container_name,
+                )
+                await container.start()
+                # Wait for container to be healthy/ready
+                await _wait_for_container_ready(container_name)
+
+        except aiodocker.exceptions.DockerError as e:
+            if e.status == 404:
+                logger.error(
+                    "Container does not exist, cannot invoke",
+                    runtime_id=runtime_id,
+                    container_name=container_name,
+                )
+                raise RuntimeError(
+                    f"Container {container_name} does not exist. "
+                    "Runtime must be created before invocation."
+                )
+            else:
+                logger.error(
+                    "Error starting container",
+                    runtime_id=runtime_id,
+                    error=str(e),
+                )
+                raise
 
 
 async def _wait_for_container_ready(container_name: str, timeout: int = 30):

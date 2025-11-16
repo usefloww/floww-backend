@@ -4,8 +4,6 @@ import string
 import argon2
 from cryptography.fernet import Fernet
 
-from app.settings import settings
-
 _completely_irrelevant_salt = (
     b"completely irrelevant salt because the entropy of the api key is high enough"
 )
@@ -21,6 +19,8 @@ def encrypt_secret(value: str) -> str:
     Returns:
         The encrypted secret as a base64-encoded string
     """
+    from app.settings import settings
+
     f = Fernet(settings.ENCRYPTION_KEY.encode())
     encrypted = f.encrypt(value.encode())
     return encrypted.decode()
@@ -36,6 +36,9 @@ def decrypt_secret(encrypted_value: str) -> str:
     Returns:
         The decrypted plaintext secret
     """
+
+    from app.settings import settings
+
     f = Fernet(settings.ENCRYPTION_KEY.encode())
     decrypted = f.decrypt(encrypted_value.encode())
     return decrypted.decode()

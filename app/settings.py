@@ -9,6 +9,8 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
+from app.utils.encryption import generate_cryptographic_key
+
 
 class DockerSecretsSettingsSource(PydanticBaseSettingsSource):
     """
@@ -72,23 +74,18 @@ class LambdaConfig(BaseSettings):
     AWS_REGION: str = "us-east-1"
 
     LAMBDA_EXECUTION_ROLE_ARN: str = "arn:aws:iam::501046919403:role/LambdaRole"
-    LAMBDA_REPOSITORY_NAME: str = "trigger-lambda"
-    ECR_REGISTRY_URL: str = (
-        "501046919403.dkr.ecr.us-east-1.amazonaws.com/trigger-lambda"
-    )
 
 
-class DockerConfig(BaseSettings):
-    DOCKER_REGISTRY_URL: str = ""
-    DOCKER_REGISTRY_USER: str = ""
-    DOCKER_REGISTRY_PASSWORD: str = ""
-    DOCKER_REPOSITORY_NAME: str = "trigger-lambda"
+class RegistryConfig(BaseSettings):
+    REGISTRY_URL: str = ""
+    REGISTRY_REPOSITORY_NAME: str = ""
+    REGISTRY_AUTH_USER: str = ""
+    REGISTRY_AUTH_PASSWORD: str = ""
 
-
-class KubernetesConfig(BaseSettings):
-    DOCKER_REGISTRY_URL: str = ""
-    DOCKER_REGISTRY_USER: str = ""
-    DOCKER_REGISTRY_PASSWORD: str = ""
+    REGISTRY_RANDOM_SECRET: str = generate_cryptographic_key(32)
+    """Random secret used to secure the registry pull endpoint
+    This can be used to securily pull images from the registry
+    """
 
 
 class DatabaseConfig(BaseSettings):
@@ -164,8 +161,7 @@ class Settings(
     CentrifugoConfig,
     DatabaseConfig,
     GeneralConfig,
-    DockerConfig,
-    KubernetesConfig,
+    RegistryConfig,
     LambdaConfig,
     SingleOrgConfig,
     BillingConfig,

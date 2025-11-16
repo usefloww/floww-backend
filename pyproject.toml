@@ -36,6 +36,7 @@ dependencies = [
     "pydantic>=2.12.3",
     "litellm>=1.79.3",
     "stripe>=13.2.0",
+    "docker>=7.1.0",
 ]
 
 [dependency-groups]

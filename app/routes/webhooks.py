@@ -1,4 +1,5 @@
 import json
+from urllib.parse import urlparse
 from uuid import UUID
 
 import structlog
@@ -163,6 +164,10 @@ async def _execute_trigger(
             execution_id=str(execution_id),
         )
         return None
+
+    image_uri = image_uri.replace(
+        urlparse(settings.REGISTRY_URL).netloc, urlparse(settings.PUBLIC_API_URL).netloc
+    )
 
     # Fetch and decrypt provider configs for this workflow's namespace
     provider_configs_dict = {}

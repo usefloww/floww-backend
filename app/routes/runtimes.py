@@ -1,6 +1,7 @@
 import hashlib
 import json
 import uuid
+from urllib.parse import urlparse
 from uuid import UUID
 
 import structlog
@@ -113,7 +114,7 @@ async def get_push_token(
         password=workos_token,
         expires_in=3600,  # WorkOS tokens typically valid for 1 hour
         image_tag=push_request.image_hash,
-        registry_url=f"{registry_host}/trigger-lambda",
+        registry_url=f"{registry_host}/{settings.REGISTRY_REPOSITORY_NAME}",
     )
 
 
@@ -145,6 +146,10 @@ async def create_runtime(
 
     if image_uri is None:
         raise HTTPException(400, "Image does not exist")
+
+    image_uri = image_uri.replace(
+        urlparse(settings.REGISTRY_URL).netloc, urlparse(settings.PUBLIC_API_URL).netloc
+    )
 
     runtime = Runtime(
         config_hash=config_hash,

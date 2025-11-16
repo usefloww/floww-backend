@@ -85,25 +85,25 @@ def registry_client_factory() -> RegistryClient:
     if settings.RUNTIME_TYPE == "lambda":
         ecr_client = aws_session_factory().client("ecr")
         config = RegistryConfig(
-            registry_url=settings.ECR_REGISTRY_URL,
+            registry_url=settings.REGISTRY_URL,
             public_api_url=settings.PUBLIC_API_URL,
         )
         return ECRRegistryClient(
             config=config,
             ecr_client=ecr_client,
-            repository_name=settings.LAMBDA_REPOSITORY_NAME,
+            repository_name=settings.REGISTRY_REPOSITORY_NAME,
         )
 
-    elif settings.RUNTIME_TYPE in ["docker", "kubernetes"]:
+    elif settings.RUNTIME_TYPE == "docker":
         config = RegistryConfig(
-            registry_url=settings.DOCKER_REGISTRY_URL,
+            registry_url=settings.REGISTRY_URL,
             public_api_url=settings.PUBLIC_API_URL,
         )
         return DockerRegistryClient(
             config=config,
-            username=settings.DOCKER_REGISTRY_USER,
-            password=settings.DOCKER_REGISTRY_PASSWORD,
-            repository_name=settings.DOCKER_REPOSITORY_NAME,
+            username=settings.REGISTRY_AUTH_USER,
+            password=settings.REGISTRY_AUTH_PASSWORD,
+            repository_name=settings.REGISTRY_REPOSITORY_NAME,
         )
 
     else:
