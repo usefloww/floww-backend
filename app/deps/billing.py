@@ -73,6 +73,9 @@ async def require_pro_tier(
     if not settings.IS_CLOUD:
         return
 
+    if current_user.is_admin:
+        return
+
     subscription = await billing_service.get_or_create_subscription(
         session, current_user
     )

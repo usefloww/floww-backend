@@ -141,6 +141,9 @@ async def check_workflow_limit(session: AsyncSession, user: User) -> tuple[bool,
     if not settings.IS_CLOUD:
         return True, ""
 
+    if user.is_admin:
+        return True, ""
+
     subscription = await get_or_create_subscription(session, user)
     current_count = await get_workflow_count(session, user.id)
     limit = await get_workflow_limit(subscription)
@@ -164,6 +167,9 @@ async def check_execution_limit(session: AsyncSession, user: User) -> tuple[bool
     Returns (can_execute: bool, message: str)
     """
     if not settings.IS_CLOUD:
+        return True, ""
+
+    if user.is_admin:
         return True, ""
 
     subscription = await get_or_create_subscription(session, user)
