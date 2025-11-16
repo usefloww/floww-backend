@@ -9,6 +9,7 @@ from app.services.providers.provider_setup import (
 from app.services.providers.provider_utils import (
     ProviderI,
     TriggerI,
+    TriggerUtils,
 )
 
 
@@ -50,16 +51,18 @@ class OnMergeRequestCommentState(BaseModel):
 
 
 class OnMergeRequestComment(
-    TriggerI[OnMergeRequestCommentInput, OnMergeRequestCommentState, GitlabProvider]
+    TriggerI[
+        OnMergeRequestCommentInput, OnMergeRequestCommentState, GitlabProviderState
+    ]
 ):
     async def create(
         self,
         provider: GitlabProviderState,
         input: OnMergeRequestCommentInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnMergeRequestCommentState:
         """Create a GitLab webhook for merge request comments."""
-        webhook_registration = await register_webhook(method="POST")
+        webhook_registration = await utils.register_webhook(method="POST")
         webhook_url = webhook_registration["url"]
 
         headers = {

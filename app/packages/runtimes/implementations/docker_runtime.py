@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Any
 
 from app.packages.runtimes.utils.docker import (
     create_container,
@@ -11,7 +12,6 @@ from ..runtime_types import (
     RuntimeConfig,
     RuntimeCreationStatus,
     RuntimeI,
-    RuntimeWebhookPayload,
 )
 
 
@@ -67,15 +67,16 @@ class DockerRuntime(RuntimeI):
         trigger_id: str,
         runtime_config: RuntimeConfig,
         user_code: dict[str, str],
-        payload: RuntimeWebhookPayload,
-        provider_configs: dict[str, dict[str, str]] | None = None,
+        payload: dict[str, Any],
     ) -> None:
+        """
+        Invoke Docker container with V2 payload format.
+        Payload already contains trigger, data, auth_token, execution_id, and providerConfigs.
+        """
         await start_container_if_stopped(runtime_config.runtime_id)
         event_payload = {
-            **payload.model_dump(),
             "userCode": user_code,
-            "triggerType": "webhook",
-            "providerConfigs": provider_configs or {},
+            **payload,  # Includes trigger, data, auth_token, execution_id, providerConfigs
         }
         await send_webhook_to_container(
             runtime_config.runtime_id,

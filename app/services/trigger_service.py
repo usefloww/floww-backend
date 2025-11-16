@@ -1,6 +1,6 @@
 import json
-from typing import Any
-from uuid import UUID, uuid4
+from typing import Any, Type
+from uuid import UUID
 
 import structlog
 from sqlalchemy import select
@@ -14,6 +14,7 @@ from app.services.providers.implementations.gitlab import GITLAB_TRIGGER_TYPES
 from app.services.providers.implementations.jira import JIRA_TRIGGER_TYPES
 from app.services.providers.implementations.slack import SLACK_TRIGGER_TYPES
 from app.services.providers.provider_registry import PROVIDER_TYPES_MAP
+from app.services.providers.provider_utils import TriggerI, TriggerUtils
 from app.settings import settings
 from app.utils.encryption import decrypt_secret, encrypt_secret
 
@@ -135,12 +136,10 @@ async def _create_trigger(
     await session.flush()
     await session.refresh(trigger)
 
-    register_webhook = _make_webhook_registrar(session, provider, trigger)
+    utils = _make_trigger_utils(session, provider, trigger)
 
     try:
-        trigger_state = await handler().create(
-            provider_state, trigger_input, register_webhook
-        )
+        trigger_state = await handler().create(provider_state, trigger_input, utils)
         trigger.state = trigger_state.model_dump()
         await session.flush()
         logger.info("Created trigger", trigger_id=str(trigger.id))
@@ -270,7 +269,7 @@ def _load_provider_state(provider: Provider, provider_type: str):
     return PROVIDER_TYPES_MAP[provider_type].model(**config)
 
 
-def _get_trigger_handler(provider_type: str, trigger_type: str):
+def _get_trigger_handler(provider_type: str, trigger_type: str) -> Type[TriggerI]:
     handlers = {
         "builtin": BUILTIN_TRIGGER_TYPES,
         "discord": DISCORD_TRIGGER_TYPES,
@@ -284,66 +283,16 @@ def _get_trigger_handler(provider_type: str, trigger_type: str):
     return handlers[provider_type][trigger_type]
 
 
-def _make_webhook_registrar(
+def _make_trigger_utils(
     session: AsyncSession, provider: Provider, trigger: Trigger
-):
-    """Create webhook registration function for trigger handlers."""
-
-    async def register_webhook(
-        *,
-        path: str | None = None,
-        method: str = "POST",
-        owner: str = "trigger",
-        reuse_existing: bool = False,
-    ) -> dict[str, Any]:
-        method = (method or "POST").upper()
-
-        if owner not in {"trigger", "provider"}:
-            raise ValueError("owner must be 'trigger' or 'provider'")
-
-        if owner == "provider" and reuse_existing:
-            result = await session.execute(
-                select(IncomingWebhook).where(
-                    IncomingWebhook.provider_id == provider.id
-                )
-            )
-            existing = result.scalar_one_or_none()
-            if existing:
-                return {
-                    "id": existing.id,
-                    "url": f"{settings.PUBLIC_API_URL}{existing.path}",
-                    "path": existing.path,
-                    "method": existing.method,
-                    "owner": "provider",
-                }
-
-        webhook_path = path or f"/webhook/{uuid4()}"
-        if path:
-            webhook_path = path.strip()
-            if not webhook_path.startswith("/"):
-                webhook_path = f"/{webhook_path}"
-            if not webhook_path.startswith("/webhook"):
-                webhook_path = f"/webhook{webhook_path}"
-
-        webhook = IncomingWebhook(
-            provider_id=provider.id if owner == "provider" else None,
-            trigger_id=trigger.id if owner == "trigger" else None,
-            path=webhook_path,
-            method=method,
-        )
-        session.add(webhook)
-        await session.flush()
-        await session.refresh(webhook)
-
-        return {
-            "id": webhook.id,
-            "url": f"{settings.PUBLIC_API_URL}{webhook.path}",
-            "path": webhook.path,
-            "method": webhook.method,
-            "owner": owner,
-        }
-
-    return register_webhook
+) -> TriggerUtils:
+    """Create TriggerUtils instance for trigger handlers."""
+    return TriggerUtils(
+        session=session,
+        provider=provider,
+        trigger=trigger,
+        public_api_url=settings.PUBLIC_API_URL,
+    )
 
 
 class TriggerService:

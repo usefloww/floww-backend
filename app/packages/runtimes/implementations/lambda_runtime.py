@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.packages.runtimes.utils.aws_lambda import (
     deploy_lambda_function,
@@ -11,7 +11,6 @@ from ..runtime_types import (
     RuntimeConfig,
     RuntimeCreationStatus,
     RuntimeI,
-    RuntimeWebhookPayload,
 )
 
 if TYPE_CHECKING:
@@ -87,14 +86,15 @@ class LambdaRuntime(RuntimeI):
         trigger_id: str,
         runtime_config: RuntimeConfig,
         user_code: dict[str, str],
-        payload: RuntimeWebhookPayload,
-        provider_configs: dict[str, dict[str, str]] | None = None,
+        payload: dict[str, Any],
     ) -> None:
+        """
+        Invoke Lambda function with V2 payload format.
+        Payload already contains trigger, data, auth_token, execution_id, and providerConfigs.
+        """
         event_payload = {
-            **payload.model_dump(),
             "userCode": user_code,
-            "triggerType": "webhook",
-            "providerConfigs": provider_configs or {},
+            **payload,  # Includes trigger, data, auth_token, execution_id, providerConfigs
         }
         invoke_lambda_async(
             self.lambda_client,

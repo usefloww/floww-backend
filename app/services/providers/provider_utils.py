@@ -2,8 +2,6 @@ from abc import ABC, abstractmethod
 from typing import (
     TYPE_CHECKING,
     Any,
-    Awaitable,
-    Callable,
     Generic,
     Optional,
     Type,
@@ -13,6 +11,7 @@ from typing import (
 from pydantic import BaseModel
 
 from app.services.providers.provider_setup import ProviderSetupStep
+from app.services.trigger_service_utils import TriggerUtils
 
 if TYPE_CHECKING:
     from fastapi import Request
@@ -45,7 +44,7 @@ class TriggerI(ABC, Generic[I, S, P]):
         self,
         provider: P,
         input: I,
-        register_webhook: Callable[..., Awaitable[dict[str, Any]]],
+        utils: TriggerUtils,
     ) -> S:
         pass
 

@@ -1,4 +1,5 @@
 from typing import TYPE_CHECKING
+
 import structlog
 from pydantic import BaseModel
 
@@ -10,6 +11,7 @@ from app.services.providers.provider_setup import (
 from app.services.providers.provider_utils import (
     ProviderI,
     TriggerI,
+    TriggerUtils,
 )
 
 if TYPE_CHECKING:
@@ -168,7 +170,9 @@ class OnIssueCreatedState(BaseModel):
     jql_filter: str | None = None
 
 
-class OnIssueCreated(TriggerI[OnIssueCreatedInput, OnIssueCreatedState, JiraProvider]):
+class OnIssueCreated(
+    TriggerI[OnIssueCreatedInput, OnIssueCreatedState, JiraProviderState]
+):
     """
     Trigger for Jira issue created events.
 
@@ -179,12 +183,12 @@ class OnIssueCreated(TriggerI[OnIssueCreatedInput, OnIssueCreatedState, JiraProv
 
     async def create(
         self,
-        _provider: JiraProviderState,
+        provider: JiraProviderState,
         input: OnIssueCreatedInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnIssueCreatedState:
         """Prepare webhook registration details for Jira issue created events."""
-        webhook_registration = await register_webhook(method="POST")
+        webhook_registration = await utils.register_webhook(method="POST")
         webhook_url = webhook_registration["url"]
 
         jql_conditions = []
@@ -238,7 +242,9 @@ class OnIssueUpdatedState(BaseModel):
     jql_filter: str | None = None
 
 
-class OnIssueUpdated(TriggerI[OnIssueUpdatedInput, OnIssueUpdatedState, JiraProvider]):
+class OnIssueUpdated(
+    TriggerI[OnIssueUpdatedInput, OnIssueUpdatedState, JiraProviderState]
+):
     """
     Trigger for Jira issue updated events.
 
@@ -249,12 +255,12 @@ class OnIssueUpdated(TriggerI[OnIssueUpdatedInput, OnIssueUpdatedState, JiraProv
 
     async def create(
         self,
-        _provider: JiraProviderState,
+        provider: JiraProviderState,
         input: OnIssueUpdatedInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnIssueUpdatedState:
         """Prepare webhook registration details for Jira issue updated events."""
-        webhook_registration = await register_webhook(method="POST")
+        webhook_registration = await utils.register_webhook(method="POST")
         webhook_url = webhook_registration["url"]
 
         jql_conditions = []
@@ -301,7 +307,9 @@ class OnCommentAddedState(BaseModel):
     jql_filter: str | None = None
 
 
-class OnCommentAdded(TriggerI[OnCommentAddedInput, OnCommentAddedState, JiraProvider]):
+class OnCommentAdded(
+    TriggerI[OnCommentAddedInput, OnCommentAddedState, JiraProviderState]
+):
     """
     Trigger for Jira comment added events.
 
@@ -311,12 +319,12 @@ class OnCommentAdded(TriggerI[OnCommentAddedInput, OnCommentAddedState, JiraProv
 
     async def create(
         self,
-        _provider: JiraProviderState,
+        provider: JiraProviderState,
         input: OnCommentAddedInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnCommentAddedState:
         """Prepare webhook registration details for Jira comment added events."""
-        webhook_registration = await register_webhook(method="POST")
+        webhook_registration = await utils.register_webhook(method="POST")
         webhook_url = webhook_registration["url"]
 
         jql_filter = None

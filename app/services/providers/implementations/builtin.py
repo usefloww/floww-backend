@@ -4,6 +4,7 @@ from app.services.providers.provider_setup import ProviderSetupStep
 from app.services.providers.provider_utils import (
     ProviderI,
     TriggerI,
+    TriggerUtils,
 )
 
 
@@ -32,7 +33,7 @@ class OnWebhookState(BaseModel):
     webhook_url: str
 
 
-class OnWebhook(TriggerI[OnWebhookInput, OnWebhookState, BuiltinProvider]):
+class OnWebhook(TriggerI[OnWebhookInput, OnWebhookState, BuiltinProviderState]):
     """
     Trigger for incoming webhooks.
 
@@ -44,7 +45,7 @@ class OnWebhook(TriggerI[OnWebhookInput, OnWebhookState, BuiltinProvider]):
         self,
         provider: BuiltinProviderState,
         input: OnWebhookInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnWebhookState:
         """
         Store the webhook configuration.
@@ -52,7 +53,7 @@ class OnWebhook(TriggerI[OnWebhookInput, OnWebhookState, BuiltinProvider]):
         Since builtin webhooks are managed internally, no external setup is needed.
         The IncomingWebhook record is created by the TriggerService.
         """
-        webhook_registration = await register_webhook(
+        webhook_registration = await utils.register_webhook(
             path=input.path,
             method=input.method,
         )
@@ -98,7 +99,7 @@ class OnCronState(BaseModel):
     expression: str
 
 
-class OnCron(TriggerI[OnCronInput, OnCronState, BuiltinProvider]):
+class OnCron(TriggerI[OnCronInput, OnCronState, BuiltinProviderState]):
     """
     Trigger for cron schedules.
 
@@ -110,7 +111,7 @@ class OnCron(TriggerI[OnCronInput, OnCronState, BuiltinProvider]):
         self,
         provider: BuiltinProviderState,
         input: OnCronInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnCronState:
         """
         Store the cron configuration.
@@ -118,6 +119,11 @@ class OnCron(TriggerI[OnCronInput, OnCronState, BuiltinProvider]):
         Since builtin cron triggers are managed internally, no external setup is needed.
         The scheduler uses the expression from the trigger state.
         """
+        # Register recurring task for cron scheduling
+        await utils.register_recurring_task(
+            cron_expression=input.expression,
+        )
+
         return OnCronState(
             expression=input.expression,
         )

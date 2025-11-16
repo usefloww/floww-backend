@@ -20,6 +20,7 @@ from app.services.providers.provider_setup import (
 from app.services.providers.provider_utils import (
     ProviderI,
     TriggerI,
+    TriggerUtils,
 )
 
 if TYPE_CHECKING:
@@ -204,7 +205,7 @@ class OnPushState(BaseModel):
     branch: str | None = None
 
 
-class OnPush(TriggerI[OnPushInput, OnPushState, GithubProvider]):
+class OnPush(TriggerI[OnPushInput, OnPushState, GithubProviderState]):
     """Trigger for GitHub push events.
 
     Fires when commits are pushed to a repository.
@@ -214,10 +215,10 @@ class OnPush(TriggerI[OnPushInput, OnPushState, GithubProvider]):
         self,
         provider: GithubProviderState,
         input: OnPushInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnPushState:
         """Create a GitHub webhook for push events."""
-        webhook_registration = await register_webhook(method="POST")
+        webhook_registration = await utils.register_webhook(method="POST")
         webhook_url = webhook_registration["url"]
 
         headers = {
@@ -312,7 +313,9 @@ class OnPullRequestState(BaseModel):
     actions: list[str] | None = None
 
 
-class OnPullRequest(TriggerI[OnPullRequestInput, OnPullRequestState, GithubProvider]):
+class OnPullRequest(
+    TriggerI[OnPullRequestInput, OnPullRequestState, GithubProviderState]
+):
     """Trigger for GitHub pull request events.
 
     Fires when pull requests are opened, closed, merged, etc.
@@ -322,10 +325,10 @@ class OnPullRequest(TriggerI[OnPullRequestInput, OnPullRequestState, GithubProvi
         self,
         provider: GithubProviderState,
         input: OnPullRequestInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnPullRequestState:
         """Create a GitHub webhook for pull request events."""
-        webhook_registration = await register_webhook(method="POST")
+        webhook_registration = await utils.register_webhook(method="POST")
         webhook_url = webhook_registration["url"]
 
         headers = {
@@ -420,7 +423,7 @@ class OnIssueState(BaseModel):
     actions: list[str] | None = None
 
 
-class OnIssue(TriggerI[OnIssueInput, OnIssueState, GithubProvider]):
+class OnIssue(TriggerI[OnIssueInput, OnIssueState, GithubProviderState]):
     """Trigger for GitHub issue events.
 
     Fires when issues are opened, closed, edited, etc.
@@ -430,10 +433,10 @@ class OnIssue(TriggerI[OnIssueInput, OnIssueState, GithubProvider]):
         self,
         provider: GithubProviderState,
         input: OnIssueInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnIssueState:
         """Create a GitHub webhook for issue events."""
-        webhook_registration = await register_webhook(method="POST")
+        webhook_registration = await utils.register_webhook(method="POST")
         webhook_url = webhook_registration["url"]
 
         headers = {
@@ -529,7 +532,7 @@ class OnIssueCommentState(BaseModel):
 
 
 class OnIssueComment(
-    TriggerI[OnIssueCommentInput, OnIssueCommentState, GithubProvider]
+    TriggerI[OnIssueCommentInput, OnIssueCommentState, GithubProviderState]
 ):
     """Trigger for GitHub issue comment events.
 
@@ -540,10 +543,10 @@ class OnIssueComment(
         self,
         provider: GithubProviderState,
         input: OnIssueCommentInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnIssueCommentState:
         """Create a GitHub webhook for issue comment events."""
-        webhook_registration = await register_webhook(method="POST")
+        webhook_registration = await utils.register_webhook(method="POST")
         webhook_url = webhook_registration["url"]
 
         headers = {
@@ -638,7 +641,7 @@ class OnReleaseState(BaseModel):
     actions: list[str] | None = None
 
 
-class OnRelease(TriggerI[OnReleaseInput, OnReleaseState, GithubProvider]):
+class OnRelease(TriggerI[OnReleaseInput, OnReleaseState, GithubProviderState]):
     """Trigger for GitHub release events.
 
     Fires when releases are published, created, edited, or deleted.
@@ -648,10 +651,10 @@ class OnRelease(TriggerI[OnReleaseInput, OnReleaseState, GithubProvider]):
         self,
         provider: GithubProviderState,
         input: OnReleaseInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnReleaseState:
         """Create a GitHub webhook for release events."""
-        webhook_registration = await register_webhook(method="POST")
+        webhook_registration = await utils.register_webhook(method="POST")
         webhook_url = webhook_registration["url"]
 
         headers = {

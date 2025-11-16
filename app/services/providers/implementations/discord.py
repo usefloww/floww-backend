@@ -12,6 +12,7 @@ from app.services.providers.provider_setup import (
 from app.services.providers.provider_utils import (
     ProviderI,
     TriggerI,
+    TriggerUtils,
 )
 
 if TYPE_CHECKING:
@@ -466,7 +467,7 @@ class OnMessageState(BaseModel):
     webhook_url: str
 
 
-class OnMessage(TriggerI[OnMessageInput, OnMessageState, DiscordProvider]):
+class OnMessage(TriggerI[OnMessageInput, OnMessageState, DiscordProviderState]):
     """
     Trigger for Discord message events.
 
@@ -489,7 +490,7 @@ class OnMessage(TriggerI[OnMessageInput, OnMessageState, DiscordProvider]):
         self,
         provider: DiscordProviderState,
         input: OnMessageInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnMessageState:
         """
         Store the webhook configuration for Discord message events.
@@ -497,12 +498,12 @@ class OnMessage(TriggerI[OnMessageInput, OnMessageState, DiscordProvider]):
         Args:
             provider: Discord provider configuration (bot_token, public_key)
             input: Filter configuration (guild_id, channel_id, user_id, include_bots, include_edits)
-            register_webhook: Callback to register or reuse a webhook URL
+            utils: TriggerUtils instance for managing webhooks and recurring tasks
 
         Returns:
             State containing the webhook configuration
         """
-        webhook_registration = await register_webhook(
+        webhook_registration = await utils.register_webhook(
             owner="provider", reuse_existing=True
         )
         webhook_url = webhook_registration["url"]
@@ -551,7 +552,7 @@ class OnReactionState(BaseModel):
     webhook_url: str
 
 
-class OnReaction(TriggerI[OnReactionInput, OnReactionState, DiscordProvider]):
+class OnReaction(TriggerI[OnReactionInput, OnReactionState, DiscordProviderState]):
     """
     Trigger for Discord reaction events.
 
@@ -565,10 +566,10 @@ class OnReaction(TriggerI[OnReactionInput, OnReactionState, DiscordProvider]):
         self,
         provider: DiscordProviderState,
         input: OnReactionInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnReactionState:
         """Store the webhook configuration for Discord reaction events."""
-        webhook_registration = await register_webhook(
+        webhook_registration = await utils.register_webhook(
             owner="provider", reuse_existing=True
         )
         webhook_url = webhook_registration["url"]
@@ -610,7 +611,9 @@ class OnMemberJoinState(BaseModel):
     webhook_url: str
 
 
-class OnMemberJoin(TriggerI[OnMemberJoinInput, OnMemberJoinState, DiscordProvider]):
+class OnMemberJoin(
+    TriggerI[OnMemberJoinInput, OnMemberJoinState, DiscordProviderState]
+):
     """
     Trigger for Discord member join events.
 
@@ -624,10 +627,10 @@ class OnMemberJoin(TriggerI[OnMemberJoinInput, OnMemberJoinState, DiscordProvide
         self,
         provider: DiscordProviderState,
         input: OnMemberJoinInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnMemberJoinState:
         """Store the webhook configuration for Discord member join events."""
-        webhook_registration = await register_webhook(
+        webhook_registration = await utils.register_webhook(
             owner="provider", reuse_existing=True
         )
         webhook_url = webhook_registration["url"]
@@ -666,7 +669,9 @@ class OnMemberLeaveState(BaseModel):
     webhook_url: str
 
 
-class OnMemberLeave(TriggerI[OnMemberLeaveInput, OnMemberLeaveState, DiscordProvider]):
+class OnMemberLeave(
+    TriggerI[OnMemberLeaveInput, OnMemberLeaveState, DiscordProviderState]
+):
     """
     Trigger for Discord member leave/kick events.
 
@@ -677,10 +682,10 @@ class OnMemberLeave(TriggerI[OnMemberLeaveInput, OnMemberLeaveState, DiscordProv
         self,
         provider: DiscordProviderState,
         input: OnMemberLeaveInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnMemberLeaveState:
         """Store the webhook configuration for Discord member leave events."""
-        webhook_registration = await register_webhook(
+        webhook_registration = await utils.register_webhook(
             owner="provider", reuse_existing=True
         )
         webhook_url = webhook_registration["url"]
@@ -724,7 +729,7 @@ class OnMemberUpdateState(BaseModel):
 
 
 class OnMemberUpdate(
-    TriggerI[OnMemberUpdateInput, OnMemberUpdateState, DiscordProvider]
+    TriggerI[OnMemberUpdateInput, OnMemberUpdateState, DiscordProviderState]
 ):
     """
     Trigger for Discord member update events (role changes, nickname changes, etc.).
@@ -736,10 +741,10 @@ class OnMemberUpdate(
         self,
         provider: DiscordProviderState,
         input: OnMemberUpdateInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnMemberUpdateState:
         """Store the webhook configuration for Discord member update events."""
-        webhook_registration = await register_webhook(
+        webhook_registration = await utils.register_webhook(
             owner="provider", reuse_existing=True
         )
         webhook_url = webhook_registration["url"]

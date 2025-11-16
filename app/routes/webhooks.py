@@ -1,4 +1,3 @@
-import json
 from uuid import UUID
 
 import structlog
@@ -8,23 +7,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.deps.db import SessionDep
-from app.factories import registry_client_factory, runtime_factory
 from app.models import (
     IncomingWebhook,
-    Provider,
     Trigger,
     Workflow,
-    WorkflowDeployment,
-    WorkflowDeploymentStatus,
 )
-from app.packages.runtimes.runtime_types import RuntimeConfig, RuntimeWebhookPayload
 from app.services import billing_service
 from app.services.centrifugo_service import centrifugo_service
-from app.services.execution_history_service import (
-    create_execution_record,
-    update_execution_no_deployment,
-    update_execution_started,
-)
+from app.services.execution_history_service import create_execution_record
 from app.services.providers.provider_registry import PROVIDER_TYPES_MAP
 from app.services.workflow_auth_service import WorkflowAuthService
 from app.settings import settings
@@ -32,9 +22,6 @@ from app.utils.encryption import decrypt_secret
 
 router = APIRouter()
 logger = structlog.stdlib.get_logger(__name__)
-
-# Get registry client based on runtime configuration
-registry_client = registry_client_factory()
 
 
 async def _check_execution_limit_for_workflow(
@@ -85,15 +72,14 @@ async def _execute_trigger(
     webhook_data: dict,
     execution_id: UUID,
 ) -> dict | None:
-    """
-    Execute a single trigger by invoking its Lambda deployment.
-
-    Returns result dict if successful, None if no active deployment.
-    """
-    # Generate short-lived JWT token for this invocation
-    auth_token = WorkflowAuthService.generate_invocation_token(trigger.workflow)
+    """Execute a single trigger via webhook invocation."""
+    from app.services.trigger_execution_service import (
+        build_webhook_event_data,
+        execute_trigger,
+    )
 
     # Publish to dev channel (fire-and-forget for local development)
+    # TODO: Update to use V2 format via build_trigger_payload
     trigger_metadata = {
         "provider_type": trigger.provider.type,
         "provider_alias": trigger.provider.alias,
@@ -101,6 +87,7 @@ async def _execute_trigger(
         "input": trigger.input,
     }
 
+    auth_token = WorkflowAuthService.generate_invocation_token(trigger.workflow)
     await centrifugo_service.publish_dev_webhook_event(
         workflow_id=trigger.workflow_id,
         trigger_metadata=trigger_metadata,
@@ -114,99 +101,16 @@ async def _execute_trigger(
         },
     )
 
-    # Find active deployment for this workflow
-    deployment_result = await session.execute(
-        select(WorkflowDeployment)
-        .options(selectinload(WorkflowDeployment.runtime))
-        .where(WorkflowDeployment.workflow_id == trigger.workflow_id)
-        .where(WorkflowDeployment.status == WorkflowDeploymentStatus.ACTIVE)
-        .order_by(WorkflowDeployment.deployed_at.desc())
-        .limit(1)
+    # Build webhook event data
+    event_data = build_webhook_event_data(request, normalized_path, webhook_data)
+
+    # Execute via unified service with V2 format
+    return await execute_trigger(
+        session=session,
+        trigger=trigger,
+        event_data=event_data,
+        execution_id=execution_id,
     )
-    deployment = deployment_result.scalar_one_or_none()
-
-    if not deployment:
-        # Update execution history: no deployment found
-        await update_execution_no_deployment(session, execution_id)
-        logger.warning(
-            "No active deployment found for trigger",
-            trigger_id=str(trigger.id),
-            workflow_id=str(trigger.workflow_id),
-            execution_id=str(execution_id),
-        )
-        return None
-
-    # Update execution history: started
-    await update_execution_started(session, execution_id, deployment.id)
-
-    # Commit the session to ensure execution record exists before Lambda reports completion
-    await session.commit()
-
-    # Get image_hash from runtime config and compute image_digest
-    if not deployment.runtime.config or "image_hash" not in deployment.runtime.config:
-        logger.error(
-            "Runtime config missing image_hash",
-            runtime_id=str(deployment.runtime.id),
-            deployment_id=str(deployment.id),
-            execution_id=str(execution_id),
-        )
-        return None
-
-    image_hash = deployment.runtime.config["image_hash"]
-    image_digest = await registry_client.get_image_digest(image_hash)
-
-    if not image_digest:
-        logger.error(
-            "Image not found in registry",
-            runtime_id=str(deployment.runtime.id),
-            image_hash=image_hash,
-            execution_id=str(execution_id),
-        )
-        return None
-
-    # Fetch and decrypt provider configs for this workflow's namespace
-    provider_configs_dict = {}
-
-    providers_result = await session.execute(
-        select(Provider).where(Provider.namespace_id == trigger.workflow.namespace_id)
-    )
-    providers = providers_result.scalars().all()
-
-    for provider in providers:
-        provider_config_json = decrypt_secret(provider.encrypted_config)
-        provider_config = json.loads(provider_config_json)
-
-        # SDK expects format: "providerType:alias" -> config
-        key = f"{provider.type}:{provider.alias}"
-        provider_configs_dict[key] = provider_config
-
-    runtime_impl = runtime_factory()
-    await runtime_impl.invoke_trigger(
-        trigger_id=str(trigger.id),
-        runtime_config=RuntimeConfig(
-            runtime_id=str(deployment.runtime.id),
-            image_digest=image_digest,
-        ),
-        user_code=deployment.user_code,
-        payload=RuntimeWebhookPayload(
-            path=normalized_path,
-            body=webhook_data,
-            headers=dict(request.headers),
-            query=dict(request.query_params),
-            method=request.method,
-            params=dict(request.query_params),
-            auth_token=auth_token,
-            execution_id=str(execution_id),
-        ),
-        provider_configs=provider_configs_dict,
-    )
-
-    return {
-        "trigger_id": str(trigger.id),
-        "workflow_id": str(trigger.workflow_id),
-        "execution_id": str(execution_id),
-        "status": "invoked",
-    }
 
 
 @router.post("/webhook/{path:path}")

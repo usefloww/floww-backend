@@ -12,6 +12,7 @@ from app.services.providers.provider_setup import (
 from app.services.providers.provider_utils import (
     ProviderI,
     TriggerI,
+    TriggerUtils,
 )
 
 if TYPE_CHECKING:
@@ -275,7 +276,7 @@ class OnMessageState(BaseModel):
     webhook_url: str
 
 
-class OnMessage(TriggerI[OnMessageInput, OnMessageState, SlackProvider]):
+class OnMessage(TriggerI[OnMessageInput, OnMessageState, SlackProviderState]):
     """
     Trigger for Slack message events.
 
@@ -307,7 +308,7 @@ class OnMessage(TriggerI[OnMessageInput, OnMessageState, SlackProvider]):
         self,
         provider: SlackProviderState,
         input: OnMessageInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnMessageState:
         """
         Store the webhook configuration for Slack message events.
@@ -319,12 +320,12 @@ class OnMessage(TriggerI[OnMessageInput, OnMessageState, SlackProvider]):
         Args:
             provider: Slack provider configuration (workspace_url, bot_token)
             input: Filter configuration (channel_id, user_id)
-            register_webhook: Callback to register or reuse a webhook URL
+            utils: TriggerUtils instance for managing webhooks and recurring tasks
 
         Returns:
             State containing the webhook configuration
         """
-        webhook_registration = await register_webhook(
+        webhook_registration = await utils.register_webhook(
             owner="provider", reuse_existing=True
         )
         webhook_url = webhook_registration["url"]
@@ -394,7 +395,7 @@ class OnReactionState(BaseModel):
     webhook_url: str
 
 
-class OnReaction(TriggerI[OnReactionInput, OnReactionState, SlackProvider]):
+class OnReaction(TriggerI[OnReactionInput, OnReactionState, SlackProviderState]):
     """
     Trigger for Slack reaction_added events.
 
@@ -420,7 +421,7 @@ class OnReaction(TriggerI[OnReactionInput, OnReactionState, SlackProvider]):
         self,
         provider: SlackProviderState,
         input: OnReactionInput,
-        register_webhook,
+        utils: TriggerUtils,
     ) -> OnReactionState:
         """
         Store the webhook configuration for Slack reaction events.
@@ -432,12 +433,12 @@ class OnReaction(TriggerI[OnReactionInput, OnReactionState, SlackProvider]):
         Args:
             provider: Slack provider configuration (workspace_url, bot_token)
             input: Filter configuration (channel_id, user_id, reaction)
-            register_webhook: Callback to register or reuse a webhook URL
+            utils: TriggerUtils instance for managing webhooks and recurring tasks
 
         Returns:
             State containing the webhook configuration
         """
-        webhook_registration = await register_webhook(
+        webhook_registration = await utils.register_webhook(
             owner="provider", reuse_existing=True
         )
         webhook_url = webhook_registration["url"]

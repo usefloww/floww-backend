@@ -44,6 +44,22 @@ class RuntimeI(ABC):
         trigger_id: str,
         runtime_config: RuntimeConfig,
         user_code: dict[str, str],
-        payload: RuntimeWebhookPayload,
-        provider_configs: dict[str, dict[str, str]] | None = None,
-    ) -> None: ...
+        payload: dict[str, Any],
+    ) -> None:
+        """
+        Invoke trigger with V2 payload dict.
+
+        Payload structure:
+        {
+            "trigger": {
+                "provider": {"type": "...", "alias": "..."},
+                "trigger_type": "...",
+                "input": {...}
+            },
+            "data": {...},         # Event-specific data
+            "auth_token": "...",
+            "execution_id": "...",
+            "providerConfigs": {...}
+        }
+        """
+        ...
