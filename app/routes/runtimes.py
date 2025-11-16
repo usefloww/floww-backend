@@ -1,7 +1,6 @@
 import hashlib
 import json
 import uuid
-from urllib.parse import urlparse
 from uuid import UUID
 
 import structlog
@@ -70,8 +69,8 @@ async def get_push_token(
     """
 
     # Check if image already exists in registry
-    image_uri = await registry_client.get_image_uri(push_request.image_hash)
-    if image_uri is not None:
+    image_digest = await registry_client.get_image_digest(push_request.image_hash)
+    if image_digest is not None:
         logger.info(
             "Image hash already exists in registry, refusing push token",
             image_hash=push_request.image_hash,
@@ -142,14 +141,12 @@ async def create_runtime(
             },
         )
 
-    image_uri = await registry_client.get_image_uri(runtime_data.config.image_hash)
-
-    if image_uri is None:
-        raise HTTPException(400, "Image does not exist")
-
-    image_uri = image_uri.replace(
-        urlparse(settings.REGISTRY_URL).netloc, urlparse(settings.PUBLIC_API_URL).netloc
+    image_digest = await registry_client.get_image_digest(
+        runtime_data.config.image_hash
     )
+
+    if image_digest is None:
+        raise HTTPException(400, "Image does not exist")
 
     runtime = Runtime(
         config_hash=config_hash,
@@ -166,7 +163,7 @@ async def create_runtime(
     creation_status = await runtime_impl.create_runtime(
         RuntimeConfig(
             runtime_id=str(runtime.id),
-            image_uri=image_uri,
+            image_digest=image_digest,
         ),
     )
 

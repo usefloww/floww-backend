@@ -1,5 +1,4 @@
 import json
-from urllib.parse import urlparse
 from uuid import UUID
 
 import structlog
@@ -143,7 +142,7 @@ async def _execute_trigger(
     # Commit the session to ensure execution record exists before Lambda reports completion
     await session.commit()
 
-    # Get image_hash from runtime config and compute image_uri
+    # Get image_hash from runtime config and compute image_digest
     if not deployment.runtime.config or "image_hash" not in deployment.runtime.config:
         logger.error(
             "Runtime config missing image_hash",
@@ -154,9 +153,9 @@ async def _execute_trigger(
         return None
 
     image_hash = deployment.runtime.config["image_hash"]
-    image_uri = await registry_client.get_image_uri(image_hash)
+    image_digest = await registry_client.get_image_digest(image_hash)
 
-    if not image_uri:
+    if not image_digest:
         logger.error(
             "Image not found in registry",
             runtime_id=str(deployment.runtime.id),
@@ -164,10 +163,6 @@ async def _execute_trigger(
             execution_id=str(execution_id),
         )
         return None
-
-    image_uri = image_uri.replace(
-        urlparse(settings.REGISTRY_URL).netloc, urlparse(settings.PUBLIC_API_URL).netloc
-    )
 
     # Fetch and decrypt provider configs for this workflow's namespace
     provider_configs_dict = {}
@@ -190,7 +185,7 @@ async def _execute_trigger(
         trigger_id=str(trigger.id),
         runtime_config=RuntimeConfig(
             runtime_id=str(deployment.runtime.id),
-            image_uri=image_uri,
+            image_digest=image_digest,
         ),
         user_code=deployment.user_code,
         payload=RuntimeWebhookPayload(

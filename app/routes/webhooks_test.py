@@ -118,9 +118,9 @@ async def test_webhook_not_found(client_a: UserClient):
     new_callable=AsyncMock,
 )
 @patch("app.routes.webhooks.runtime_factory")
-@patch("app.routes.webhooks.registry_client.get_image_uri", new_callable=AsyncMock)
+@patch("app.routes.webhooks.registry_client.get_image_digest", new_callable=AsyncMock)
 async def test_webhook_successful_invocation(
-    mock_get_image_uri,
+    mock_get_image_digest,
     mock_runtime_factory,
     mock_centrifugo,
     client_a: UserClient,
@@ -129,8 +129,8 @@ async def test_webhook_successful_invocation(
     active_deployment: WorkflowDeployment,
 ):
     """Test successful webhook invocation with active deployment."""
-    # Mock get_image_uri to return a valid image URI
-    mock_get_image_uri.return_value = "test-registry.com/test-repo@sha256:abc123"
+    # Mock get_image_digest to return a valid image digest
+    mock_get_image_digest.return_value = "sha256:abc123"
 
     # Mock runtime implementation
     mock_runtime_impl = AsyncMock()

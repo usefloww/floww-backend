@@ -17,7 +17,7 @@ class RuntimeWebhookPayload(BaseModel):
 
 class RuntimeConfig(BaseModel):
     runtime_id: str
-    image_uri: str
+    image_digest: str
 
 
 class RuntimeCreationStatus(BaseModel):

@@ -37,9 +37,15 @@ def runtime_factory() -> RuntimeI:
         return LambdaRuntime(
             lambda_client=lambda_client,
             execution_role_arn=settings.LAMBDA_EXECUTION_ROLE_ARN,
+            registry_url=settings.REGISTRY_URL,
+            repository_name=settings.REGISTRY_REPOSITORY_NAME,
+            backend_url=settings.PUBLIC_API_URL,
         )
     elif settings.RUNTIME_TYPE == "docker":
-        return DockerRuntime()
+        return DockerRuntime(
+            public_api_url=settings.PUBLIC_API_URL,
+            repository_name=settings.REGISTRY_REPOSITORY_NAME,
+        )
     elif settings.RUNTIME_TYPE == "kubernetes":
         return KubernetesRuntime()
     else:
@@ -55,13 +61,16 @@ def auth_provider_factory() -> AuthProvider:
         )
 
     if settings.AUTH_TYPE == "password":
-        return PasswordAuthProvider()
+        return PasswordAuthProvider(
+            jwt_secret=settings.WORKFLOW_JWT_SECRET,
+        )
 
     if settings.AUTH_TYPE == "oidc":
         return OIDCProvider(
             client_id=settings.AUTH_CLIENT_ID,
             client_secret=settings.AUTH_CLIENT_SECRET,
             issuer_url=settings.AUTH_ISSUER_URL,
+            jwt_algorithm=settings.JWT_ALGORITHM,
         )
 
     # Default to WorkOS
@@ -69,6 +78,7 @@ def auth_provider_factory() -> AuthProvider:
         client_id=settings.AUTH_CLIENT_ID,
         client_secret=settings.AUTH_CLIENT_SECRET,
         issuer_url=settings.AUTH_ISSUER_URL,
+        jwt_algorithm=settings.JWT_ALGORITHM,
     )
 
 

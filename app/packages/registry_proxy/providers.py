@@ -45,14 +45,14 @@ class RegistryClient(Protocol):
         """
         ...
 
-    async def get_image_uri(self, tag: str) -> str | None:
-        """Get full image URI with digest for a given tag.
+    async def get_image_digest(self, tag: str) -> str | None:
+        """Get image digest for a given tag.
 
         Args:
             tag: Image tag/hash to look up
 
         Returns:
-            Full URI with digest (e.g., "registry.com/repo@sha256:abc...") or None if not found
+            Image digest (e.g., "sha256:abc...") or None if not found
 
         Raises:
             Exception if the operation fails unexpectedly
@@ -180,14 +180,14 @@ class ECRRegistryClient:
             proxy_url=self.config.public_api_url,
         )
 
-    async def get_image_uri(self, tag: str) -> str | None:
-        """Get full image URI with digest for a given tag from ECR.
+    async def get_image_digest(self, tag: str) -> str | None:
+        """Get image digest for a given tag from ECR.
 
         Args:
             tag: Image tag/hash to look up
 
         Returns:
-            Full URI with digest (e.g., "registry.com/repo@sha256:abc...") or None if not found
+            Image digest (e.g., "sha256:abc...") or None if not found
 
         Raises:
             Exception if the operation fails unexpectedly
@@ -205,9 +205,8 @@ class ECRRegistryClient:
             image = details[0]
             digest = image["imageDigest"]
 
-            # Build full image URI
-            registry_host = self._get_registry_host()
-            return f"{registry_host}/{self.repository_name}@{digest}"
+            # Return just the digest
+            return digest
 
         except ClientError as e:
             error_code = e.response["Error"]["Code"]
@@ -220,7 +219,7 @@ class ECRRegistryClient:
                 return None
 
             logger.error(
-                "Failed to get image URI from ECR",
+                "Failed to get image digest from ECR",
                 repository=self.repository_name,
                 tag=tag,
                 error_code=error_code,
@@ -228,7 +227,7 @@ class ECRRegistryClient:
             raise
         except Exception as e:
             logger.error(
-                "Unexpected error getting image URI from ECR",
+                "Unexpected error getting image digest from ECR",
                 repository=self.repository_name,
                 tag=tag,
                 error=str(e),
@@ -344,14 +343,14 @@ class DockerRegistryClient:
             proxy_url=self.config.public_api_url,
         )
 
-    async def get_image_uri(self, tag: str) -> str | None:
-        """Get full image URI with digest for a given tag from Docker Registry.
+    async def get_image_digest(self, tag: str) -> str | None:
+        """Get image digest for a given tag from Docker Registry.
 
         Args:
             tag: Image tag/hash to look up
 
         Returns:
-            Full URI with digest (e.g., "registry.com/repo@sha256:abc...") or None if not found
+            Image digest (e.g., "sha256:abc...") or None if not found
 
         Raises:
             Exception if the operation fails unexpectedly
@@ -425,12 +424,12 @@ class DockerRegistryClient:
                     )
                     return None
 
-                # Build full image URI
-                return f"{registry_host}/{self.repository_name}@{digest}"
+                # Return just the digest
+                return digest
 
         except httpx.HTTPError as e:
             logger.error(
-                "HTTP error while fetching image URI from Docker Registry",
+                "HTTP error while fetching image digest from Docker Registry",
                 repository=self.repository_name,
                 tag=tag,
                 error=str(e),
@@ -438,7 +437,7 @@ class DockerRegistryClient:
             raise
         except Exception as e:
             logger.error(
-                "Unexpected error getting image URI from Docker Registry",
+                "Unexpected error getting image digest from Docker Registry",
                 repository=self.repository_name,
                 tag=tag,
                 error=str(e),

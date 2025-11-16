@@ -14,11 +14,12 @@ async def test_create_runtime_success(client_a: UserClient):
     with (
         patch("app.routes.runtimes.runtime_factory") as mock_runtime_factory,
         patch(
-            "app.routes.runtimes.registry_client.get_image_uri", new_callable=AsyncMock
-        ) as mock_get_image_uri,
+            "app.routes.runtimes.registry_client.get_image_digest",
+            new_callable=AsyncMock,
+        ) as mock_get_image_digest,
     ):
         # Mock image exists in registry
-        mock_get_image_uri.return_value = "test-registry.com/test-repo@sha256:abc123"
+        mock_get_image_digest.return_value = "sha256:abc123"
 
         # Mock runtime implementation
         mock_runtime_impl = AsyncMock()
@@ -68,13 +69,12 @@ async def test_create_runtime_returns_409_for_existing(client_a: UserClient):
     with (
         patch("app.routes.runtimes.runtime_factory") as mock_runtime_factory,
         patch(
-            "app.routes.runtimes.registry_client.get_image_uri", new_callable=AsyncMock
-        ) as mock_get_image_uri,
+            "app.routes.runtimes.registry_client.get_image_digest",
+            new_callable=AsyncMock,
+        ) as mock_get_image_digest,
     ):
         # Mock image exists in registry
-        mock_get_image_uri.return_value = (
-            "test-registry.com/test-repo@sha256:duplicate123"
-        )
+        mock_get_image_digest.return_value = "sha256:duplicate123"
 
         # Mock runtime implementation
         mock_runtime_impl = AsyncMock()
@@ -180,10 +180,10 @@ async def test_get_runtime_triggers_background_update(
 
 async def test_create_runtime_image_not_exists(client_a: UserClient):
     with patch(
-        "app.routes.runtimes.registry_client.get_image_uri", new_callable=AsyncMock
-    ) as mock_get_image_uri:
+        "app.routes.runtimes.registry_client.get_image_digest", new_callable=AsyncMock
+    ) as mock_get_image_digest:
         # Mock image does not exist in registry
-        mock_get_image_uri.return_value = None
+        mock_get_image_digest.return_value = None
 
         import time
 

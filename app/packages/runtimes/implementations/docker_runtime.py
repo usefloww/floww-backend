@@ -16,16 +16,25 @@ from ..runtime_types import (
 
 
 class DockerRuntime(RuntimeI):
-    def __init__(self):
-        pass
+    def __init__(self, public_api_url: str, repository_name: str):
+        self.public_api_url = public_api_url
+        self.repository_name = repository_name
 
     async def create_runtime(
         self,
         runtime_config: RuntimeConfig,
     ) -> RuntimeCreationStatus:
+        # Construct full image URI for Docker (needs to pull through public API proxy)
+        public_api_host = self.public_api_url.replace("https://", "").replace(
+            "http://", ""
+        )
+        image_uri = (
+            f"{public_api_host}/{self.repository_name}@{runtime_config.image_digest}"
+        )
+
         await create_container(
             runtime_config.runtime_id,
-            runtime_config.image_uri,
+            image_uri,
         )
         return RuntimeCreationStatus(
             status="IN_PROGRESS",

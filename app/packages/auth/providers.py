@@ -19,7 +19,6 @@ from app.packages.auth.utils import (
 from app.packages.auth.utils import (
     validate_jwt as _validate_jwt,
 )
-from app.settings import settings
 
 
 class AuthConfig(BaseModel):
@@ -53,10 +52,13 @@ class AuthProvider(ABC):
 
 
 class OIDCProvider(AuthProvider):
-    def __init__(self, client_id: str, client_secret: str, issuer_url: str):
+    def __init__(
+        self, client_id: str, client_secret: str, issuer_url: str, jwt_algorithm: str
+    ):
         self.client_id = client_id
         self.client_secret = client_secret
         self.issuer_url = issuer_url
+        self.jwt_algorithm = jwt_algorithm
 
     async def get_config(self) -> AuthConfig:
         discovery = await get_oidc_discovery(self.issuer_url)
@@ -81,7 +83,7 @@ class OIDCProvider(AuthProvider):
             jwks_keys=jwks_keys,
             issuer=config.issuer,
             audience=config.audience,
-            algorithm=settings.JWT_ALGORITHM,
+            algorithm=self.jwt_algorithm,
         )
 
     async def get_authorization_url(
@@ -114,10 +116,13 @@ class OIDCProvider(AuthProvider):
 
 
 class WorkOSProvider(AuthProvider):
-    def __init__(self, client_id: str, client_secret: str, issuer_url: str):
+    def __init__(
+        self, client_id: str, client_secret: str, issuer_url: str, jwt_algorithm: str
+    ):
         self.client_id = client_id
         self.client_secret = client_secret
         self.issuer_url = issuer_url
+        self.jwt_algorithm = jwt_algorithm
         # Initialize WorkOS client without API key for client-side operations
         self.workos = WorkOSClient(api_key=self.client_secret, client_id=client_id)
 
@@ -142,7 +147,7 @@ class WorkOSProvider(AuthProvider):
             jwks_keys=jwks_keys,
             issuer=config.issuer,
             audience=config.audience,
-            algorithm=settings.JWT_ALGORITHM,
+            algorithm=self.jwt_algorithm,
         )
 
     async def get_authorization_url(
@@ -202,8 +207,8 @@ class PasswordAuthProvider(AuthProvider):
     Does not support OAuth flows (authorization URL, code exchange).
     """
 
-    def __init__(self):
-        self.jwt_secret = settings.WORKFLOW_JWT_SECRET
+    def __init__(self, jwt_secret: str):
+        self.jwt_secret = jwt_secret
         self.jwt_algorithm = "HS256"
         self.jwt_expiration = timedelta(days=30)  # Match session cookie expiration
 
