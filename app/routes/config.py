@@ -47,7 +47,7 @@ async def get_config():
             jwks_uri=auth_config.jwks_uri,
         ),
         docker=DockerConfig(
-            registry_url=settings.DOCKER_REGISTRY_URL_PUSH,
+            registry_url=settings.REGISTRY_URL,
         ),
         websocket_url=websocket_url,
         is_cloud=settings.IS_CLOUD,
