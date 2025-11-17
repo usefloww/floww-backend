@@ -163,7 +163,10 @@ async def _destroy_trigger(session: AsyncSession, trigger: Trigger) -> None:
         trigger_input = handler.input_schema()(**trigger.input)
         trigger_state = handler.state_schema()(**trigger.state)
 
-        await handler().destroy(provider_state, trigger_input, trigger_state)
+        # Create TriggerUtils for handler
+        utils = _make_trigger_utils(session, provider, trigger)
+
+        await handler().destroy(provider_state, trigger_input, trigger_state, utils)
         logger.info("Destroyed trigger", trigger_id=str(trigger.id))
     except Exception as e:
         logger.error(

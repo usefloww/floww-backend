@@ -53,7 +53,9 @@ class TriggerI(ABC, Generic[I, S, P]):
         pass
 
     @abstractmethod
-    async def destroy(self, provider: P, input: I, state: S) -> None:
+    async def destroy(
+        self, provider: P, input: I, state: S, utils: TriggerUtils
+    ) -> None:
         pass
 
 

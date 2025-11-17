@@ -344,6 +344,7 @@ class OnMessage(TriggerI[OnMessageInput, OnMessageState, SlackProviderState]):
         provider: SlackProviderState,
         input: OnMessageInput,
         state: OnMessageState,
+        utils: TriggerUtils,
     ) -> None:
         """
         Clean up the trigger state.
@@ -457,6 +458,7 @@ class OnReaction(TriggerI[OnReactionInput, OnReactionState, SlackProviderState])
         provider: SlackProviderState,
         input: OnReactionInput,
         state: OnReactionState,
+        utils: TriggerUtils,
     ) -> None:
         """
         Clean up the trigger state.

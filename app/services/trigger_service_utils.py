@@ -5,12 +5,16 @@ from typing import (
 )
 from uuid import uuid4
 
+import structlog
+from apscheduler.triggers.cron import CronTrigger
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
     from app.models import Provider, Trigger
+
+logger = structlog.stdlib.get_logger(__name__)
 
 I = TypeVar("I", bound=BaseModel)  # noqa: E741
 S = TypeVar("S", bound=BaseModel)
@@ -119,6 +123,9 @@ class TriggerUtils:
         """
         Register a recurring task for this trigger.
 
+        Creates a RecurringTask database record and immediately adds the
+        corresponding job to APScheduler.
+
         Args:
             cron_expression: Cron expression for scheduling (e.g., "0 0 * * *")
             interval_seconds: Interval in seconds for polling
@@ -126,7 +133,9 @@ class TriggerUtils:
         Returns:
             Dictionary with recurring task info: id, cron_expression, interval_seconds
         """
+        from app.factories import scheduler_factory
         from app.models import RecurringTask
+        from app.services.scheduler_service import execute_cron_job
 
         if not cron_expression and not interval_seconds:
             raise ValueError(
@@ -139,8 +148,96 @@ class TriggerUtils:
         await self.session.flush()
         await self.session.refresh(recurring_task)
 
+        # Add job to APScheduler
+        scheduler = scheduler_factory()
+        job_id = f"recurring_task_{recurring_task.id}"
+
+        try:
+            if cron_expression:
+                scheduler.add_job(
+                    execute_cron_job,
+                    trigger=CronTrigger.from_crontab(cron_expression, timezone="UTC"),
+                    args=[self.trigger.id],
+                    id=job_id,
+                    replace_existing=True,
+                )
+                logger.info(
+                    "Added cron job to APScheduler",
+                    job_id=job_id,
+                    trigger_id=str(self.trigger.id),
+                    cron_expression=cron_expression,
+                )
+            elif interval_seconds:
+                # TODO: Implement interval-based scheduling when needed
+                logger.warning(
+                    "Interval-based scheduling not yet implemented",
+                    interval_seconds=interval_seconds,
+                )
+        except Exception as exc:
+            logger.error(
+                "Failed to add job to APScheduler",
+                job_id=job_id,
+                trigger_id=str(self.trigger.id),
+                error=str(exc),
+                exc_info=True,
+            )
+            # Don't fail the entire operation if APScheduler fails
+            # The job can be added later via sync_all_recurring_tasks()
+
         return {
             "id": recurring_task.id,
             "cron_expression": cron_expression,
             "interval_seconds": interval_seconds,
         }
+
+    async def unregister_recurring_task(self) -> None:
+        """
+        Unregister a recurring task for this trigger.
+
+        Removes the job from APScheduler and deletes the RecurringTask record.
+        Called by trigger handlers in their destroy() method.
+        """
+        from app.factories import scheduler_factory
+        from app.models import RecurringTask
+
+        # Find recurring task for this trigger
+        result = await self.session.execute(
+            select(RecurringTask).where(RecurringTask.trigger_id == self.trigger.id)
+        )
+        recurring_task = result.scalar_one_or_none()
+
+        if not recurring_task:
+            logger.warning(
+                "No recurring task found for trigger",
+                trigger_id=str(self.trigger.id),
+            )
+            return
+
+        # Remove job from APScheduler
+        scheduler = scheduler_factory()
+        job_id = f"recurring_task_{recurring_task.id}"
+
+        try:
+            scheduler.remove_job(job_id)
+            logger.info(
+                "Removed job from APScheduler",
+                job_id=job_id,
+                trigger_id=str(self.trigger.id),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to remove job from APScheduler (may not exist)",
+                job_id=job_id,
+                trigger_id=str(self.trigger.id),
+                error=str(exc),
+            )
+
+        # Delete recurring task record
+        await self.session.delete(recurring_task)
+        await self.session.flush()
+
+        logger.info(
+            "Deleted recurring task record",
+            recurring_task_id=str(recurring_task.id),
+            trigger_id=str(self.trigger.id),
+        )

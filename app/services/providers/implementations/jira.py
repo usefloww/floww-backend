@@ -211,6 +211,7 @@ class OnIssueCreated(
         provider: JiraProviderState,
         input: OnIssueCreatedInput,
         state: OnIssueCreatedState,
+        utils: TriggerUtils,
     ) -> None:
         """No API cleanup required - webhook must be removed manually in Jira."""
         pass
@@ -283,6 +284,7 @@ class OnIssueUpdated(
         provider: JiraProviderState,
         input: OnIssueUpdatedInput,
         state: OnIssueUpdatedState,
+        utils: TriggerUtils,
     ) -> None:
         """No API cleanup required - webhook must be removed manually in Jira."""
         pass
@@ -342,6 +344,7 @@ class OnCommentAdded(
         provider: JiraProviderState,
         input: OnCommentAddedInput,
         state: OnCommentAddedState,
+        utils: TriggerUtils,
     ) -> None:
         """No API cleanup required - webhook must be removed manually in Jira."""
         pass

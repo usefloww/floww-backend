@@ -522,6 +522,7 @@ class OnMessage(TriggerI[OnMessageInput, OnMessageState, DiscordProviderState]):
         provider: DiscordProviderState,
         input: OnMessageInput,
         state: OnMessageState,
+        utils: TriggerUtils,
     ) -> None:
         """Clean up the trigger state."""
         pass
@@ -587,6 +588,7 @@ class OnReaction(TriggerI[OnReactionInput, OnReactionState, DiscordProviderState
         provider: DiscordProviderState,
         input: OnReactionInput,
         state: OnReactionState,
+        utils: TriggerUtils,
     ) -> None:
         """Clean up the trigger state."""
         pass
@@ -645,6 +647,7 @@ class OnMemberJoin(
         provider: DiscordProviderState,
         input: OnMemberJoinInput,
         state: OnMemberJoinState,
+        utils: TriggerUtils,
     ) -> None:
         """Clean up the trigger state."""
         pass
@@ -700,6 +703,7 @@ class OnMemberLeave(
         provider: DiscordProviderState,
         input: OnMemberLeaveInput,
         state: OnMemberLeaveState,
+        utils: TriggerUtils,
     ) -> None:
         """Clean up the trigger state."""
         pass
@@ -761,6 +765,7 @@ class OnMemberUpdate(
         provider: DiscordProviderState,
         input: OnMemberUpdateInput,
         state: OnMemberUpdateState,
+        utils: TriggerUtils,
     ) -> None:
         """Clean up the trigger state."""
         pass

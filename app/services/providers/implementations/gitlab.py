@@ -113,6 +113,7 @@ class OnMergeRequestComment(
         provider: GitlabProviderState,
         input: OnMergeRequestCommentInput,
         state: OnMergeRequestCommentState,
+        utils: TriggerUtils,
     ) -> None:
         """Delete a GitLab webhook."""
         headers = {

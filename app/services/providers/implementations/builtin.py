@@ -68,6 +68,7 @@ class OnWebhook(TriggerI[OnWebhookInput, OnWebhookState, BuiltinProviderState]):
         provider: BuiltinProviderState,
         input: OnWebhookInput,
         state: OnWebhookState,
+        utils: TriggerUtils,
     ) -> None:
         """
         Clean up the trigger state.
@@ -133,14 +134,14 @@ class OnCron(TriggerI[OnCronInput, OnCronState, BuiltinProviderState]):
         provider: BuiltinProviderState,
         input: OnCronInput,
         state: OnCronState,
+        utils: TriggerUtils,
     ) -> None:
         """
         Clean up the trigger state.
 
-        Since builtin cron triggers are managed internally, no external cleanup is needed.
-        The scheduler will stop using this trigger when it's deleted.
+        Removes the recurring task from both APScheduler and the database.
         """
-        pass
+        await utils.unregister_recurring_task()
 
     async def refresh(
         self,

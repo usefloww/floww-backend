@@ -259,6 +259,7 @@ class OnPush(TriggerI[OnPushInput, OnPushState, GithubProviderState]):
         provider: GithubProviderState,
         input: OnPushInput,
         state: OnPushState,
+        utils: TriggerUtils,
     ) -> None:
         """Delete the GitHub webhook."""
         headers = {
@@ -369,6 +370,7 @@ class OnPullRequest(
         provider: GithubProviderState,
         input: OnPullRequestInput,
         state: OnPullRequestState,
+        utils: TriggerUtils,
     ) -> None:
         """Delete the GitHub webhook."""
         headers = {
@@ -477,6 +479,7 @@ class OnIssue(TriggerI[OnIssueInput, OnIssueState, GithubProviderState]):
         provider: GithubProviderState,
         input: OnIssueInput,
         state: OnIssueState,
+        utils: TriggerUtils,
     ) -> None:
         """Delete the GitHub webhook."""
         headers = {
@@ -587,6 +590,7 @@ class OnIssueComment(
         provider: GithubProviderState,
         input: OnIssueCommentInput,
         state: OnIssueCommentState,
+        utils: TriggerUtils,
     ) -> None:
         """Delete the GitHub webhook."""
         headers = {
@@ -695,6 +699,7 @@ class OnRelease(TriggerI[OnReleaseInput, OnReleaseState, GithubProviderState]):
         provider: GithubProviderState,
         input: OnReleaseInput,
         state: OnReleaseState,
+        utils: TriggerUtils,
     ) -> None:
         """Delete the GitHub webhook."""
         headers = {
