@@ -11,6 +11,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.factories import scheduler_factory
+from app.models import IncomingWebhook, RecurringTask
+from app.services.scheduler_service import execute_cron_job
+
 if TYPE_CHECKING:
     from app.models import Provider, Trigger
 
@@ -62,8 +66,6 @@ class TriggerUtils:
         Returns:
             Dictionary with webhook info: id, url, path, method, owner
         """
-        from app.models import IncomingWebhook
-
         method = (method or "POST").upper()
 
         if owner not in {"trigger", "provider"}:
@@ -133,9 +135,6 @@ class TriggerUtils:
         Returns:
             Dictionary with recurring task info: id, cron_expression, interval_seconds
         """
-        from app.factories import scheduler_factory
-        from app.models import RecurringTask
-        from app.services.scheduler_service import execute_cron_job
 
         if not cron_expression and not interval_seconds:
             raise ValueError(
@@ -197,8 +196,6 @@ class TriggerUtils:
         Removes the job from APScheduler and deletes the RecurringTask record.
         Called by trigger handlers in their destroy() method.
         """
-        from app.factories import scheduler_factory
-        from app.models import RecurringTask
 
         # Find recurring task for this trigger
         result = await self.session.execute(

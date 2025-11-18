@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.deps.db import AsyncSessionLocal
+from app.factories import scheduler_factory
 from app.models import RecurringTask, Trigger
 from app.services.execution_history_service import create_execution_record
 from app.services.trigger_execution_service import (
@@ -184,8 +185,6 @@ async def sync_all_recurring_tasks(session: AsyncSession) -> None:
     Args:
         session: Database session
     """
-    from app.factories import scheduler_factory
-
     scheduler = scheduler_factory()
 
     structured_logger.info("Starting sync of all recurring tasks")

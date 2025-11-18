@@ -4,9 +4,11 @@ from typing import Optional
 from fastapi import APIRouter, Form, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from itsdangerous import BadSignature
+from sqlalchemy import func, select
 
 from app.deps.db import SessionDep
 from app.factories import auth_provider_factory
+from app.models import User
 from app.packages.auth.providers import PasswordAuthProvider
 from app.services.user_service import create_password_user, get_user_by_username
 from app.settings import settings
@@ -41,9 +43,6 @@ async def admin_login(
     # If AUTH_TYPE is 'password', check if we need setup or login
     if settings.AUTH_TYPE == "password":
         # Check if any users exist
-        from sqlalchemy import func, select
-
-        from app.models import User
 
         result = await session.execute(select(func.count(User.id)))
         user_count = result.scalar()

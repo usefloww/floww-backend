@@ -1,7 +1,5 @@
 import logging
-import os
 
-import sentry_sdk
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -34,24 +32,10 @@ from app.routes.admin import init_admin
 from app.settings import settings
 from app.utils.logging_utils import setup_logger
 from app.utils.migrations import run_migrations
+from app.utils.sentry import init_sentry
 from app.utils.single_org import setup_single_org_mode
 
-
-def init_sentry():
-    environment = os.getenv("SENTRY_ENVIRONMENT", default="")
-    if environment not in {"production", "staging"}:
-        dsn = ""
-    else:
-        dsn = os.getenv("SENTRY_DSN", default="")
-
-    sentry_sdk.init(
-        dsn=dsn,
-        traces_sample_rate=0.01,
-        profiles_sample_rate=0.01,
-        enable_tracing=True,
-        send_default_pii=False,
-    )
-
+init_sentry()
 
 app = FastAPI()
 

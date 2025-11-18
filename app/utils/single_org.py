@@ -12,7 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps.db import AsyncSessionLocal
-from app.models import Namespace, Organization
+from app.models import (
+    Namespace,
+    Organization,
+    OrganizationMember,
+    OrganizationRole,
+    User,
+)
 from app.settings import settings
 
 
@@ -35,10 +41,6 @@ async def setup_single_org_mode(app: FastAPI):
 
             # Initialize anonymous user if AUTH_TYPE='none'
             if settings.AUTH_TYPE == "none":
-                from sqlalchemy import select
-
-                from app.models import OrganizationMember, OrganizationRole, User
-
                 # Check if anonymous user already exists
                 result = await session.execute(
                     select(User).where(User.workos_user_id == "anonymous")

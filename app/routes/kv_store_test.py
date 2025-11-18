@@ -1,4 +1,7 @@
+from uuid import UUID
+
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Workflow
@@ -387,9 +390,6 @@ async def test_workflow_cannot_access_table_from_other_namespace(
     session: AsyncSession,
 ):
     """Test workflows can't access tables from other namespaces."""
-    from uuid import UUID
-
-    from sqlalchemy import select
 
     # client_a creates a table in their namespace
     await client_a.put(
