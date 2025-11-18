@@ -9,6 +9,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from app.deps.db import SessionDep
 from app.models import (
     IncomingWebhook,
+    Namespace,
     Trigger,
     Workflow,
 )
@@ -37,7 +38,7 @@ async def _check_execution_limit_for_workflow(
 
     result = await session.execute(
         select(Workflow)
-        .options(joinedload(Workflow.namespace))
+        .options(joinedload(Workflow.namespace).joinedload(Namespace.user_owner))
         .where(Workflow.id == workflow_id)
     )
     workflow = result.scalar_one_or_none()
@@ -134,8 +135,10 @@ async def webhook_listener(request: Request, path: str, session: SessionDep):
     result = await session.execute(
         select(IncomingWebhook)
         .options(
-            selectinload(IncomingWebhook.trigger).selectinload(Trigger.provider),
-            selectinload(IncomingWebhook.trigger).selectinload(Trigger.workflow),
+            selectinload(IncomingWebhook.trigger).options(
+                selectinload(Trigger.provider),
+                selectinload(Trigger.workflow),
+            ),
             selectinload(IncomingWebhook.provider),
         )
         .where(IncomingWebhook.path == normalized_path)

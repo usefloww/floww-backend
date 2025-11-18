@@ -35,7 +35,7 @@ async def get_config():
 
     websocket_url = settings.CENTRIFUGO_PUBLIC_URL.replace("http://", "ws://").replace(
         "https://", "wss://"
-    )
+    ) + "/connection/websocket"
 
     return ConfigRead(
         auth=AuthConfig(
