@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep, TransactionSessionDep
-from app.models import ExecutionStatus
+from app.models import ExecutionStatus, Workflow
 from app.services.execution_history_service import (
     get_execution_by_id,
     get_executions_for_workflow,
@@ -120,7 +120,7 @@ async def get_workflow_executions(
     """
     # Verify user has access to workflow
     query = UserAccessibleQuery(current_user.id).workflows()
-    result = await session.execute(query.where(workflow_id == workflow_id))
+    result = await session.execute(query.where(Workflow.id == workflow_id))
     workflow = result.scalar_one_or_none()
 
     if not workflow:
@@ -172,7 +172,7 @@ async def get_execution_detail(
     # Verify user has access to the workflow
     query = UserAccessibleQuery(current_user.id).workflows()
     result = await session.execute(
-        query.where(execution.workflow_id == execution.workflow_id)
+        query.where(Workflow.id == execution.workflow_id)
     )
     workflow = result.scalar_one_or_none()
 

@@ -6,6 +6,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 from app.deps.auth import CurrentUser
 from app.deps.billing import check_can_create_workflow
@@ -19,12 +20,20 @@ logger = structlog.stdlib.get_logger(__name__)
 router = APIRouter(prefix="/workflows", tags=["Workflows"])
 
 
+class CreatedByUser(BaseModel):
+    id: UUID
+    email: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+
+
 class WorkflowRead(BaseModel):
     id: UUID
     name: str
     description: Optional[str] = None
     namespace_id: UUID
     created_by_id: UUID
+    created_by: Optional[CreatedByUser] = None
     created_at: datetime
     updated_at: datetime
     last_deployed_at: Optional[datetime] = None
@@ -61,12 +70,23 @@ async def list_workflows(
     namespace_id: Optional[UUID] = None,
 ):
     """List workflows accessible to the authenticated user."""
-    helper = helper_factory(current_user, session)
-    base_result = await helper.list_response(namespace_id=namespace_id)
+    # Build query with eager loading of created_by relationship
+    query = (
+        UserAccessibleQuery(current_user.id)
+        .workflows()
+        .options(selectinload(Workflow.created_by))
+    )
+
+    if namespace_id:
+        query = query.where(Workflow.namespace_id == namespace_id)
+
+    result = await session.execute(query)
+    workflows = result.scalars().all()
 
     # Get workflow IDs
-    workflow_ids = [w.id for w in base_result.results]
+    workflow_ids = [w.id for w in workflows]
 
+    deployment_map = {}
     if workflow_ids:
         # Get latest deployment date for each workflow
         latest_deployments = (
@@ -83,16 +103,15 @@ async def list_workflows(
             row.workflow_id: row.last_deployed_at for row in deployment_result.all()
         }
 
-        # Update workflows with last_deployed_at
-        updated_workflows = [
-            workflow.model_copy(
-                update={"last_deployed_at": deployment_map.get(workflow.id)}
-            )
-            for workflow in base_result.results
-        ]
-        return ListResult(results=updated_workflows)
+    # Convert to WorkflowRead with last_deployed_at
+    workflow_reads = [
+        WorkflowRead.model_validate(
+            workflow, from_attributes=True
+        ).model_copy(update={"last_deployed_at": deployment_map.get(workflow.id)})
+        for workflow in workflows
+    ]
 
-    return base_result
+    return ListResult(results=workflow_reads)
 
 
 @router.post("")
@@ -138,9 +157,21 @@ async def get_workflow(
     workflow_id: UUID, current_user: CurrentUser, session: SessionDep
 ):
     """Get a specific workflow."""
-    helper = helper_factory(current_user, session)
-    result = await helper.get_response(workflow_id)
-    return result
+    # Build query with eager loading of created_by relationship
+    query = (
+        UserAccessibleQuery(current_user.id)
+        .workflows()
+        .options(selectinload(Workflow.created_by))
+        .where(Workflow.id == workflow_id)
+    )
+
+    result = await session.execute(query)
+    workflow = result.scalar_one_or_none()
+
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    return WorkflowRead.model_validate(workflow, from_attributes=True)
 
 
 @router.patch("/{workflow_id}")

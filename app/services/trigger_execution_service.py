@@ -167,6 +167,7 @@ async def execute_trigger(
     deployment = await _get_active_deployment(session, trigger.workflow_id)
     if not deployment:
         await update_execution_no_deployment(session, execution_id)
+        await session.commit()
         logger.warning(
             "No active deployment found for trigger",
             trigger_id=str(trigger.id),

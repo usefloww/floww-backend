@@ -152,7 +152,6 @@ async def update_execution_no_deployment(
 
     execution.status = ExecutionStatus.NO_DEPLOYMENT
     execution.completed_at = func.now()
-    execution.error_message = "No active deployment found for this workflow"
 
     await session.flush()
     return execution
@@ -207,7 +206,7 @@ async def get_executions_for_workflow(
     query = (
         select(ExecutionHistory)
         .options(
-            joinedload(ExecutionHistory.trigger),
+            joinedload(ExecutionHistory.trigger).joinedload(Trigger.incoming_webhooks),
             joinedload(ExecutionHistory.deployment),
         )
         .where(ExecutionHistory.workflow_id == workflow_id)
@@ -221,7 +220,7 @@ async def get_executions_for_workflow(
     )
 
     result = await session.execute(query)
-    return list(result.scalars().all())
+    return list(result.unique().scalars().all())
 
 
 async def get_recent_executions(
@@ -242,13 +241,13 @@ async def get_recent_executions(
         select(ExecutionHistory)
         .options(
             joinedload(ExecutionHistory.workflow),
-            joinedload(ExecutionHistory.trigger),
+            joinedload(ExecutionHistory.trigger).joinedload(Trigger.incoming_webhooks),
             joinedload(ExecutionHistory.deployment),
         )
         .order_by(ExecutionHistory.received_at.desc())
         .limit(limit)
     )
-    return list(result.scalars().all())
+    return list(result.unique().scalars().all())
 
 
 def serialize_execution(execution: ExecutionHistory) -> dict:

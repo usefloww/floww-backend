@@ -184,6 +184,10 @@ async def test_webhook_no_active_deployment(
     incoming_webhook: IncomingWebhook,
 ):
     """Test webhook returns 200 when no active deployment exists (only dev mode)."""
+    from sqlalchemy import select
+
+    from app.models import ExecutionHistory, ExecutionStatus
+
     webhook_payload = {"test": "data"}
 
     response = await client_a.post(
@@ -199,3 +203,18 @@ async def test_webhook_no_active_deployment(
 
     # Verify Centrifugo was still called for dev webhook event
     mock_centrifugo.assert_called_once()
+
+    # Verify execution history was created and persisted with NO_DEPLOYMENT status
+    result = await session.execute(
+        select(ExecutionHistory).where(
+            ExecutionHistory.workflow_id == incoming_webhook.trigger.workflow_id
+        )
+    )
+    executions = list(result.scalars().all())
+    assert len(executions) == 1
+    assert executions[0].status == ExecutionStatus.NO_DEPLOYMENT
+    assert executions[0].trigger_id == incoming_webhook.trigger.id
+    assert (
+        executions[0].error_message
+        == "No active deployment found for this workflow"
+    )
