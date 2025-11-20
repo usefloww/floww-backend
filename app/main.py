@@ -23,6 +23,7 @@ from app.routes import (
     secrets,
     service_accounts,
     subscriptions,
+    summary,
     webhooks,
     whoami,
     workflow_deployments,
@@ -115,6 +116,7 @@ api_router.include_router(kv_store.router)
 api_router.include_router(executions.router)
 api_router.include_router(subscriptions.router)
 api_router.include_router(billing.router)
+api_router.include_router(summary.router)
 app.include_router(docker_proxy.router)
 app.include_router(webhooks.router)
 app.include_router(admin_auth.router)

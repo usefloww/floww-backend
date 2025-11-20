@@ -2,11 +2,11 @@
 """
 Database Population Script
 
-This script connects to the production server, extracts database credentials,
+This script connects to the production server, extracts database credentials from Docker secrets,
 creates a secure tunnel, and copies the production data to the local database.
 
 Usage:
-    python populate_db.py [--ssh-key-path PATH] [--local-db-url URL] [--tables TABLE1,TABLE2,...]
+    python populate_db.py [--ssh-key-path PATH] [--local-db-url URL] [--docker-service-name NAME] [--tables TABLE1,TABLE2,...]
 """
 
 import argparse
@@ -44,13 +44,13 @@ class DatabasePopulator:
         ssh_user: str = "ec2-user",
         ssh_key_path: Optional[str] = None,
         local_db_url: str = DEFAULT_LOCAL_DB_URL,
-        remote_env_path: str = "/home/ec2-user/infrastructure/services/floww-backend/.env",
+        docker_service_name: str = "floww-backend_app",
     ):
         self.ssh_host = ssh_host
         self.ssh_user = ssh_user
         self.ssh_key_path = ssh_key_path or os.path.expanduser("~/.ssh/id_rsa")
         self.local_db_url = local_db_url
-        self.remote_env_path = remote_env_path
+        self.docker_service_name = docker_service_name
         self.tunnel_process: Optional[subprocess.Popen] = None
         self.local_tunnel_port = 5433  # Different from local PostgreSQL port
 
@@ -79,40 +79,80 @@ class DatabasePopulator:
             ssh_cmd, capture_output=capture_output, text=True, timeout=30
         )
 
-    def get_remote_env_vars(self) -> Dict[str, str]:
-        """Fetch environment variables from remote .env file"""
-        logger.info(f"Fetching environment variables from {self.remote_env_path}")
+    def _get_docker_container_id(self) -> str:
+        """Get the container ID for the Docker service"""
+        logger.info(f"Finding container ID for service: {self.docker_service_name}")
 
-        # Check if file exists
-        check_cmd = (
-            f"test -f {self.remote_env_path} && echo 'exists' || echo 'not found'"
-        )
-        result = self._run_ssh_command(check_cmd)
-
-        if result.returncode != 0 or "not found" in result.stdout:
-            raise FileNotFoundError(
-                f"Remote .env file not found at {self.remote_env_path}"
-            )
-
-        # Read the .env file
-        cat_cmd = f"cat {self.remote_env_path}"
-        result = self._run_ssh_command(cat_cmd)
+        # Get container ID for the service
+        cmd = f"docker ps --filter name={self.docker_service_name} --format '{{{{.ID}}}}' | head -n 1"
+        result = self._run_ssh_command(cmd)
 
         if result.returncode != 0:
-            raise RuntimeError(f"Failed to read remote .env file: {result.stderr}")
+            raise RuntimeError(f"Failed to get container ID: {result.stderr}")
 
-        # Parse environment variables
-        env_vars = {}
-        for line in result.stdout.split("\n"):
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, value = line.split("=", 1)
-                # Remove quotes if present
-                value = value.strip("\"'")
-                env_vars[key] = value
+        container_id = result.stdout.strip()
+        if not container_id:
+            raise RuntimeError(
+                f"No running container found for service: {self.docker_service_name}"
+            )
 
-        logger.info(f"Found {len(env_vars)} environment variables")
-        return env_vars
+        logger.info(f"Found container ID: {container_id}")
+        return container_id
+
+    def _read_docker_secret(self, container_id: str, secret_path: str) -> str:
+        """Read a Docker secret from a container"""
+        cmd = f"docker exec {container_id} cat {secret_path}"
+        result = self._run_ssh_command(cmd)
+
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to read secret {secret_path}: {result.stderr}")
+
+        return result.stdout.strip()
+
+    def _get_docker_env_var(self, container_id: str, var_name: str) -> str:
+        """Get an environment variable from a Docker container"""
+        cmd = f"docker exec {container_id} printenv {var_name}"
+        result = self._run_ssh_command(cmd)
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Failed to get environment variable {var_name}: {result.stderr}"
+            )
+
+        return result.stdout.strip()
+
+    def get_remote_database_config(self) -> Dict[str, str]:
+        """Fetch database configuration from Docker container (secrets + env vars)"""
+        logger.info(
+            f"Fetching database configuration from Docker service: {self.docker_service_name}"
+        )
+
+        # Get container ID
+        container_id = self._get_docker_container_id()
+
+        # Get database connection details from environment variables
+        logger.info("Reading database configuration from container...")
+        db_user = self._get_docker_env_var(container_id, "DATABASE_USER")
+        db_host = self._get_docker_env_var(container_id, "DATABASE_HOST")
+        db_port = self._get_docker_env_var(container_id, "DATABASE_PORT")
+        db_name = self._get_docker_env_var(container_id, "DATABASE_NAME")
+
+        # Get password from Docker secret
+        logger.info("Reading database password from Docker secret...")
+        db_password = self._read_docker_secret(
+            container_id, "/run/secrets/backend_database_password"
+        )
+
+        # Construct DATABASE_URL
+        database_url = (
+            f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+        )
+
+        logger.info(
+            f"Successfully retrieved database configuration for {db_host}:{db_port}"
+        )
+
+        return {"DATABASE_URL": database_url}
 
     def parse_db_url(self, db_url: str) -> Dict[str, str]:
         """Parse database URL into components"""
@@ -381,13 +421,13 @@ class DatabasePopulator:
     ) -> None:
         """Main method to populate local database with remote data"""
         try:
-            # Step 1: Get remote environment variables
-            env_vars = self.get_remote_env_vars()
+            # Step 1: Get remote database configuration from Docker
+            config = self.get_remote_database_config()
 
-            if "DATABASE_URL" not in env_vars:
-                raise ValueError("DATABASE_URL not found in remote .env file")
+            if "DATABASE_URL" not in config:
+                raise ValueError("DATABASE_URL not found in Docker configuration")
 
-            database_url = env_vars["DATABASE_URL"]
+            database_url = config["DATABASE_URL"]
             database_url = database_url.replace("+asyncpg", "")
 
             remote_db_config = self.parse_db_url(database_url)
@@ -441,9 +481,9 @@ async def main():
         "--ssh-user", default="ec2-user", help="SSH user (default: ec2-user)"
     )
     parser.add_argument(
-        "--remote-env-path",
-        default="/home/ec2-user/infrastructure/services/floww-backend/.env",
-        help="Path to remote .env file",
+        "--docker-service-name",
+        default="floww-backend_app",
+        help="Docker service name (default: floww-backend_app)",
     )
     parser.add_argument(
         "--tables",
@@ -467,7 +507,7 @@ async def main():
         ssh_user=args.ssh_user,
         ssh_key_path=args.ssh_key_path,
         local_db_url=args.local_db_url,
-        remote_env_path=args.remote_env_path,
+        docker_service_name=args.docker_service_name,
     )
 
     try:
