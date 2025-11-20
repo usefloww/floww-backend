@@ -49,7 +49,7 @@ async def proxy_request(
         registry_host: Optional registry hostname for URL rewriting
                       (e.g., "registry.example.com")
         proxy_url: Optional proxy URL for rewriting Location headers
-                  (e.g., "https://api.usefloww.dev")
+                  (e.g., "https://app.usefloww.dev")
 
     Returns:
         StreamingResponse with the proxied response
@@ -137,7 +137,7 @@ async def proxy_request(
                         original_value = response_headers[header_name]
                         # Replace registry hostname with our proxy URL
                         # FROM: https://registry.example.com/v2/...
-                        # TO: https://api.usefloww.dev/v2/...
+                        # TO: https://app.usefloww.dev/v2/...
                         rewritten_value = original_value.replace(
                             f"https://{registry_host}",
                             proxy_url,

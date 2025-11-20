@@ -16,7 +16,7 @@ services:
       - CENTRIFUGO_ADMIN_INSECURE=true
       - CENTRIFUGO_CONNECT_PROXY_ENDPOINT=http://floww-backend_app:8000/centrifugo/connect
       - CENTRIFUGO_SUBSCRIBE_PROXY_ENDPOINT=http://floww-backend_app:8000/centrifugo/subscribe
-      - CENTRIFUGO_ALLOWED_ORIGINS=["https://usefloww.dev", "https://dashboard.usefloww.dev", "https://ws.usefloww.dev"]
+      - CENTRIFUGO_ALLOWED_ORIGINS=["https://app.usefloww.dev"]
       - CENTRIFUGO_ALLOW_ANONYMOUS=true
 
     deploy:
@@ -42,7 +42,7 @@ services:
           memory: 256M
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.centrifugo.rule=Host(`ws.usefloww.dev`)"
+        - "traefik.http.routers.centrifugo.rule=Host(`app.usefloww.dev`) && PathPrefix(`/ws`)"
         - "traefik.http.routers.centrifugo.entrypoints=websecure"
         - "traefik.http.routers.centrifugo.tls.certresolver=myresolver"
         - "traefik.http.services.centrifugo-service.loadbalancer.server.port=8000"
@@ -51,13 +51,6 @@ services:
       nofile:
         soft: 65535
         hard: 65535
-
-    # healthcheck:
-    #   test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/health"]
-    #   interval: 30s
-    #   timeout: 10s
-    #   retries: 3
-    #   start_period: 10s
 
   app:
     image: "ghcr.io/usefloww/floww-backend:latest"
@@ -91,8 +84,8 @@ services:
       - DATABASE_NAME=postgres
       - CENTRIFUGO_HOST=centrifugo
       - CENTRIFUGO_PORT=8000
-      - CENTRIFUGO_PUBLIC_URL=https://ws.usefloww.dev
-      - PUBLIC_API_URL=https://api.usefloww.dev
+      - CENTRIFUGO_PUBLIC_URL=https://app.usefloww.dev
+      - PUBLIC_API_URL=https://app.usefloww.dev
       - SENTRY_ENVIRONMENT=production
       - REGISTRY_URL=501046919403.dkr.ecr.us-east-1.amazonaws.com
       - REGISTRY_REPOSITORY_NAME=trigger-lambda
@@ -137,38 +130,10 @@ services:
           memory: 512M
       labels:
         - "traefik.enable=true"
-
-        # API Router - exclude /admin paths
-        - "traefik.http.routers.floww-backend-api.rule=Host(`api.usefloww.dev`) && !PathPrefix(`/admin`)"
+        - "traefik.http.routers.floww-backend-api.rule=Host(`app.usefloww.dev`) && (PathPrefix(`/api`) || PathPrefix(`/auth`) || PathPrefix(`/v2`) || PathPrefix(`/admin`))"
         - "traefik.http.routers.floww-backend-api.entrypoints=websecure"
         - "traefik.http.routers.floww-backend-api.tls.certresolver=myresolver"
         - "traefik.http.routers.floww-backend-api.service=floww-backend"
-
-        # Admin Router - admin subdomain
-        - "traefik.http.routers.floww-backend-admin.rule=Host(`admin.usefloww.dev`)"
-        - "traefik.http.routers.floww-backend-admin.entrypoints=websecure"
-        - "traefik.http.routers.floww-backend-admin.tls.certresolver=myresolver"
-        - "traefik.http.routers.floww-backend-admin.service=floww-backend"
-        - "traefik.http.routers.floww-backend-admin.middlewares=admin-redirect"
-
-        # Dashboard Router - /api and /auth paths on dashboard domain
-        - "traefik.http.routers.floww-backend-dashboard.rule=(Host(`dashboard.usefloww.dev`) && (PathPrefix(`/api`) || PathPrefix(`/auth`)))"
-        - "traefik.http.routers.floww-backend-dashboard.entrypoints=websecure"
-        - "traefik.http.routers.floww-backend-dashboard.tls.certresolver=myresolver"
-        - "traefik.http.routers.floww-backend-dashboard.service=floww-backend"
-
-        # Docker Registry Router - registry subdomain for /v2 endpoints
-        - "traefik.http.routers.floww-backend-registry.rule=Host(`registry.usefloww.dev`)"
-        - "traefik.http.routers.floww-backend-registry.entrypoints=websecure"
-        - "traefik.http.routers.floww-backend-registry.tls.certresolver=myresolver"
-        - "traefik.http.routers.floww-backend-registry.service=floww-backend"
-
-        # Admin redirect middleware - redirect root to /admin
-        - "traefik.http.middlewares.admin-redirect.redirectregex.regex=^https://admin\\.usefloww\\.dev/?$$"
-        - "traefik.http.middlewares.admin-redirect.redirectregex.replacement=https://admin.usefloww.dev/admin"
-        - "traefik.http.middlewares.admin-redirect.redirectregex.permanent=true"
-
-        # Service definition
         - "traefik.http.services.floww-backend.loadbalancer.server.port=8000"
 
     healthcheck:
