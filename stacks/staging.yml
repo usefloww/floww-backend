@@ -16,7 +16,7 @@ services:
       - CENTRIFUGO_ADMIN_INSECURE=true
       - CENTRIFUGO_CONNECT_PROXY_ENDPOINT=http://floww-backend-staging_app:8000/centrifugo/connect
       - CENTRIFUGO_SUBSCRIBE_PROXY_ENDPOINT=http://floww-backend-staging_app:8000/centrifugo/subscribe
-      - CENTRIFUGO_ALLOWED_ORIGINS=["https://flow.toondn.app", "https://dashboard.flow.toondn.app", "https://ws.flow.toondn.app"]
+      - CENTRIFUGO_ALLOWED_ORIGINS=["https://app.flow.toondn.app"]
       - CENTRIFUGO_ALLOW_ANONYMOUS=true
 
     deploy:
