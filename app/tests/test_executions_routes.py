@@ -7,7 +7,10 @@ import pytest
 from sqlalchemy import select
 
 from app.models import Namespace, Provider, Trigger, User, Workflow
-from app.services.execution_history_service import create_execution_record
+from app.services.execution_history_service import (
+    create_execution_record,
+    get_execution_by_id,
+)
 from app.services.workflow_auth_service import WorkflowAuthService
 from app.utils.encryption import encrypt_secret
 
@@ -73,7 +76,7 @@ async def create_test_trigger(session, workflow: Workflow) -> Trigger:
 
 @pytest.mark.asyncio
 async def test_complete_execution_success(client, session):
-    """Test successfully completing an execution with valid invocation token."""
+    """Test successfully completing an execution with valid invocation token and logs."""
     # Setup: Create user, workflow, trigger, and execution
     user = await create_test_user(session)
     workflow = await create_test_workflow(session, user)
@@ -91,14 +94,20 @@ async def test_complete_execution_success(client, session):
     execution_id = execution.id  # Save ID before commit
     await session.commit()
 
-    # Make request to complete endpoint
+    # Make request to complete endpoint with logs
+    test_logs = "[2025-01-01T00:00:00Z] [LOG] Hello from trigger"
     response = await client.post(
         f"/api/executions/{execution_id}/complete",
         headers={"Authorization": f"Bearer {invocation_token}"},
-        json={},  # No error = success
+        json={"logs": test_logs},
     )
 
     # Verify response
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"
+
+    # Verify logs were stored
+    await session.commit()
+    execution = await get_execution_by_id(session, execution_id)
+    assert execution.logs == test_logs

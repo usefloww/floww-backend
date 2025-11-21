@@ -802,6 +802,7 @@ class ExecutionHistory(Base):
     )
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     error_stack: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    logs: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
     workflow: Mapped["Workflow"] = relationship("Workflow")

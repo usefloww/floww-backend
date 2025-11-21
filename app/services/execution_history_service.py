@@ -76,6 +76,7 @@ async def update_execution_started(
 async def update_execution_completed(
     session: AsyncSession,
     execution_id: UUID,
+    logs: Optional[str] = None,
 ) -> ExecutionHistory:
     """
     Mark execution as successfully completed.
@@ -83,6 +84,7 @@ async def update_execution_completed(
     Args:
         session: Database session
         execution_id: ID of the execution
+        logs: Optional execution logs
 
     Returns:
         Updated ExecutionHistory
@@ -94,6 +96,7 @@ async def update_execution_completed(
 
     execution.status = ExecutionStatus.COMPLETED
     execution.completed_at = func.now()
+    execution.logs = logs
 
     await session.flush()
     return execution
@@ -104,6 +107,7 @@ async def update_execution_failed(
     execution_id: UUID,
     error_message: str,
     error_stack: Optional[str] = None,
+    logs: Optional[str] = None,
 ) -> ExecutionHistory:
     """
     Mark execution as failed with error details.
@@ -113,6 +117,7 @@ async def update_execution_failed(
         execution_id: ID of the execution
         error_message: Error message
         error_stack: Optional error stack trace
+        logs: Optional execution logs
 
     Returns:
         Updated ExecutionHistory
@@ -126,6 +131,7 @@ async def update_execution_failed(
     execution.completed_at = func.now()
     execution.error_message = error_message
     execution.error_stack = error_stack
+    execution.logs = logs
 
     await session.flush()
     return execution
@@ -296,6 +302,7 @@ def serialize_execution(execution: ExecutionHistory) -> dict:
         ),
         "duration_ms": duration_ms,
         "error_message": execution.error_message,
+        "logs": execution.logs,
         # Derived from relationships:
         "trigger_type": trigger_type,
         "webhook_path": webhook_path,

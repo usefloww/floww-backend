@@ -39,6 +39,7 @@ class ExecutionErrorRequest(BaseModel):
 
 class ExecutionCompleteRequest(BaseModel):
     error: Optional[ExecutionErrorRequest] = None
+    logs: Optional[str] = None
 
 
 @router.post("/{execution_id}/complete")
@@ -88,6 +89,7 @@ async def complete_execution(
             execution_id,
             error_message=body.error.message,
             error_stack=body.error.stack,
+            logs=body.logs,
         )
         logger.info(
             "Execution marked as failed",
@@ -95,7 +97,7 @@ async def complete_execution(
             error_message=body.error.message,
         )
     else:
-        await update_execution_completed(session, execution_id)
+        await update_execution_completed(session, execution_id, logs=body.logs)
         logger.info("Execution marked as completed", execution_id=str(execution_id))
 
     return {"status": "ok"}
