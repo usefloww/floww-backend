@@ -149,7 +149,22 @@ async def create_workflow(
         "Created new workflow", workflow_id=str(workflow.id), name=workflow.name
     )
 
-    return WorkflowRead.model_validate(workflow, from_attributes=True)
+    return WorkflowRead(
+        id=workflow.id,
+        name=workflow.name,
+        description=workflow.description,
+        namespace_id=workflow.namespace_id,
+        created_by_id=workflow.created_by_id,
+        created_by=CreatedByUser(
+            id=current_user.id,
+            email=current_user.email,
+            first_name=current_user.first_name,
+            last_name=current_user.last_name,
+        ),
+        created_at=workflow.created_at,
+        updated_at=workflow.updated_at,
+        last_deployed_at=None,
+    )
 
 
 @router.get("/{workflow_id}")
