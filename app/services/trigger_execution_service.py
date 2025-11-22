@@ -19,6 +19,7 @@ from app.services.execution_history_service import (
     update_execution_started,
 )
 from app.services.workflow_auth_service import WorkflowAuthService
+from app.settings import settings
 from app.utils.encryption import decrypt_secret
 
 logger = structlog.stdlib.get_logger(__name__)
@@ -40,12 +41,12 @@ def build_trigger_payload(
     {
         "trigger": {
             "provider": {"type": "gitlab", "alias": "default"},
-            "trigger_type": "onMergeRequest",
+            "triggerType": "onMergeRequest",
             "input": {"projectId": "123"}
         },
         "data": {...},  # Event-specific data
-        "auth_token": "...",
-        "execution_id": "...",
+        "authToken": "...",
+        "executionId": "...",
         "providerConfigs": {...}
     }
     """
@@ -55,12 +56,13 @@ def build_trigger_payload(
                 "type": trigger.provider.type,
                 "alias": trigger.provider.alias,
             },
-            "trigger_type": trigger.trigger_type,
+            "triggerType": trigger.trigger_type,
             "input": trigger.input,
         },
         "data": event_data,
-        "auth_token": auth_token,
-        "execution_id": execution_id,
+        "backendUrl": settings.PUBLIC_API_URL,
+        "authToken": auth_token,
+        "executionId": execution_id,
         "providerConfigs": provider_configs,
     }
 
