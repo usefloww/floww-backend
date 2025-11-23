@@ -495,6 +495,35 @@ class WorkflowDeployment(Base):
         "entrypoint": "main.ts"
     }
     """
+
+    provider_definitions: Mapped[list[str]] = mapped_column(JSONB, nullable=True)
+    """
+    [
+        {
+            "type": "builtin",
+            "alias": "default"
+        },
+        ...
+    ]
+    """
+    trigger_definitions: Mapped[list[dict]] = mapped_column(JSONB, nullable=True)
+    """
+    [
+        {
+            "provider": {
+                "type": "builtin",
+                "alias": "default"
+            },
+            "trigger_type": "onWebhook",
+            "input": {
+                "path": "/api/users",
+                "method": "POST"
+            }
+        },
+        ...
+    ]
+    """
+
     deployed_at: Mapped[datetime] = mapped_column(server_default=func.now())
     status: Mapped[WorkflowDeploymentStatus] = mapped_column(
         SQLEnum(WorkflowDeploymentStatus),
