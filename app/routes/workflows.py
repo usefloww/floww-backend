@@ -5,7 +5,7 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
 
 from app.deps.auth import CurrentUser
@@ -105,9 +105,9 @@ async def list_workflows(
 
     # Convert to WorkflowRead with last_deployed_at
     workflow_reads = [
-        WorkflowRead.model_validate(
-            workflow, from_attributes=True
-        ).model_copy(update={"last_deployed_at": deployment_map.get(workflow.id)})
+        WorkflowRead.model_validate(workflow, from_attributes=True).model_copy(
+            update={"last_deployed_at": deployment_map.get(workflow.id)}
+        )
         for workflow in workflows
     ]
 
@@ -197,9 +197,38 @@ async def update_workflow(
     data: WorkflowUpdate,
 ):
     """Update a specific workflow."""
-    helper = helper_factory(current_user, session)
-    result = await helper.update_response(workflow_id, data)
-    return result
+    # Verify access first
+    access_query = (
+        UserAccessibleQuery(current_user.id)
+        .workflows()
+        .where(Workflow.id == workflow_id)
+    )
+    access_result = await session.execute(access_query)
+    if not access_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # Update the workflow
+    await session.execute(
+        update(Workflow)
+        .where(Workflow.id == workflow_id)
+        .values(**data.model_dump(exclude_unset=True))
+    )
+
+    # Reload with eager loading of created_by relationship
+    query = (
+        UserAccessibleQuery(current_user.id)
+        .workflows()
+        .options(selectinload(Workflow.created_by))
+        .where(Workflow.id == workflow_id)
+    )
+
+    result = await session.execute(query)
+    workflow = result.scalar_one_or_none()
+
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    return WorkflowRead.model_validate(workflow, from_attributes=True)
 
 
 @router.delete("/{workflow_id}")

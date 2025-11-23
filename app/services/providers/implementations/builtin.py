@@ -54,7 +54,7 @@ class OnWebhook(TriggerI[OnWebhookInput, OnWebhookState, BuiltinProviderState]):
         The IncomingWebhook record is created by the TriggerService.
         """
         webhook_registration = await utils.register_webhook(
-            path=input.path,
+            path=f"/webhook/{str(utils.trigger.workflow_id)}/{input.path}",
             method=input.method,
         )
         return OnWebhookState(
