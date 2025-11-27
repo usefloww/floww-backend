@@ -23,7 +23,7 @@ class LogSettings(BaseSettings):
     log_level: str = "INFO"
 
 
-def setup_logger(app: FastAPI):
+def setup_logger():
     settings = LogSettings()
     log_level = settings.log_level
 
@@ -84,11 +84,10 @@ def setup_logger(app: FastAPI):
     logging.getLogger("uvicorn.access").handlers.clear()
     logging.getLogger("uvicorn.access").propagate = False
 
+
+def setup_logger_fastapi(app: FastAPI):
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(CorrelationIdMiddleware)
-
-
-access_logger = structlog.stdlib.get_logger("api.access")
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -130,3 +129,6 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             )
             response.headers["X-Process-Time"] = str(process_time / 10**9)
             return response
+
+
+access_logger = structlog.stdlib.get_logger("api.access")

@@ -1,4 +1,4 @@
-import logging
+from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -31,53 +31,34 @@ from app.routes import (
 )
 from app.routes.admin import init_admin
 from app.settings import settings
-from app.utils.logging_utils import setup_logger
+from app.utils.logging_utils import setup_logger_fastapi
 from app.utils.migrations import run_migrations
 from app.utils.sentry import init_sentry
 from app.utils.single_org import setup_single_org_mode
 
-init_sentry()
 
-app = FastAPI()
-
-setup_logger(app)
-
-init_admin(app)
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Run migrations and initialize single-org mode if enabled."""
-    logger = logging.getLogger(__name__)
-
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     if settings.RUN_MIGRATIONS_ON_STARTUP:
         await run_migrations()
 
     if settings.SINGLE_ORG_MODE:
         await setup_single_org_mode(app)
 
-    # Initialize APScheduler if enabled
     if settings.SCHEDULER_ENABLED:
         scheduler = scheduler_factory()
-
         scheduler.start()
-        logger.info(
-            "AsyncIOScheduler started successfully",
-            extra={"jobs_count": len(scheduler.get_jobs())},
-        )
+
+    yield
+
+    scheduler = scheduler_factory()
+    scheduler.shutdown(wait=True)
 
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Gracefully shutdown AsyncIOScheduler if enabled."""
-    if settings.SCHEDULER_ENABLED:
-        logger = logging.getLogger(__name__)
-        logger.info("Shutting down AsyncIOScheduler")
-
-        scheduler = scheduler_factory()
-        scheduler.shutdown(wait=True)
-
-        logger.info("AsyncIOScheduler shut down successfully")
+init_sentry()
+app = FastAPI(lifespan=lifespan)
+setup_logger_fastapi(app)
+init_admin(app)
 
 
 api_router = APIRouter(prefix="/api")

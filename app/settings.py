@@ -14,7 +14,7 @@ from app.utils.settings_utils import DockerSecretsSettingsSource
 class GeneralConfig(BaseSettings):
     PUBLIC_API_URL: str = "http://localhost:8000"
     RUNTIME_TYPE: Literal["lambda", "docker", "kubernetes"] = "lambda"
-    RUN_MIGRATIONS_ON_STARTUP: bool = False
+    RUN_MIGRATIONS_ON_STARTUP: bool = True
     SENTRY_DSN: str = ""
     SENTRY_ENVIRONMENT: str = ""
 
