@@ -58,7 +58,7 @@ class OrganizationUpdate(BaseModel):
 
 class UserRead(BaseModel):
     id: UUID
-    workos_user_id: str
+    workos_user_id: Optional[str] = None
     email: Optional[str]
     first_name: Optional[str]
     last_name: Optional[str]
