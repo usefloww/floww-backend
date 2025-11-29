@@ -53,10 +53,10 @@ class AdminAuth(AuthenticationBackend):
         try:
             # Validate JWT token using OIDC
             auth_provider = auth_provider_factory()
-            user_id = await auth_provider.validate_token(jwt_token)
+            token_user = await auth_provider.validate_token(jwt_token)
 
             # Check if user is an admin
-            if user_id not in ADMIN_USER_IDS:
+            if token_user.sub not in ADMIN_USER_IDS:
                 return Response(
                     content="Access denied: Admin permissions required", status_code=403
                 )

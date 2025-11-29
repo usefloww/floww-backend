@@ -10,9 +10,16 @@ from app.utils.encryption import hash_api_key
 
 async def get_user_from_token(session: AsyncSession, token: str) -> User:
     auth_provider = auth_provider_factory()
-    external_user_id = await auth_provider.validate_token(token)
+    token_user = await auth_provider.validate_token(token)
 
-    return await get_or_create_user(session, external_user_id)
+    # Extract user information from TokenUser and pass to get_or_create_user
+    return await get_or_create_user(
+        session,
+        workos_user_id=token_user.sub,
+        email=token_user.email,
+        first_name=token_user.given_name,
+        last_name=token_user.family_name,
+    )
 
 
 async def get_user_from_api_key(session: AsyncSession, api_key: str) -> User:

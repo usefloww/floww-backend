@@ -47,9 +47,9 @@ async def validate_jwt(
     issuer: str,
     audience: str | None,
     algorithm: str,
-) -> str:
+) -> dict:
     """
-    Validate JWT token and return the user ID (sub claim).
+    Validate JWT token and return the full decoded payload.
 
     Args:
         token: JWT token to validate
@@ -59,7 +59,7 @@ async def validate_jwt(
         algorithm: JWT algorithm to use for validation
 
     Returns:
-        User ID from the 'sub' claim
+        Full JWT payload as a dictionary
 
     Raises:
         HTTPException: If validation fails
@@ -97,11 +97,11 @@ async def validate_jwt(
             audience=audience,
         )
 
-        external_user_id: str = payload.get("sub")
-        if external_user_id is None:
+        # Validate that sub claim exists
+        if payload.get("sub") is None:
             raise jwt.PyJWTError("No subject found in JWT payload")
 
-        return external_user_id
+        return payload
 
     except jwt.PyJWTError as e:
         raise HTTPException(

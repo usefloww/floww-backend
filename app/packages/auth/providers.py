@@ -21,6 +21,23 @@ from app.packages.auth.utils import (
 )
 
 
+class TokenUser(BaseModel):
+    """User information extracted from a validated JWT token.
+
+    Follows OpenID Connect (OIDC) standard claims specification.
+    All fields except 'sub' are optional to support different auth providers.
+    """
+
+    sub: str  # Subject (user ID) - required
+    email: str | None = None
+    email_verified: bool | None = None
+    name: str | None = None  # Full name
+    given_name: str | None = None  # First name
+    family_name: str | None = None  # Last name
+    picture: str | None = None  # Profile picture URL
+    preferred_username: str | None = None
+
+
 class AuthConfig(BaseModel):
     client_id: str
     client_secret: str
@@ -37,7 +54,7 @@ class AuthProvider(ABC):
     async def get_config(self) -> AuthConfig: ...
 
     @abstractmethod
-    async def validate_token(self, token: str) -> str: ...
+    async def validate_token(self, token: str) -> TokenUser: ...
 
     @abstractmethod
     async def get_authorization_url(
@@ -71,19 +88,30 @@ class OIDCProvider(AuthProvider):
             authorization_endpoint=discovery.get("authorization_endpoint") or "",
             issuer=discovery.get("issuer") or self.issuer_url,
             jwks_uri=discovery.get("jwks_uri") or "",
-            audience=discovery.get("audience"),
+            audience=self.client_id,
         )
 
-    async def validate_token(self, token: str) -> str:
+    async def validate_token(self, token: str) -> TokenUser:
         config = await self.get_config()
         jwks = await get_jwks(config.jwks_uri)
         jwks_keys = jwks.get("keys", [])
-        return await _validate_jwt(
+        payload = await _validate_jwt(
             token=token,
             jwks_keys=jwks_keys,
             issuer=config.issuer,
             audience=config.audience,
             algorithm=self.jwt_algorithm,
+        )
+
+        return TokenUser(
+            sub=payload["sub"],
+            email=payload.get("email"),
+            email_verified=payload.get("email_verified"),
+            name=payload.get("name"),
+            given_name=payload.get("given_name"),
+            family_name=payload.get("family_name"),
+            picture=payload.get("picture"),
+            preferred_username=payload.get("preferred_username"),
         )
 
     async def get_authorization_url(
@@ -138,16 +166,27 @@ class WorkOSProvider(AuthProvider):
             audience=None,
         )
 
-    async def validate_token(self, token: str) -> str:
+    async def validate_token(self, token: str) -> TokenUser:
         config = await self.get_config()
         jwks = await get_jwks(config.jwks_uri)
         jwks_keys = jwks.get("keys", [])
-        return await _validate_jwt(
+        payload = await _validate_jwt(
             token=token,
             jwks_keys=jwks_keys,
             issuer=config.issuer,
             audience=config.audience,
             algorithm=self.jwt_algorithm,
+        )
+
+        return TokenUser(
+            sub=payload["sub"],
+            email=payload.get("email"),
+            email_verified=payload.get("email_verified"),
+            name=payload.get("name"),
+            given_name=payload.get("given_name"),
+            family_name=payload.get("family_name"),
+            picture=payload.get("picture"),
+            preferred_username=payload.get("preferred_username"),
         )
 
     async def get_authorization_url(
@@ -228,7 +267,7 @@ class PasswordAuthProvider(AuthProvider):
             audience=None,
         )
 
-    async def validate_token(self, token: str) -> str:
+    async def validate_token(self, token: str) -> TokenUser:
         """
         Validate JWT token signed with HS256.
 
@@ -236,7 +275,7 @@ class PasswordAuthProvider(AuthProvider):
             token: The JWT token to validate
 
         Returns:
-            The user ID (sub claim) from the token
+            TokenUser with only the user ID populated (other fields are None)
 
         Raises:
             jwt.InvalidTokenError: If token is invalid or expired
@@ -248,7 +287,9 @@ class PasswordAuthProvider(AuthProvider):
                 algorithms=[self.jwt_algorithm],
                 options={"verify_signature": True, "verify_exp": True},
             )
-            return decoded["sub"]  # User ID
+            # Password auth tokens don't contain user profile information
+            # Return TokenUser with only sub populated
+            return TokenUser(sub=decoded["sub"])
         except pyjwt.InvalidTokenError as e:
             raise e
 
