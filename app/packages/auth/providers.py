@@ -2,6 +2,7 @@ import urllib.parse
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 
+import httpx
 import jwt as pyjwt
 from pydantic import BaseModel
 from workos import WorkOSClient
@@ -137,10 +138,40 @@ class OIDCProvider(AuthProvider):
         )
 
     async def revoke_session(self, jwt_token: str) -> None:
-        """Generic OIDC providers may not support session revocation."""
-        # Most OIDC providers don't have a standard session revocation endpoint
-        # This would need to be implemented per-provider if needed
-        pass
+        """
+        Perform OIDC RP-Initiated Logout if provider supports end_session_endpoint.
+
+        Follows the OIDC RP-Initiated Logout 1.0 specification.
+        If the provider doesn't support end_session_endpoint, this is a graceful no-op.
+        """
+        try:
+            # Get OIDC discovery to check for end_session_endpoint
+            discovery = await get_oidc_discovery(self.issuer_url)
+            end_session_endpoint = discovery.get("end_session_endpoint")
+
+            if not end_session_endpoint:
+                # Provider doesn't support RP-initiated logout - graceful no-op
+                return
+
+            # Build logout request with id_token_hint (recommended by OIDC spec)
+            logout_params = {
+                "id_token_hint": jwt_token,
+                "client_id": self.client_id,
+            }
+
+            # Make GET request to end_session_endpoint
+            # Note: We don't wait for response or handle redirects
+            # The session is revoked on the provider side
+            async with httpx.AsyncClient() as client:
+                await client.get(
+                    end_session_endpoint,
+                    params=logout_params,
+                    timeout=5.0,
+                    follow_redirects=False,
+                )
+        except Exception as e:
+            # Don't fail logout if revocation fails - follows same pattern as WorkOSProvider
+            print(f"Failed to revoke OIDC session: {e}")
 
 
 class WorkOSProvider(AuthProvider):

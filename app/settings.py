@@ -139,7 +139,10 @@ class Settings(
     SchedulerConfig,
     BaseSettings,
 ):
-    model_config = SettingsConfigDict(env_file=(".env", ".env.prod", ".env.test"))
+    model_config = SettingsConfigDict(
+        env_file=(".env", ".env.prod", ".env.test"),
+        extra="allow",
+    )
 
     @classmethod
     def settings_customise_sources(
