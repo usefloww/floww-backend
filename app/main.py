@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -30,6 +31,7 @@ from app.routes import (
     workflows,
 )
 from app.routes.admin import init_admin
+from app.services.scheduler_service import cleanup_unused_runtimes
 from app.settings import settings
 from app.utils.logging_utils import setup_logger_fastapi
 from app.utils.migrations import run_migrations
@@ -48,6 +50,13 @@ async def lifespan(app: FastAPI):
     if settings.SCHEDULER_ENABLED:
         scheduler = scheduler_factory()
         scheduler.start()
+
+        scheduler.add_job(
+            cleanup_unused_runtimes,
+            trigger=IntervalTrigger(minutes=5),
+            id="cleanup_unused_runtimes",
+            replace_existing=True,
+        )
 
     yield
 

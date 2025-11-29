@@ -1,8 +1,9 @@
+from typing import Any
+
 from ..runtime_types import (
     RuntimeConfig,
     RuntimeCreationStatus,
     RuntimeI,
-    RuntimeWebhookPayload,
 )
 
 
@@ -28,7 +29,9 @@ class KubernetesRuntime(RuntimeI):
         trigger_id: str,
         runtime_config: RuntimeConfig,
         user_code: dict[str, str],
-        payload: RuntimeWebhookPayload,
-        provider_configs: dict[str, dict[str, str]] | None = None,
+        payload: dict[str, Any],
     ) -> None:
+        pass
+
+    async def teardown_unused_runtimes(self) -> None:
         pass

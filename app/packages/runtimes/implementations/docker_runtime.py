@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.packages.runtimes.utils.docker import (
+    cleanup_idle_containers,
     create_container,
     get_container_status,
     send_webhook_to_container,
@@ -83,3 +84,6 @@ class DockerRuntime(RuntimeI):
             event_payload,
             timeout=60,
         )
+
+    async def teardown_unused_runtimes(self) -> None:
+        await cleanup_idle_containers(300)

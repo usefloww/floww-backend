@@ -27,18 +27,6 @@ class RuntimeCreationStatus(BaseModel):
 
 class RuntimeI(ABC):
     @abstractmethod
-    async def create_runtime(
-        self,
-        runtime_config: RuntimeConfig,
-    ) -> RuntimeCreationStatus: ...
-
-    @abstractmethod
-    async def get_runtime_status(
-        self,
-        runtime_id: str,
-    ) -> RuntimeCreationStatus: ...
-
-    @abstractmethod
     async def invoke_trigger(
         self,
         trigger_id: str,
@@ -63,3 +51,6 @@ class RuntimeI(ABC):
         }
         """
         ...
+
+    @abstractmethod
+    async def teardown_unused_runtimes(self) -> None: ...

@@ -101,3 +101,6 @@ class LambdaRuntime(RuntimeI):
             runtime_config.runtime_id,
             event_payload,
         )
+
+    async def teardown_unused_runtimes(self) -> None:
+        pass

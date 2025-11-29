@@ -172,6 +172,31 @@ async def execute_cron_job(trigger_id: UUID) -> None:
             )
 
 
+async def cleanup_unused_runtimes() -> None:
+    """
+    Clean up unused runtimes across all runtime implementations.
+
+    This function is called periodically by APScheduler to remove idle/unused
+    containers and runtime resources to save costs and prevent resource exhaustion.
+    """
+    try:
+        from app.factories import runtime_factory
+
+        structured_logger.info("Starting cleanup of unused runtimes")
+
+        runtime = runtime_factory()
+        await runtime.teardown_unused_runtimes()
+
+        structured_logger.info("Completed cleanup of unused runtimes")
+
+    except Exception as exc:
+        structured_logger.error(
+            "Failed to cleanup unused runtimes",
+            error=str(exc),
+            exc_info=True,
+        )
+
+
 async def sync_all_recurring_tasks(session: AsyncSession) -> None:
     """
     Sync all recurring tasks from database to APScheduler.
