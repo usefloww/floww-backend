@@ -162,6 +162,18 @@ async def execute_trigger(
     Returns:
         Execution result dict or None if no deployment found
     """
+    # Check if workflow is active
+    if trigger.workflow.active is False:
+        await update_execution_no_deployment(session, execution_id)
+        await session.commit()
+        logger.warning(
+            "Workflow is inactive, skipping trigger execution",
+            trigger_id=str(trigger.id),
+            workflow_id=str(trigger.workflow_id),
+            execution_id=str(execution_id),
+        )
+        return None
+
     # Generate short-lived JWT token for this invocation
     auth_token = WorkflowAuthService.generate_invocation_token(trigger.workflow)
 

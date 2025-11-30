@@ -204,6 +204,11 @@ async def create_workflow_deployment(
     await session.flush()
     await session.refresh(workflow_deployment)
 
+    # Set workflow.active to True if it's currently None (first deployment)
+    if workflow.active is None:
+        workflow.active = True
+        session.add(workflow)
+
     # Validate definitions by calling get_definitions on the runtime
     if data.triggers:
         logger.info(
