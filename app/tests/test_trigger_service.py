@@ -2,8 +2,8 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
-from fastapi import HTTPException
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -138,22 +138,22 @@ async def test_builtin_webhook_custom_path_respected(session):
     )
 
     assert len(webhooks_info) == 1
-    assert webhooks_info[0]["path"] == "/webhook/custom"
+    assert webhooks_info[0]["path"] == f"/webhook/{workflow_id}/custom"
     assert webhooks_info[0]["method"] == "POST"
 
     trigger_result = await session.execute(
         select(Trigger).where(Trigger.workflow_id == workflow_id)
     )
     trigger = trigger_result.scalar_one()
-    assert trigger.state["path"] == "/webhook/custom"
+    assert trigger.state["path"] == f"/webhook/{workflow_id}/custom"
     assert trigger.state["method"] == "POST"
-    assert trigger.state["webhook_url"].endswith("/webhook/custom")
+    assert trigger.state["webhook_url"].endswith(f"/webhook/{workflow_id}/custom")
 
     webhook_result = await session.execute(
         select(IncomingWebhook).where(IncomingWebhook.trigger_id == trigger.id)
     )
     incoming_webhook = webhook_result.scalar_one()
-    assert incoming_webhook.path == "/webhook/custom"
+    assert incoming_webhook.path == f"/webhook/{workflow_id}/custom"
     assert incoming_webhook.method == "POST"
 
 

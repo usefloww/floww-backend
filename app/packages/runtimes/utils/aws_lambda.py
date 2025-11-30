@@ -111,3 +111,49 @@ def invoke_lambda_async(
             error=str(e),
         )
         return {"success": False, "error": str(e)}
+
+
+def invoke_lambda_sync(
+    lambda_client: "LambdaClient", runtime_id: str, event_payload: dict
+) -> dict:
+    """Invoke a Lambda function synchronously and return the result."""
+    function_name = f"floww-runtime-{runtime_id}"
+
+    try:
+        response = lambda_client.invoke(
+            FunctionName=function_name,
+            InvocationType="RequestResponse",  # Synchronous invocation
+            Payload=json.dumps(event_payload),
+        )
+
+        # Read the payload from the response
+        payload_bytes = response["Payload"].read()
+        result = json.loads(payload_bytes)
+
+        logger.info(
+            "Lambda invoked synchronously",
+            function_name=function_name,
+            status_code=response["StatusCode"],
+        )
+
+        # Lambda wraps the response in a specific format
+        # The actual result is in the 'body' field if it's a Lambda function response
+        if isinstance(result, dict) and "body" in result:
+            return json.loads(result["body"])
+        else:
+            return result
+
+    except ClientError as e:
+        logger.error(
+            "Failed to invoke Lambda synchronously",
+            function_name=function_name,
+            error=str(e),
+        )
+        raise
+    except Exception as e:
+        logger.error(
+            "Unexpected error invoking Lambda synchronously",
+            function_name=function_name,
+            error=str(e),
+        )
+        raise

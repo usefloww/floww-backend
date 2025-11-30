@@ -53,8 +53,9 @@ class OnWebhook(TriggerI[OnWebhookInput, OnWebhookState, BuiltinProviderState]):
         Since builtin webhooks are managed internally, no external setup is needed.
         The IncomingWebhook record is created by the TriggerService.
         """
+        input_path = input.path.lstrip("/")
         webhook_registration = await utils.register_webhook(
-            path=f"/webhook/{str(utils.trigger.workflow_id)}/{input.path}",
+            path=f"/webhook/{str(utils.trigger.workflow_id)}/{input_path}",
             method=input.method,
         )
         return OnWebhookState(

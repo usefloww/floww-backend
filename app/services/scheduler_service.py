@@ -116,7 +116,15 @@ async def execute_cron_job(trigger_id: UUID) -> None:
                 )
                 # Remove orphaned job from APScheduler
                 scheduler = scheduler_factory()
-                scheduler.remove_job(f"recurring_task_{trigger_id}")
+                try:
+                    scheduler.remove_job(f"recurring_task_{trigger_id}")
+                except Exception as exc:
+                    structured_logger.warning(
+                        "Failed to remove orphaned APScheduler job",
+                        job_id=f"recurring_task_{trigger_id}",
+                        trigger_id=str(trigger_id),
+                        error=str(exc),
+                    )
                 return
 
             # Check execution limits (cloud only)

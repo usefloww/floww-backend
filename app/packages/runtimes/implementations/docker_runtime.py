@@ -85,5 +85,27 @@ class DockerRuntime(RuntimeI):
             timeout=60,
         )
 
+    async def get_definitions(
+        self,
+        runtime_config: RuntimeConfig,
+        user_code: dict[str, str],
+        provider_configs: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Get trigger and provider definitions from user code via Docker container.
+        """
+        await start_container_if_stopped(runtime_config.runtime_id)
+        event_payload = {
+            "type": "get_definitions",
+            "userCode": user_code,
+            "providerConfigs": provider_configs,
+        }
+        result = await send_webhook_to_container(
+            runtime_config.runtime_id,
+            event_payload,
+            timeout=30,  # Shorter timeout for definitions
+        )
+        return result
+
     async def teardown_unused_runtimes(self) -> None:
         await cleanup_idle_containers(300)

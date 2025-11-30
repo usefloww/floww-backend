@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
@@ -9,16 +10,20 @@ from sqlalchemy import select
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep, TransactionSessionDep
+from app.factories import runtime_factory
 from app.models import (
     IncomingWebhook,
+    Provider,
     Runtime,
     Workflow,
     WorkflowDeployment,
     WorkflowDeploymentStatus,
 )
+from app.packages.runtimes.runtime_types import RuntimeConfig
 from app.services.crud_helpers import CrudHelper
 from app.services.trigger_service import TriggerService
 from app.settings import settings
+from app.utils.encryption import decrypt_secret
 from app.utils.query_helpers import UserAccessibleQuery
 
 logger = structlog.stdlib.get_logger(__name__)
@@ -77,6 +82,50 @@ class WorkflowDeploymentCreate(BaseModel):
 class WorkflowDeploymentUpdate(BaseModel):
     status: Optional[WorkflowDeploymentStatus] = None
     user_code: Optional[dict] = None
+
+
+def validate_definitions(
+    runtime_definitions: dict,
+) -> tuple[bool, Optional[str]]:
+    """
+    Validate that runtime successfully extracted definitions from user code.
+
+    Args:
+        runtime_definitions: Definitions extracted from runtime
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not runtime_definitions.get("success"):
+        error = runtime_definitions.get("error", {})
+        error_msg = error.get("message", "Unknown error")
+        error_stack = error.get("stack", "")
+        return (
+            False,
+            f"Runtime failed to extract definitions: {error_msg}\n{error_stack}",
+        )
+
+    return True, None
+
+
+async def _get_provider_configs(
+    session: SessionDep,
+    namespace_id: UUID,
+) -> dict[str, dict]:
+    """Fetch and decrypt all provider configs for namespace."""
+    result = await session.execute(
+        select(Provider).where(Provider.namespace_id == namespace_id)
+    )
+    providers = result.scalars().all()
+
+    provider_configs = {}
+    for provider in providers:
+        config_json = decrypt_secret(provider.encrypted_config)
+        config = json.loads(config_json)
+        key = f"{provider.type}:{provider.alias}"
+        provider_configs[key] = config
+
+    return provider_configs
 
 
 def helper_factory(user: CurrentUser, session: SessionDep):
@@ -154,6 +203,68 @@ async def create_workflow_deployment(
     session.add(workflow_deployment)
     await session.flush()
     await session.refresh(workflow_deployment)
+
+    # Validate definitions by calling get_definitions on the runtime
+    if data.triggers:
+        logger.info(
+            "Validating workflow deployment definitions",
+            deployment_id=str(workflow_deployment.id),
+            triggers_count=len(data.triggers),
+        )
+
+        # Fetch and decrypt provider configs
+        provider_configs = await _get_provider_configs(session, workflow.namespace_id)
+
+        # Call runtime.get_definitions()
+        runtime_impl = runtime_factory()
+        try:
+            runtime_definitions = await runtime_impl.get_definitions(
+                runtime_config=RuntimeConfig(
+                    runtime_id=str(runtime.id),
+                    image_digest=runtime.config.get("image_hash", ""),
+                ),
+                user_code=workflow_deployment.user_code,
+                provider_configs=provider_configs,
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to call get_definitions on runtime",
+                deployment_id=str(workflow_deployment.id),
+                error=str(e),
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to validate deployment with runtime: {str(e)}",
+            )
+
+        # Validate definitions were successfully extracted
+        is_valid, error_message = validate_definitions(runtime_definitions)
+        if not is_valid:
+            logger.error(
+                "Definition validation failed",
+                deployment_id=str(workflow_deployment.id),
+                error=error_message,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"Deployment validation failed: {error_message}",
+            )
+
+        # Populate provider_definitions and trigger_definitions fields
+        workflow_deployment.provider_definitions = runtime_definitions.get(
+            "providers", []
+        )
+        workflow_deployment.trigger_definitions = runtime_definitions.get(
+            "triggers", []
+        )
+        session.add(workflow_deployment)
+
+        logger.info(
+            "Deployment definitions validated successfully",
+            deployment_id=str(workflow_deployment.id),
+            providers_count=len(runtime_definitions.get("providers", [])),
+            triggers_count=len(runtime_definitions.get("triggers", [])),
+        )
 
     # Update workflow with triggers metadata
     if data.triggers:

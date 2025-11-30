@@ -53,4 +53,40 @@ class RuntimeI(ABC):
         ...
 
     @abstractmethod
+    async def get_definitions(
+        self,
+        runtime_config: RuntimeConfig,
+        user_code: dict[str, str],
+        provider_configs: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Get trigger and provider definitions from user code.
+
+        Returns:
+        {
+            "success": bool,
+            "triggers": [
+                {
+                    "provider": {"type": "...", "alias": "..."},
+                    "triggerType": "...",
+                    "input": {...}
+                },
+                ...
+            ],
+            "providers": [
+                {
+                    "type": "...",
+                    "alias": "..."
+                },
+                ...
+            ],
+            "error": {
+                "message": "...",
+                "stack": "..."
+            } (optional, only if success=False)
+        }
+        """
+        ...
+
+    @abstractmethod
     async def teardown_unused_runtimes(self) -> None: ...

@@ -5,6 +5,7 @@ from app.packages.runtimes.utils.aws_lambda import (
     deploy_lambda_function,
     get_lambda_deploy_status,
     invoke_lambda_async,
+    invoke_lambda_sync,
 )
 
 from ..runtime_types import (
@@ -101,6 +102,27 @@ class LambdaRuntime(RuntimeI):
             runtime_config.runtime_id,
             event_payload,
         )
+
+    async def get_definitions(
+        self,
+        runtime_config: RuntimeConfig,
+        user_code: dict[str, str],
+        provider_configs: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Get trigger and provider definitions from user code via Lambda invocation.
+        """
+        event_payload = {
+            "type": "get_definitions",
+            "userCode": user_code,
+            "providerConfigs": provider_configs,
+        }
+        result = invoke_lambda_sync(
+            self.lambda_client,
+            runtime_config.runtime_id,
+            event_payload,
+        )
+        return result
 
     async def teardown_unused_runtimes(self) -> None:
         pass
