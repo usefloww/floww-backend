@@ -221,7 +221,7 @@ async def create_workflow_deployment(
             runtime_definitions = await runtime_impl.get_definitions(
                 runtime_config=RuntimeConfig(
                     runtime_id=str(runtime.id),
-                    image_digest=runtime.config.get("image_hash", ""),
+                    image_digest=(runtime.config or {}).get("image_hash", ""),
                 ),
                 user_code=workflow_deployment.user_code,
                 provider_configs=provider_configs,

@@ -6,7 +6,13 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import IncomingWebhook, Provider, Trigger
+from app.models import (
+    IncomingWebhook,
+    Provider,
+    Trigger,
+    WorkflowDeployment,
+    WorkflowDeploymentStatus,
+)
 from app.services.providers.implementations.builtin import BUILTIN_TRIGGER_TYPES
 from app.services.providers.implementations.discord import DISCORD_TRIGGER_TYPES
 from app.services.providers.implementations.github import GITHUB_TRIGGER_TYPES
@@ -298,6 +304,49 @@ def _make_trigger_utils(
     )
 
 
+async def _get_deployed_trigger_identities(
+    session: AsyncSession, workflow_id: UUID
+) -> set[tuple]:
+    """
+    Get trigger identities from the active deployment's trigger_definitions.
+    These triggers should be preserved and not removed during dev sync.
+
+    Returns:
+        Set of trigger identities (provider_type, provider_alias, trigger_type, input_json)
+    """
+    # Find active deployment for the workflow
+    result = await session.execute(
+        select(WorkflowDeployment)
+        .where(WorkflowDeployment.workflow_id == workflow_id)
+        .where(WorkflowDeployment.status == WorkflowDeploymentStatus.ACTIVE)
+        .order_by(WorkflowDeployment.deployed_at.desc())
+        .limit(1)
+    )
+    deployment = result.scalar_one_or_none()
+
+    if not deployment or not deployment.trigger_definitions:
+        return set()
+
+    # Convert deployment trigger_definitions to trigger identities
+    deployed_identities = set()
+    for trigger_def in deployment.trigger_definitions:
+        identity = (
+            trigger_def["provider"]["type"],
+            trigger_def["provider"]["alias"],
+            trigger_def["triggerType"],
+            json.dumps(trigger_def.get("input", {}), sort_keys=True),
+        )
+        deployed_identities.add(identity)
+
+    logger.info(
+        "Found deployed trigger identities to preserve",
+        workflow_id=str(workflow_id),
+        count=len(deployed_identities),
+    )
+
+    return deployed_identities
+
+
 class TriggerService:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -334,7 +383,16 @@ class TriggerService:
         existing_map = await _build_identity_map(self.session, existing_triggers)
         new_map = {_trigger_identity(t): t for t in new_triggers}
 
-        to_remove = set(existing_map.keys()) - set(new_map.keys())
+        # Get deployed trigger identities to preserve
+        deployed_identities = await _get_deployed_trigger_identities(
+            self.session, workflow_id
+        )
+
+        # Exclude deployed triggers from removal
+        # Logic: to_remove = (existing - new) - deployed
+        to_remove = (
+            set(existing_map.keys()) - set(new_map.keys())
+        ) - deployed_identities
         to_add = set(new_map.keys()) - set(existing_map.keys())
         to_keep = set(existing_map.keys()) & set(new_map.keys())
 
@@ -344,6 +402,7 @@ class TriggerService:
             to_remove=len(to_remove),
             to_add=len(to_add),
             to_keep=len(to_keep),
+            deployed_protected=len(deployed_identities),
         )
 
         for identity in to_remove:
