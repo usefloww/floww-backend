@@ -253,7 +253,7 @@ async def password_setup(
     if user_count > 0:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Setup is only allowed when no users exist",
+            detail="Signup is closed. This instance is in single-organization mode with restricted signup. Please contact your administrator for access.",
         )
 
     # Validate redirect URL
@@ -315,7 +315,7 @@ def _get_password_login_html(
 
     Simple, minimal design for self-hosted setups.
     If is_setup=True, shows setup form for first admin user.
-    Otherwise, shows login form only.
+    Otherwise, shows login form only (signup is blocked after first user).
     """
     error_html = f'<p style="color: red;">{error}</p>' if error else ""
 
@@ -363,7 +363,7 @@ def _get_password_login_html(
 </head>
 <body>
     <h1>Floww Setup</h1>
-    <p>Create your admin account</p>
+    <p>Create your owner account (first user)</p>
     {error_html}
 
     <form action="/auth/setup" method="POST">

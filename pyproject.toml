@@ -39,6 +39,7 @@ dependencies = [
     "docker>=7.1.0",
     "apscheduler>=3.11.1",
     "psycopg2-binary>=2.9.10",
+    "python-ulid>=2.3.0",
 ]
 
 [dependency-groups]

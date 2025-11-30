@@ -82,6 +82,7 @@ async def list_workflows(
         UserAccessibleQuery(current_user.id)
         .workflows()
         .options(selectinload(Workflow.created_by))
+        .order_by(Workflow.id.desc())
     )
 
     if namespace_id:

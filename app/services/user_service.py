@@ -1,7 +1,7 @@
 from typing import Optional
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.deps.db import SessionDep
 from app.models import (
@@ -69,15 +69,19 @@ async def get_or_create_user(
                     )
                 )
                 if not existing_membership.scalar_one_or_none():
-                    # Map string role to enum
-                    role_map = {
-                        "owner": OrganizationRole.OWNER,
-                        "admin": OrganizationRole.ADMIN,
-                        "member": OrganizationRole.MEMBER,
-                    }
-                    role = role_map.get(
-                        settings.SINGLE_ORG_DEFAULT_ROLE.lower(),
-                        OrganizationRole.MEMBER,
+                    # Determine role based on whether this is the first user
+                    # Check total user count (excluding current user being created)
+                    user_count_result = await session.execute(
+                        select(func.count(User.id))
+                    )
+                    user_count = user_count_result.scalar()
+
+                    # First user (user_count == 1, since we already flushed the current user) gets OWNER
+                    # All subsequent users get MEMBER
+                    role = (
+                        OrganizationRole.OWNER
+                        if user_count == 1
+                        else OrganizationRole.MEMBER
                     )
 
                     org_member = OrganizationMember(
@@ -337,15 +341,15 @@ async def create_password_user(
 
             default_org_id = await get_default_organization_id(session)
 
-            # Map string role to enum
-            role_map = {
-                "owner": OrganizationRole.OWNER,
-                "admin": OrganizationRole.ADMIN,
-                "member": OrganizationRole.MEMBER,
-            }
-            role = role_map.get(
-                settings.SINGLE_ORG_DEFAULT_ROLE.lower(),
-                OrganizationRole.MEMBER,
+            # Determine role based on whether this is the first user
+            # Check total user count (excluding current user being created)
+            user_count_result = await session.execute(select(func.count(User.id)))
+            user_count = user_count_result.scalar()
+
+            # First user (user_count == 1, since we already flushed the current user) gets OWNER
+            # All subsequent users get MEMBER
+            role = (
+                OrganizationRole.OWNER if user_count == 1 else OrganizationRole.MEMBER
             )
 
             org_member = OrganizationMember(

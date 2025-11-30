@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Any, Optional, Union
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import (
     CheckConstraint,
@@ -21,6 +21,8 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.orm.exc import DetachedInstanceError
 from sqlalchemy.sql import func
+
+from app.utils.uuid_utils import generate_ulid_uuid
 
 
 class Base(DeclarativeBase):
@@ -97,7 +99,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     user_type: Mapped[UserType] = mapped_column(
         SQLEnum(UserType), nullable=False, default=UserType.HUMAN
@@ -145,7 +147,7 @@ class Subscription(Base):
     __tablename__ = "subscriptions"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True
@@ -197,7 +199,7 @@ class BillingEvent(Base):
     __tablename__ = "billing_events"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     subscription_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("subscriptions.id", ondelete="CASCADE")
@@ -230,7 +232,7 @@ class Organization(Base):
     __tablename__ = "organizations"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     workos_organization_id: Mapped[str] = mapped_column(
         String(255), unique=True, nullable=True
@@ -258,7 +260,7 @@ class OrganizationMember(Base):
     __tablename__ = "organization_members"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE")
@@ -286,7 +288,7 @@ class Namespace(Base):
     __tablename__ = "namespaces"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
 
     # Owner can be either a User or Organization
@@ -377,7 +379,7 @@ class Runtime(Base):
     __tablename__ = "runtimes"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     """
@@ -415,7 +417,7 @@ class Workflow(Base):
     __tablename__ = "workflows"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     namespace_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("namespaces.id", ondelete="CASCADE")
@@ -475,7 +477,7 @@ class WorkflowDeployment(Base):
     __tablename__ = "workflow_deployments"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     workflow_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("workflows.id", ondelete="CASCADE")
@@ -568,7 +570,7 @@ class IncomingWebhook(Base):
     )
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     trigger_id: Mapped[Optional[UUID]] = mapped_column(
         PGUUID(as_uuid=True),
@@ -602,7 +604,7 @@ class RecurringTask(Base):
     __tablename__ = "recurring_tasks"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     trigger_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("triggers.id", ondelete="CASCADE")
@@ -616,7 +618,7 @@ class Trigger(Base):
     __tablename__ = "triggers"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     workflow_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -647,7 +649,7 @@ class Secret(Base):
     __tablename__ = "secrets"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     namespace_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("namespaces.id", ondelete="CASCADE")
@@ -673,7 +675,7 @@ class Provider(Base):
     __tablename__ = "providers"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     namespace_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("namespaces.id", ondelete="CASCADE")
@@ -699,7 +701,7 @@ class KeyValueTable(Base):
     __tablename__ = "kv_tables"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     provider_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("providers.id", ondelete="CASCADE")
@@ -732,7 +734,7 @@ class KeyValueTablePermission(Base):
     __tablename__ = "kv_table_permissions"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     table_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("kv_tables.id", ondelete="CASCADE")
@@ -770,7 +772,7 @@ class KeyValueItem(Base):
     __tablename__ = "kv_items"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     table_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("kv_tables.id", ondelete="CASCADE")
@@ -804,7 +806,7 @@ class ExecutionHistory(Base):
     __tablename__ = "execution_history"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
     workflow_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("workflows.id", ondelete="CASCADE")
