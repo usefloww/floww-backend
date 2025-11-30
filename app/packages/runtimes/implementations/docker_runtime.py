@@ -76,6 +76,7 @@ class DockerRuntime(RuntimeI):
         """
         await start_container_if_stopped(runtime_config.runtime_id)
         event_payload = {
+            "type": "invoke_trigger",
             "userCode": user_code,
             **payload,  # Includes trigger, data, auth_token, execution_id, providerConfigs
         }

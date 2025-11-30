@@ -94,6 +94,7 @@ class LambdaRuntime(RuntimeI):
         Payload already contains trigger, data, auth_token, execution_id, and providerConfigs.
         """
         event_payload = {
+            "type": "invoke_trigger",
             "userCode": user_code,
             **payload,  # Includes trigger, data, auth_token, execution_id, providerConfigs
         }

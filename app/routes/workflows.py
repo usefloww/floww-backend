@@ -1,11 +1,11 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, cast
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
 from app.deps.auth import CurrentUser
@@ -27,16 +27,21 @@ class CreatedByUser(BaseModel):
     last_name: Optional[str] = None
 
 
+class LastDeployment(BaseModel):
+    deployed_at: datetime
+    provider_definitions: Optional[list[dict]] = None
+
+
 class WorkflowRead(BaseModel):
     id: UUID
     name: str
     description: Optional[str] = None
     namespace_id: UUID
-    created_by_id: UUID
+    created_by_id: Optional[UUID] = None
     created_by: Optional[CreatedByUser] = None
     created_at: datetime
     updated_at: datetime
-    last_deployed_at: Optional[datetime] = None
+    last_deployment: Optional[LastDeployment] = None
 
 
 class WorkflowCreate(BaseModel):
@@ -88,25 +93,43 @@ async def list_workflows(
 
     deployment_map = {}
     if workflow_ids:
-        # Get latest deployment date for each workflow
-        latest_deployments = (
-            select(
-                WorkflowDeployment.workflow_id,
-                func.max(WorkflowDeployment.deployed_at).label("last_deployed_at"),
-            )
+        # Get latest deployment for each workflow
+        # Fetch all deployments for these workflows, ordered by deployed_at desc
+        all_deployments_query = (
+            select(WorkflowDeployment)
             .where(WorkflowDeployment.workflow_id.in_(workflow_ids))
-            .group_by(WorkflowDeployment.workflow_id)
+            .order_by(
+                WorkflowDeployment.workflow_id, WorkflowDeployment.deployed_at.desc()
+            )
         )
 
-        deployment_result = await session.execute(latest_deployments)
-        deployment_map = {
-            row.workflow_id: row.last_deployed_at for row in deployment_result.all()
-        }
+        deployment_result = await session.execute(all_deployments_query)
+        deployments = deployment_result.scalars().all()
 
-    # Convert to WorkflowRead with last_deployed_at
+        # Group by workflow_id, keeping only the first (latest) deployment per workflow
+        seen_workflow_ids = set()
+        for deployment in deployments:
+            if deployment.workflow_id not in seen_workflow_ids:
+                seen_workflow_ids.add(deployment.workflow_id)
+                # Cast provider_definitions to correct type (model says list[str] but it's actually list[dict])
+                provider_defs = None
+                if deployment.provider_definitions:
+                    if isinstance(deployment.provider_definitions, list) and all(
+                        isinstance(item, dict)
+                        for item in deployment.provider_definitions
+                    ):
+                        provider_defs = cast(
+                            list[dict], deployment.provider_definitions
+                        )
+                deployment_map[deployment.workflow_id] = LastDeployment(
+                    deployed_at=deployment.deployed_at,
+                    provider_definitions=provider_defs,
+                )
+
+    # Convert to WorkflowRead with last_deployment
     workflow_reads = [
         WorkflowRead.model_validate(workflow, from_attributes=True).model_copy(
-            update={"last_deployed_at": deployment_map.get(workflow.id)}
+            update={"last_deployment": deployment_map.get(workflow.id)}
         )
         for workflow in workflows
     ]
@@ -163,7 +186,7 @@ async def create_workflow(
         ),
         created_at=workflow.created_at,
         updated_at=workflow.updated_at,
-        last_deployed_at=None,
+        last_deployment=None,
     )
 
 
@@ -186,7 +209,36 @@ async def get_workflow(
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    return WorkflowRead.model_validate(workflow, from_attributes=True)
+    # Get latest deployment for this workflow
+    latest_deployment_query = (
+        select(WorkflowDeployment)
+        .where(WorkflowDeployment.workflow_id == workflow_id)
+        .order_by(WorkflowDeployment.deployed_at.desc())
+        .limit(1)
+    )
+
+    deployment_result = await session.execute(latest_deployment_query)
+    latest_deployment = deployment_result.scalar_one_or_none()
+
+    last_deployment = None
+    if latest_deployment:
+        # Cast provider_definitions to correct type (model says list[str] but it's actually list[dict])
+        provider_defs = None
+        if latest_deployment.provider_definitions:
+            if isinstance(latest_deployment.provider_definitions, list) and all(
+                isinstance(item, dict)
+                for item in latest_deployment.provider_definitions
+            ):
+                provider_defs = cast(list[dict], latest_deployment.provider_definitions)
+        last_deployment = LastDeployment(
+            deployed_at=latest_deployment.deployed_at,
+            provider_definitions=provider_defs,
+        )
+
+    workflow_read = WorkflowRead.model_validate(workflow, from_attributes=True)
+    workflow_read.last_deployment = last_deployment
+
+    return workflow_read
 
 
 @router.patch("/{workflow_id}")
@@ -228,7 +280,36 @@ async def update_workflow(
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    return WorkflowRead.model_validate(workflow, from_attributes=True)
+    # Get latest deployment for this workflow
+    latest_deployment_query = (
+        select(WorkflowDeployment)
+        .where(WorkflowDeployment.workflow_id == workflow_id)
+        .order_by(WorkflowDeployment.deployed_at.desc())
+        .limit(1)
+    )
+
+    deployment_result = await session.execute(latest_deployment_query)
+    latest_deployment = deployment_result.scalar_one_or_none()
+
+    last_deployment = None
+    if latest_deployment:
+        # Cast provider_definitions to correct type (model says list[str] but it's actually list[dict])
+        provider_defs = None
+        if latest_deployment.provider_definitions:
+            if isinstance(latest_deployment.provider_definitions, list) and all(
+                isinstance(item, dict)
+                for item in latest_deployment.provider_definitions
+            ):
+                provider_defs = cast(list[dict], latest_deployment.provider_definitions)
+        last_deployment = LastDeployment(
+            deployed_at=latest_deployment.deployed_at,
+            provider_definitions=provider_defs,
+        )
+
+    workflow_read = WorkflowRead.model_validate(workflow, from_attributes=True)
+    workflow_read.last_deployment = last_deployment
+
+    return workflow_read
 
 
 @router.delete("/{workflow_id}")
