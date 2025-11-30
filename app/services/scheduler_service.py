@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.deps.db import AsyncSessionLocal
-from app.factories import scheduler_factory
+from app.factories import runtime_factory, scheduler_factory
 from app.models import RecurringTask, Trigger
 from app.services.execution_history_service import create_execution_record
 from app.services.trigger_execution_service import (
@@ -110,10 +110,13 @@ async def execute_cron_job(trigger_id: UUID) -> None:
             trigger = result.scalar_one_or_none()
 
             if not trigger:
-                structured_logger.error(
-                    "Trigger not found for cron job",
+                structured_logger.warning(
+                    "Trigger not found for cron job, removing orphaned job",
                     trigger_id=str(trigger_id),
                 )
+                # Remove orphaned job from APScheduler
+                scheduler = scheduler_factory()
+                scheduler.remove_job(f"recurring_task_{trigger_id}")
                 return
 
             # Check execution limits (cloud only)
@@ -180,8 +183,6 @@ async def cleanup_unused_runtimes() -> None:
     containers and runtime resources to save costs and prevent resource exhaustion.
     """
     try:
-        from app.factories import runtime_factory
-
         structured_logger.info("Starting cleanup of unused runtimes")
 
         runtime = runtime_factory()

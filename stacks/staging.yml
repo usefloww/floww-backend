@@ -77,7 +77,7 @@ services:
       - AUTH_CLIENT_ID=client_01K6QQP8Q721ZX1YM1PBV3EWMR
       - AUTH_ISSUER_URL=https://great-gradient-36-staging.authkit.app
       - AWS_REGION=us-east-1
-      - RUNTIME_TYPE=docker
+      - RUNTIME_TYPE=lambda
       - DATABASE_USER=postgres
       - DATABASE_HOST=floww.cklmackcedxs.us-east-1.rds.amazonaws.com
       - DATABASE_PORT=5432
