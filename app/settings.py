@@ -61,7 +61,6 @@ class AuthConfig(BaseSettings):
 
     # OIDC settings (works with any OIDC-compliant provider: WorkOS, Auth0, Keycloak, etc.)
     AUTH_CLIENT_ID: str = ""
-    AUTH_DEVICE_CLIENT_ID: str = ""
     AUTH_CLIENT_SECRET: str = ""
     AUTH_ISSUER_URL: str = ""  # OIDC issuer URL for discovery
 
