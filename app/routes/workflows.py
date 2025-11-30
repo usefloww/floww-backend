@@ -41,6 +41,7 @@ class WorkflowRead(BaseModel):
     created_by: Optional[CreatedByUser] = None
     created_at: datetime
     updated_at: datetime
+    active: Optional[bool] = None
     last_deployment: Optional[LastDeployment] = None
 
 
@@ -54,6 +55,7 @@ class WorkflowUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     namespace_id: Optional[UUID] = None
+    active: Optional[bool] = None
 
 
 def helper_factory(user: CurrentUser, session: SessionDep):
@@ -186,6 +188,7 @@ async def create_workflow(
         ),
         created_at=workflow.created_at,
         updated_at=workflow.updated_at,
+        active=workflow.active,
         last_deployment=None,
     )
 

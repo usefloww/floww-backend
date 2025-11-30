@@ -445,6 +445,7 @@ class Workflow(Base):
         }
     ]
     """
+    active: Mapped[bool] = mapped_column(nullable=True, default=True)
 
     # Relationships
     namespace: Mapped["Namespace"] = relationship(back_populates="workflows")
@@ -466,6 +467,7 @@ class Workflow(Base):
         Index("idx_workflows_namespace", "namespace_id"),
         Index("idx_workflows_created_by", "created_by_id"),
         Index("idx_workflows_updated_at", "updated_at"),
+        Index("idx_workflows_active", "active"),
     )
 
 
