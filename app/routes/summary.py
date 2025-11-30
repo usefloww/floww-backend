@@ -58,9 +58,18 @@ async def get_summary(
     if not namespace:
         raise HTTPException(status_code=404, detail="Namespace not found")
 
-    # Calculate date range
-    end_date = datetime.now(timezone.utc)
-    start_date = end_date - timedelta(days=days)
+    # Calculate date range - normalize to midnight (start of day) for full day boundaries
+    today = datetime.now(timezone.utc).date()
+    start_date_only = today - timedelta(days=days - 1)
+    end_date_only = today + timedelta(days=1)
+
+    # Convert to datetime at midnight for query
+    start_date = datetime.combine(start_date_only, datetime.min.time()).replace(
+        tzinfo=timezone.utc
+    )
+    end_date = datetime.combine(end_date_only, datetime.min.time()).replace(
+        tzinfo=timezone.utc
+    )
 
     # Get all workflows in this namespace
     workflows_query = (
@@ -92,7 +101,7 @@ async def get_summary(
         .where(
             ExecutionHistory.workflow_id.in_(workflow_ids),
             ExecutionHistory.received_at >= start_date,
-            ExecutionHistory.received_at <= end_date,
+            ExecutionHistory.received_at < end_date,
         )
         .group_by(func.date(ExecutionHistory.received_at), ExecutionHistory.status)
         .order_by(func.date(ExecutionHistory.received_at))
@@ -146,10 +155,9 @@ async def get_summary(
 
     # Fill in missing dates with zeros
     executions_by_day = []
-    current_date = start_date.date()
-    end_date_only = end_date.date()
+    current_date = start_date_only
 
-    while current_date <= end_date_only:
+    while current_date <= today:
         date_str = current_date.isoformat()
         day_data = date_map.get(
             date_str,
