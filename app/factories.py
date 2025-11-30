@@ -63,6 +63,7 @@ def auth_provider_factory() -> AuthProvider:
     if settings.AUTH_TYPE == "password":
         return PasswordAuthProvider(
             jwt_secret=settings.WORKFLOW_JWT_SECRET,
+            api_base_url=settings.PUBLIC_API_URL,
         )
 
     if settings.AUTH_TYPE == "oidc":

@@ -12,6 +12,7 @@ from app.routes import (
     centrifugo,
     config,
     dev,
+    device_auth,
     docker_proxy,
     executions,
     health,
@@ -110,5 +111,6 @@ api_router.include_router(summary.router)
 app.include_router(docker_proxy.router)
 app.include_router(webhooks.router)
 app.include_router(admin_auth.router)
+app.include_router(device_auth.router)
 app.include_router(centrifugo.router)
 app.include_router(api_router)

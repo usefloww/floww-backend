@@ -277,7 +277,8 @@ class PasswordAuthProvider(AuthProvider):
     Does not support OAuth flows (authorization URL, code exchange).
     """
 
-    def __init__(self, jwt_secret: str):
+    def __init__(self, jwt_secret: str, api_base_url: str):
+        self.api_base_url = api_base_url
         self.jwt_secret = jwt_secret
         self.jwt_algorithm = "HS256"
         self.jwt_expiration = timedelta(days=30)  # Match session cookie expiration
@@ -286,12 +287,15 @@ class PasswordAuthProvider(AuthProvider):
         """
         Password auth doesn't use OAuth config, but we need to implement this
         for interface compatibility. Returns minimal config.
+
+        Note: device_authorization_endpoint returns a relative path for self-hosted setup.
+        Clients should construct the full URL using their API base URL.
         """
         return AuthConfig(
             client_id="password-auth",
             client_secret=self.jwt_secret,
-            device_authorization_endpoint="",
-            token_endpoint="",
+            device_authorization_endpoint=f"{self.api_base_url}/auth/device/authorize",
+            token_endpoint=f"{self.api_base_url}/auth/device/token",
             authorization_endpoint="",
             issuer="floww-password-auth",
             jwks_uri="",

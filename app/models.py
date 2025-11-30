@@ -95,6 +95,13 @@ class SubscriptionStatus(str, Enum):
     INCOMPLETE = "incomplete"  # Checkout session not completed
 
 
+class DeviceCodeStatus(str, Enum):
+    PENDING = "pending"  # Awaiting user authorization
+    APPROVED = "approved"  # User authorized the device
+    DENIED = "denied"  # User denied authorization
+    EXPIRED = "expired"  # Device code expired
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -141,6 +148,85 @@ class User(Base):
         return self._repr(
             id=self.id, email=self.email, workos_user_id=self.workos_user_id
         )
+
+
+class DeviceCode(Base):
+    """
+    Stores device authorization codes for OAuth2 device flow.
+    Used for CLI and other device authentication.
+    """
+
+    __tablename__ = "device_codes"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
+    )
+    device_code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    user_code: Mapped[str] = mapped_column(String(16), unique=True, nullable=False)
+    user_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
+    status: Mapped[DeviceCodeStatus] = mapped_column(
+        SQLEnum(DeviceCodeStatus), nullable=False, default=DeviceCodeStatus.PENDING
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # Relationships
+    user: Mapped[Optional["User"]] = relationship()
+
+    __table_args__ = (
+        Index("idx_device_codes_device_code", "device_code"),
+        Index("idx_device_codes_user_code", "user_code"),
+        Index("idx_device_codes_status", "status"),
+        Index("idx_device_codes_expires_at", "expires_at"),
+    )
+
+    def __repr__(self):
+        return self._repr(id=self.id, user_code=self.user_code, status=self.status)
+
+
+class RefreshToken(Base):
+    """
+    Stores refresh tokens for long-lived authentication sessions.
+    Used primarily for CLI and API access.
+    """
+
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    device_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_used_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        Index("idx_refresh_tokens_token_hash", "token_hash"),
+        Index("idx_refresh_tokens_user_id", "user_id"),
+        Index("idx_refresh_tokens_revoked_at", "revoked_at"),
+    )
+
+    def __repr__(self):
+        return self._repr(id=self.id, user_id=self.user_id, revoked_at=self.revoked_at)
 
 
 class Subscription(Base):
