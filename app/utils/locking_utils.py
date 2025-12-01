@@ -2,8 +2,8 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 import structlog
-from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
 # Initialize structured logger for the lock manager
 structured_logger = structlog.stdlib.get_logger(__name__)
@@ -23,15 +23,15 @@ async def advisory_lock(session: AsyncSession, key: int) -> AsyncGenerator[bool,
         raise ValueError("Lock key must be a valid 64-bit integer.")
 
     lock_acquired = False
-    conn: Connection = await session.connection()
+    conn: AsyncConnection = await session.connection()
 
     try:
         # 1. Attempt to Acquire the Lock (Non-blocking, single 64-bit key)
-        sql_acquire_lock = f"SELECT pg_try_advisory_lock({key});"
+        sql_acquire_lock = text("SELECT pg_try_advisory_lock(:key)")
 
-        result = await conn.execute(sql_acquire_lock)
+        result = await conn.execute(sql_acquire_lock, {"key": key})
         # Note: We must fetch the scalar result
-        lock_acquired = await result.scalar()
+        lock_acquired = result.scalar()
 
         if lock_acquired:
             structured_logger.debug("Advisory lock acquired.", lock_key=key)
@@ -57,8 +57,8 @@ async def advisory_lock(session: AsyncSession, key: int) -> AsyncGenerator[bool,
         # 2. Release the Lock (If acquired)
         if lock_acquired:
             try:
-                sql_release_lock = f"SELECT pg_advisory_unlock({key});"
-                await conn.execute(sql_release_lock)
+                sql_release_lock = text("SELECT pg_advisory_unlock(:key)")
+                await conn.execute(sql_release_lock, {"key": key})
                 structured_logger.debug("Advisory lock released.", lock_key=key)
             except Exception as exc:
                 structured_logger.critical(
