@@ -61,12 +61,27 @@ async def advisory_lock(session: AsyncSession, key: int) -> AsyncGenerator[bool,
         # 2. Release the Lock (If acquired)
         if lock_acquired:
             try:
-                sql_release_lock = text("SELECT pg_advisory_unlock(:key)")
-                await conn.execute(sql_release_lock, {"key": key})
-                structured_logger.debug("Advisory lock released.", lock_key=key)
+                # Check if connection is still valid before attempting to release
+                if conn.closed:
+                    structured_logger.debug(
+                        "Connection already closed, lock will be released automatically.",
+                        lock_key=key,
+                    )
+                else:
+                    sql_release_lock = text("SELECT pg_advisory_unlock(:key)")
+                    await conn.execute(sql_release_lock, {"key": key})
+                    structured_logger.debug("Advisory lock released.", lock_key=key)
             except Exception as exc:
-                structured_logger.critical(
-                    "CRITICAL: Failed to release advisory lock.",
-                    lock_key=key,
-                    error=str(exc),
-                )
+                # If connection is closed, the lock will be released automatically
+                # when the connection closes, so this is not critical
+                if "closed" in str(exc).lower() or conn.closed:
+                    structured_logger.debug(
+                        "Connection closed before lock release (lock will auto-release).",
+                        lock_key=key,
+                    )
+                else:
+                    structured_logger.critical(
+                        "CRITICAL: Failed to release advisory lock.",
+                        lock_key=key,
+                        error=str(exc),
+                    )
