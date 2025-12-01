@@ -41,6 +41,7 @@ dependencies = [
     "psycopg2-binary>=2.9.10",
     "python-ulid>=2.3.0",
     "authlib>=1.6.5",
+    "croniter>=6.0.0",
 ]
 
 [dependency-groups]
