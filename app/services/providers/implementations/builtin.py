@@ -1,5 +1,4 @@
-from croniter import croniter
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 from app.services.providers.provider_setup import ProviderSetupStep
 from app.services.providers.provider_utils import (
@@ -96,16 +95,6 @@ class OnWebhook(TriggerI[OnWebhookInput, OnWebhookState, BuiltinProviderState]):
 
 class OnCronInput(BaseModel):
     expression: str
-
-    @field_validator("expression")
-    def validate_expression(cls, v: str) -> str:
-        if not croniter.is_valid(v):
-            if croniter.is_valid(v, second_at_beginning=True):
-                raise ValueError(
-                    "Seconds field is only supported locally, not for deployed workflows."
-                )
-            raise ValueError(f"Invalid cron expression: {v}")
-        return v
 
 
 class OnCronState(BaseModel):

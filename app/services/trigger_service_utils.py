@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import structlog
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -151,37 +152,28 @@ class TriggerUtils:
         scheduler = scheduler_factory()
         job_id = f"recurring_task_{recurring_task.id}"
 
-        try:
-            if cron_expression:
-                scheduler.add_job(
-                    execute_cron_job,
-                    trigger=CronTrigger.from_crontab(cron_expression, timezone="UTC"),
-                    args=[self.trigger.id],
-                    id=job_id,
-                    replace_existing=True,
-                )
-                logger.info(
-                    "Added cron job to APScheduler",
-                    job_id=job_id,
-                    trigger_id=str(self.trigger.id),
-                    cron_expression=cron_expression,
-                )
-            elif interval_seconds:
-                # TODO: Implement interval-based scheduling when needed
-                logger.warning(
-                    "Interval-based scheduling not yet implemented",
-                    interval_seconds=interval_seconds,
-                )
-        except Exception as exc:
-            logger.error(
-                "Failed to add job to APScheduler",
+        if cron_expression:
+            scheduler.add_job(
+                execute_cron_job,
+                trigger=CronTrigger.from_crontab(cron_expression, timezone="UTC"),
+                args=[self.trigger.id],
+                id=job_id,
+                replace_existing=True,
+            )
+            logger.info(
+                "Added cron job to APScheduler",
                 job_id=job_id,
                 trigger_id=str(self.trigger.id),
-                error=str(exc),
-                exc_info=True,
+                cron_expression=cron_expression,
             )
-            # Don't fail the entire operation if APScheduler fails
-            # The job can be added later via sync_all_recurring_tasks()
+        elif interval_seconds:
+            scheduler.add_job(
+                execute_cron_job,
+                trigger=IntervalTrigger(seconds=interval_seconds),
+                args=[self.trigger.id],
+                id=job_id,
+                replace_existing=True,
+            )
 
         return {
             "id": recurring_task.id,
