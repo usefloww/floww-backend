@@ -199,6 +199,8 @@ async def get_executions_for_workflow(
     """
     List executions for a workflow with pagination and filtering.
 
+    This filters out executions with status `no_deployment`
+
     Args:
         session: Database session
         workflow_id: ID of the workflow
@@ -216,6 +218,7 @@ async def get_executions_for_workflow(
             joinedload(ExecutionHistory.deployment),
         )
         .where(ExecutionHistory.workflow_id == workflow_id)
+        .where(ExecutionHistory.status != ExecutionStatus.NO_DEPLOYMENT)
     )
 
     if status:
