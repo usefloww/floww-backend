@@ -29,14 +29,20 @@ class TokenUser(BaseModel):
     All fields except 'sub' are optional to support different auth providers.
     """
 
-    sub: str  # Subject (user ID) - required
-    email: str | None = None
-    email_verified: bool | None = None
-    name: str | None = None  # Full name
-    given_name: str | None = None  # First name
-    family_name: str | None = None  # Last name
-    picture: str | None = None  # Profile picture URL
-    preferred_username: str | None = None
+    id: str
+    email: str | None
+    username: str | None
+    first_name: str | None
+    last_name: str | None
+    email_verified: bool
+    picture: str | None = None
+
+
+class TokenExchangeResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    id_token: str
+    user: TokenUser
 
 
 class AuthConfig(BaseModel):
@@ -63,7 +69,9 @@ class AuthProvider(ABC):
     ) -> str: ...
 
     @abstractmethod
-    async def exchange_code_for_token(self, code: str, redirect_uri: str) -> dict: ...
+    async def exchange_code_for_token(
+        self, code: str, redirect_uri: str
+    ) -> TokenExchangeResponse: ...
 
     @abstractmethod
     async def revoke_session(self, jwt_token: str) -> None: ...
@@ -105,14 +113,13 @@ class OIDCProvider(AuthProvider):
         )
 
         return TokenUser(
-            sub=payload["sub"],
+            id=payload["sub"],
             email=payload.get("email"),
-            email_verified=payload.get("email_verified"),
-            name=payload.get("name"),
-            given_name=payload.get("given_name"),
-            family_name=payload.get("family_name"),
+            email_verified=payload.get("email_verified", False),
+            username=payload.get("preferred_username"),
+            first_name=payload.get("given_name"),
+            last_name=payload.get("family_name"),
             picture=payload.get("picture"),
-            preferred_username=payload.get("preferred_username"),
         )
 
     async def get_authorization_url(
@@ -127,14 +134,31 @@ class OIDCProvider(AuthProvider):
             prompt=prompt,
         )
 
-    async def exchange_code_for_token(self, code: str, redirect_uri: str) -> dict:
+    async def exchange_code_for_token(
+        self, code: str, redirect_uri: str
+    ) -> TokenExchangeResponse:
         config = await self.get_config()
-        return await _exchange_code_for_token(
+        token_data = await _exchange_code_for_token(
             token_endpoint=config.token_endpoint,
             client_id=self.client_id,
             client_secret=self.client_secret,
             code=code,
             redirect_uri=redirect_uri,
+        )
+
+        # Extract tokens
+        access_token = token_data.get("access_token", "")
+        refresh_token = token_data.get("refresh_token", "")
+        id_token = token_data.get("id_token") or access_token
+
+        # Validate token to get user info
+        token_user = await self.validate_token(id_token)
+
+        return TokenExchangeResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            id_token=id_token,
+            user=token_user,
         )
 
     async def revoke_session(self, jwt_token: str) -> None:
@@ -210,14 +234,13 @@ class WorkOSProvider(AuthProvider):
         )
 
         return TokenUser(
-            sub=payload["sub"],
+            id=payload["sub"],
             email=payload.get("email"),
-            email_verified=payload.get("email_verified"),
-            name=payload.get("name"),
-            given_name=payload.get("given_name"),
-            family_name=payload.get("family_name"),
+            email_verified=payload.get("email_verified", False),
+            username=payload.get("preferred_username"),
+            first_name=payload.get("given_name"),
+            last_name=payload.get("family_name"),
             picture=payload.get("picture"),
-            preferred_username=payload.get("preferred_username"),
         )
 
     async def get_authorization_url(
@@ -228,6 +251,7 @@ class WorkOSProvider(AuthProvider):
             provider="authkit",
             redirect_uri=redirect_uri,
             state=state,
+            provider_scopes=["openid", "email", "profile"],
         )
 
         # Manually append OAuth2 prompt parameter if provided
@@ -240,15 +264,32 @@ class WorkOSProvider(AuthProvider):
 
         return authorization_url
 
-    async def exchange_code_for_token(self, code: str, redirect_uri: str) -> dict:
+    async def exchange_code_for_token(
+        self, code: str, redirect_uri: str
+    ) -> TokenExchangeResponse:
         result = self.workos.user_management.authenticate_with_code(
             code=code,
         )
-        return {
-            "access_token": result.access_token,
-            "refresh_token": result.refresh_token,
-            "id_token": result.access_token,
-        }
+
+        # Extract tokens
+        access_token = result.access_token
+        refresh_token = result.refresh_token
+        id_token = result.access_token  # WorkOS uses access_token as id_token
+
+        return TokenExchangeResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            id_token=id_token,
+            user=TokenUser(
+                id=result.user.id,
+                email=result.user.email,
+                username=result.user.first_name,
+                first_name=result.user.first_name,
+                last_name=result.user.last_name,
+                email_verified=result.user.email_verified,
+                picture=result.user.profile_picture_url,
+            ),
+        )
 
     async def revoke_session(self, jwt_token: str) -> None:
         """Revoke WorkOS session by extracting session ID from JWT and calling WorkOS API."""
@@ -324,7 +365,14 @@ class PasswordAuthProvider(AuthProvider):
             )
             # Password auth tokens don't contain user profile information
             # Return TokenUser with only sub populated
-            return TokenUser(sub=decoded["sub"])
+            return TokenUser(
+                id=decoded["sub"],
+                email=None,
+                username=None,
+                first_name=None,
+                last_name=None,
+                email_verified=False,
+            )
         except pyjwt.InvalidTokenError as e:
             raise e
 
@@ -358,7 +406,9 @@ class PasswordAuthProvider(AuthProvider):
             "Password authentication does not support OAuth authorization flow"
         )
 
-    async def exchange_code_for_token(self, code: str, redirect_uri: str) -> dict:
+    async def exchange_code_for_token(
+        self, code: str, redirect_uri: str
+    ) -> TokenExchangeResponse:
         """
         Password auth doesn't use OAuth code exchange.
         This method should not be called for password auth.

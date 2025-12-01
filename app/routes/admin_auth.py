@@ -12,7 +12,11 @@ from app.factories import auth_provider_factory
 from app.models import User
 from app.packages.auth.providers import PasswordAuthProvider
 from app.services.refresh_token_service import revoke_all_user_tokens
-from app.services.user_service import create_password_user, get_user_by_username
+from app.services.user_service import (
+    create_password_user,
+    get_or_create_user,
+    get_user_by_username,
+)
 from app.settings import settings
 from app.utils.password import verify_password
 from app.utils.session import (
@@ -78,6 +82,7 @@ async def admin_login(
 
 @router.get("/auth/callback")
 async def admin_auth_callback(
+    session: SessionDep,
     request: Request,
     code: Optional[str] = Query(None),
     state: Optional[str] = Query(None),
@@ -112,15 +117,19 @@ async def admin_auth_callback(
     redirect_uri = f"{scheme}://{host}/auth/callback"
 
     auth_provider = auth_provider_factory()
-    token_data = await auth_provider.exchange_code_for_token(code, redirect_uri)
-    jwt_token = token_data.get("id_token") or token_data.get("access_token")
+    token_response = await auth_provider.exchange_code_for_token(code, redirect_uri)
 
-    if not jwt_token:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No access token or id token received from auth provider",
-        )
+    # Get or create user with complete user info from token exchange
+    await get_or_create_user(
+        session,
+        workos_user_id=token_response.user.id,
+        email=token_response.user.email,
+        username=token_response.user.username,
+        first_name=token_response.user.first_name,
+        last_name=token_response.user.last_name,
+    )
 
+    jwt_token = token_response.id_token
     session_cookie_value = create_session_cookie(jwt_token)
     response = RedirectResponse(url=next_url, status_code=status.HTTP_302_FOUND)
 

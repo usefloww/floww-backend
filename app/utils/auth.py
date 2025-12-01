@@ -4,22 +4,35 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.factories import auth_provider_factory
 from app.models import ApiKey, User
-from app.services.user_service import get_or_create_user
 from app.utils.encryption import hash_api_key
 
 
 async def get_user_from_token(session: AsyncSession, token: str) -> User:
+    """Get user from validated JWT token.
+
+    Only looks up existing users - does not create new users.
+    Users should be created during the OAuth callback flow where complete
+    user information is available.
+
+    Raises:
+        HTTPException: If token is invalid or user doesn't exist
+    """
     auth_provider = auth_provider_factory()
     token_user = await auth_provider.validate_token(token)
 
-    # Extract user information from TokenUser and pass to get_or_create_user
-    return await get_or_create_user(
-        session,
-        workos_user_id=token_user.sub,
-        email=token_user.email,
-        first_name=token_user.given_name,
-        last_name=token_user.family_name,
+    # Look up existing user by workos_user_id
+    result = await session.execute(
+        select(User).where(User.workos_user_id == token_user.id)
     )
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found. Please complete the authentication flow.",
+        )
+
+    return user
 
 
 async def get_user_from_api_key(session: AsyncSession, api_key: str) -> User:

@@ -36,6 +36,7 @@ async def get_or_create_user(
     session: SessionDep,
     workos_user_id: str,
     email: Optional[str] = None,
+    username: Optional[str] = None,
     first_name: Optional[str] = None,
     last_name: Optional[str] = None,
     create: bool = True,
@@ -48,6 +49,7 @@ async def get_or_create_user(
         user = User(
             workos_user_id=workos_user_id,
             email=email,
+            username=username,
             first_name=first_name,
             last_name=last_name,
         )
