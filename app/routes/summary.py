@@ -102,6 +102,7 @@ async def get_summary(
             ExecutionHistory.workflow_id.in_(workflow_ids),
             ExecutionHistory.received_at >= start_date,
             ExecutionHistory.received_at < end_date,
+            ExecutionHistory.status != ExecutionStatus.NO_DEPLOYMENT,
         )
         .group_by(func.date(ExecutionHistory.received_at), ExecutionHistory.status)
         .order_by(func.date(ExecutionHistory.received_at))
