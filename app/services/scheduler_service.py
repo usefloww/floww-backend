@@ -136,7 +136,14 @@ async def execute_cron_job(
     lock_key = _generate_lock_key(trigger_id, scheduled_run_time)
 
     async with AsyncSessionLocal() as session:
-        async with advisory_lock(session, lock_key):
+        async with advisory_lock(session, lock_key) as lock_acquired:
+            if not lock_acquired:
+                structured_logger.info(
+                    "Skipping cron job - lock held by another worker",
+                    trigger_id=str(trigger_id),
+                )
+                return
+
             try:
                 # Load trigger with relationships
                 result = await session.execute(
