@@ -5,6 +5,7 @@ This service configures an AsyncIOScheduler with PostgreSQL job store
 to ensure scheduled tasks run exactly once even with multiple Gunicorn workers.
 """
 
+import hashlib
 import logging
 from datetime import datetime, timezone
 from uuid import UUID
@@ -26,9 +27,42 @@ from app.services.trigger_execution_service import (
     execute_trigger,
 )
 from app.settings import settings
+from app.utils.locking_utils import advisory_lock
 
 logger = logging.getLogger(__name__)
 structured_logger = structlog.stdlib.get_logger(__name__)
+
+
+def _generate_lock_key(trigger_id: UUID, scheduled_run_time: datetime | None) -> int:
+    """
+    Generates a single, deterministic 64-bit integer key from the trigger ID
+    and the scheduled run time using Python's built-in hashlib (SHA-256).
+    """
+    # 1. Get the 128-bit integer representation of the UUID
+    uuid_bytes = trigger_id.bytes
+
+    # 2. Get the Unix timestamp as bytes (8 bytes for 64-bit representation)
+    if scheduled_run_time:
+        timestamp_int = int(scheduled_run_time.timestamp())
+        timestamp_bytes = timestamp_int.to_bytes(8, "big")
+    else:
+        timestamp_bytes = b"\x00" * 8
+
+    # 3. Concatenate the unique bytes
+    data_to_hash = uuid_bytes + timestamp_bytes
+
+    # 4. Hash the combined data using SHA-256
+    # This ensures a strong, deterministic mapping.
+    hasher = hashlib.sha256()
+    hasher.update(data_to_hash)
+
+    # 5. Truncate the 256-bit hash digest down to 64 bits (8 bytes)
+    # This result is used as the PostgreSQL BIGINT key.
+    # We take the first 8 bytes of the digest.
+    truncated_digest = hasher.digest()[:8]
+
+    # 6. Convert the 8 bytes back into an unsigned 64-bit integer
+    return int.from_bytes(truncated_digest, "big")
 
 
 def get_scheduler() -> AsyncIOScheduler:
@@ -85,7 +119,10 @@ def get_scheduler() -> AsyncIOScheduler:
     return scheduler
 
 
-async def execute_cron_job(trigger_id: UUID) -> None:
+async def execute_cron_job(
+    trigger_id: UUID,
+    scheduled_run_time: datetime | None = None,
+) -> None:
     """
     Execute a cron job for a trigger.
 
@@ -96,91 +133,94 @@ async def execute_cron_job(trigger_id: UUID) -> None:
     Args:
         trigger_id: UUID of the trigger to execute
     """
+    lock_key = _generate_lock_key(trigger_id, scheduled_run_time)
+
     async with AsyncSessionLocal() as session:
-        try:
-            # Load trigger with relationships
-            result = await session.execute(
-                select(Trigger)
-                .options(
-                    selectinload(Trigger.workflow),
-                    selectinload(Trigger.provider),
+        async with advisory_lock(session, lock_key):
+            try:
+                # Load trigger with relationships
+                result = await session.execute(
+                    select(Trigger)
+                    .options(
+                        selectinload(Trigger.workflow),
+                        selectinload(Trigger.provider),
+                    )
+                    .where(Trigger.id == trigger_id)
                 )
-                .where(Trigger.id == trigger_id)
-            )
-            trigger = result.scalar_one_or_none()
+                trigger = result.scalar_one_or_none()
 
-            if not trigger:
-                structured_logger.warning(
-                    "Trigger not found for cron job, removing orphaned job",
-                    trigger_id=str(trigger_id),
-                )
-                # Remove orphaned job from APScheduler
-                scheduler = scheduler_factory()
-                try:
-                    scheduler.remove_job(f"recurring_task_{trigger_id}")
-                except Exception as exc:
+                if not trigger:
                     structured_logger.warning(
-                        "Failed to remove orphaned APScheduler job",
-                        job_id=f"recurring_task_{trigger_id}",
+                        "Trigger not found for cron job, removing orphaned job",
                         trigger_id=str(trigger_id),
-                        error=str(exc),
                     )
-                return
-
-            # Check execution limits (cloud only)
-            if settings.IS_CLOUD:
-                from app.routes.webhooks import _check_execution_limit_for_workflow
-
-                try:
-                    await _check_execution_limit_for_workflow(
-                        session, trigger.workflow_id
-                    )
-                except Exception as exc:
-                    structured_logger.warning(
-                        "Execution limit reached for cron job",
-                        trigger_id=str(trigger_id),
-                        workflow_id=str(trigger.workflow_id),
-                        error=str(exc),
-                    )
+                    # Remove orphaned job from APScheduler
+                    scheduler = scheduler_factory()
+                    try:
+                        scheduler.remove_job(f"recurring_task_{trigger_id}")
+                    except Exception as exc:
+                        structured_logger.warning(
+                            "Failed to remove orphaned APScheduler job",
+                            job_id=f"recurring_task_{trigger_id}",
+                            trigger_id=str(trigger_id),
+                            error=str(exc),
+                        )
                     return
 
-            # Create execution history record
-            execution = await create_execution_record(
-                session=session,
-                workflow_id=trigger.workflow_id,
-                trigger_id=trigger.id,
-            )
+                    # Check execution limits (cloud only)
+                if settings.IS_CLOUD:
+                    from app.routes.webhooks import _check_execution_limit_for_workflow
 
-            # Build cron event data
-            cron_expression = trigger.input.get("expression", "unknown")
-            event_data = build_cron_event_data(
-                cron_expression=cron_expression,
-                scheduled_time=datetime.now(timezone.utc),
-            )
+                    try:
+                        await _check_execution_limit_for_workflow(
+                            session, trigger.workflow_id
+                        )
+                    except Exception as exc:
+                        structured_logger.warning(
+                            "Execution limit reached for cron job",
+                            trigger_id=str(trigger_id),
+                            workflow_id=str(trigger.workflow_id),
+                            error=str(exc),
+                        )
+                        return
 
-            structured_logger.info(
-                "Executing cron job",
-                trigger_id=str(trigger_id),
-                workflow_id=str(trigger.workflow_id),
-                execution_id=str(execution.id),
-                cron_expression=cron_expression,
-            )
+                # Create execution history record
+                execution = await create_execution_record(
+                    session=session,
+                    workflow_id=trigger.workflow_id,
+                    trigger_id=trigger.id,
+                )
 
-            # Execute trigger via unified service
-            await execute_trigger(
-                session=session,
-                trigger=trigger,
-                event_data=event_data,
-                execution_id=execution.id,
-            )
+                # Build cron event data
+                cron_expression = trigger.input.get("expression", "unknown")
+                event_data = build_cron_event_data(
+                    cron_expression=cron_expression,
+                    scheduled_time=datetime.now(timezone.utc),
+                )
 
-        except Exception as exc:
-            structured_logger.error(
-                "Cron job execution failed",
-                trigger_id=str(trigger_id),
-                error=str(exc),
-                exc_info=True,
-            )
+                structured_logger.info(
+                    "Executing cron job",
+                    trigger_id=str(trigger_id),
+                    workflow_id=str(trigger.workflow_id),
+                    execution_id=str(execution.id),
+                    cron_expression=cron_expression,
+                )
+
+                # Execute trigger via unified service
+                await execute_trigger(
+                    session=session,
+                    trigger=trigger,
+                    event_data=event_data,
+                    execution_id=execution.id,
+                )
+
+            except Exception as exc:
+                structured_logger.error(
+                    "Cron job execution failed",
+                    trigger_id=str(trigger_id),
+                    error=str(exc),
+                    exc_info=True,
+                )
 
 
 async def cleanup_unused_runtimes() -> None:
