@@ -1,7 +1,7 @@
 import secrets
 from typing import Optional
 
-import pyjwt
+import jwt as pyjwt
 from fastapi import APIRouter, Form, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from itsdangerous import BadSignature
