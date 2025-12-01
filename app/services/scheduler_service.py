@@ -62,7 +62,11 @@ def _generate_lock_key(trigger_id: UUID, scheduled_run_time: datetime | None) ->
     truncated_digest = hasher.digest()[:8]
 
     # 6. Convert the 8 bytes back into an unsigned 64-bit integer
-    return int.from_bytes(truncated_digest, "big")
+    # Then ensure it fits within PostgreSQL's signed 64-bit BIGINT range
+    # (PostgreSQL BIGINT is signed: -2^63 to 2^63-1)
+    unsigned_key = int.from_bytes(truncated_digest, "big")
+    # Use modulo to ensure the value fits in signed 64-bit range [0, 2^63-1]
+    return unsigned_key % (2**63)
 
 
 def get_scheduler() -> AsyncIOScheduler:

@@ -15,12 +15,16 @@ async def advisory_lock(session: AsyncSession, key: int) -> AsyncGenerator[bool,
     Asynchronous context manager for acquiring a single-key (64-bit)
     PostgreSQL Advisory Lock.
 
+    Note: PostgreSQL BIGINT is signed, so the key must be in range [0, 2^63-1].
+
     Yields:
         bool: True if the lock was acquired, False otherwise.
     """
-    if not 0 <= key <= (2**64 - 1):
-        structured_logger.error("Lock key out of 64-bit range.", key=key)
-        raise ValueError("Lock key must be a valid 64-bit integer.")
+    if not 0 <= key <= (2**63 - 1):
+        structured_logger.error("Lock key out of signed 64-bit range.", key=key)
+        raise ValueError(
+            "Lock key must be a valid signed 64-bit integer (0 to 2^63-1)."
+        )
 
     lock_acquired = False
     conn: AsyncConnection = await session.connection()
