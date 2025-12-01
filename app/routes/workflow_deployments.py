@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, HTTPException
@@ -12,7 +12,6 @@ from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep, TransactionSessionDep
 from app.factories import runtime_factory
 from app.models import (
-    IncomingWebhook,
     Provider,
     Runtime,
     Workflow,
@@ -22,7 +21,6 @@ from app.models import (
 from app.packages.runtimes.runtime_types import RuntimeConfig
 from app.services.crud_helpers import CrudHelper
 from app.services.trigger_service import TriggerService
-from app.settings import settings
 from app.utils.encryption import decrypt_secret
 from app.utils.query_helpers import UserAccessibleQuery
 
@@ -209,89 +207,78 @@ async def create_workflow_deployment(
         workflow.active = True
         session.add(workflow)
 
-    # Validate definitions by calling get_definitions on the runtime
-    if data.triggers:
-        logger.info(
-            "Validating workflow deployment definitions",
+    # Always validate definitions by calling get_definitions on the runtime
+    logger.info(
+        "Validating workflow deployment definitions",
+        deployment_id=str(workflow_deployment.id),
+    )
+
+    # Fetch and decrypt provider configs
+    provider_configs = await _get_provider_configs(session, workflow.namespace_id)
+
+    # Call runtime.get_definitions()
+    runtime_impl = runtime_factory()
+    try:
+        runtime_definitions = await runtime_impl.get_definitions(
+            runtime_config=RuntimeConfig(
+                runtime_id=str(runtime.id),
+                image_digest=(runtime.config or {}).get("image_hash", ""),
+            ),
+            user_code=workflow_deployment.user_code,
+            provider_configs=provider_configs,
+        )
+    except Exception as e:
+        logger.error(
+            "Failed to call get_definitions on runtime",
             deployment_id=str(workflow_deployment.id),
-            triggers_count=len(data.triggers),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to validate deployment with runtime: {str(e)}",
         )
 
-        # Fetch and decrypt provider configs
-        provider_configs = await _get_provider_configs(session, workflow.namespace_id)
-
-        # Call runtime.get_definitions()
-        runtime_impl = runtime_factory()
-        try:
-            runtime_definitions = await runtime_impl.get_definitions(
-                runtime_config=RuntimeConfig(
-                    runtime_id=str(runtime.id),
-                    image_digest=(runtime.config or {}).get("image_hash", ""),
-                ),
-                user_code=workflow_deployment.user_code,
-                provider_configs=provider_configs,
-            )
-        except Exception as e:
-            logger.error(
-                "Failed to call get_definitions on runtime",
-                deployment_id=str(workflow_deployment.id),
-                error=str(e),
-            )
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to validate deployment with runtime: {str(e)}",
-            )
-
-        # Validate definitions were successfully extracted
-        is_valid, error_message = validate_definitions(runtime_definitions)
-        if not is_valid:
-            logger.error(
-                "Definition validation failed",
-                deployment_id=str(workflow_deployment.id),
-                error=error_message,
-            )
-            raise HTTPException(
-                status_code=400,
-                detail=f"Deployment validation failed: {error_message}",
-            )
-
-        # Populate provider_definitions and trigger_definitions fields
-        workflow_deployment.provider_definitions = runtime_definitions.get(
-            "providers", []
-        )
-        workflow_deployment.trigger_definitions = runtime_definitions.get(
-            "triggers", []
-        )
-        session.add(workflow_deployment)
-
-        logger.info(
-            "Deployment definitions validated successfully",
+    # Validate definitions were successfully extracted
+    is_valid, error_message = validate_definitions(runtime_definitions)
+    if not is_valid:
+        logger.error(
+            "Definition validation failed",
             deployment_id=str(workflow_deployment.id),
-            providers_count=len(runtime_definitions.get("providers", [])),
-            triggers_count=len(runtime_definitions.get("triggers", [])),
+            error=error_message,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Deployment validation failed: {error_message}",
         )
 
-    # Update workflow with triggers metadata
-    if data.triggers:
-        workflow.triggers_metadata = [
-            {
-                "type": trigger.type,
-                **({"path": trigger.path} if trigger.path else {}),
-                **({"method": trigger.method} if trigger.method else {}),
-                **({"expression": trigger.expression} if trigger.expression else {}),
-                **({"channel": trigger.channel} if trigger.channel else {}),
-            }
-            for trigger in data.triggers
-        ]
-        session.add(workflow)
+    # Populate provider_definitions and trigger_definitions fields
+    workflow_deployment.provider_definitions = runtime_definitions.get("providers", [])
+    workflow_deployment.trigger_definitions = runtime_definitions.get("triggers", [])
+    session.add(workflow_deployment)
+
+    logger.info(
+        "Deployment definitions validated successfully",
+        deployment_id=str(workflow_deployment.id),
+        providers_count=len(runtime_definitions.get("providers", [])),
+        triggers_count=len(runtime_definitions.get("triggers", [])),
+    )
+
+    # Convert runtime trigger definitions to format expected by TriggerService
+    runtime_triggers = runtime_definitions.get("triggers", [])
+    triggers_metadata = []
+    for trigger_def in runtime_triggers:
+        trigger_meta = {
+            "provider_type": trigger_def["provider"]["type"],
+            "provider_alias": trigger_def["provider"]["alias"],
+            "trigger_type": trigger_def["triggerType"],
+            "input": trigger_def.get("input"),
+        }
+        triggers_metadata.append(trigger_meta)
 
     # Sync triggers using TriggerService (handles provider-managed triggers)
     webhooks_info = []
-    if data.triggers:
+    if triggers_metadata:
         trigger_service = TriggerService(session)
-
-        # Convert TriggerMetadata to dict format
-        triggers_metadata = [trigger.model_dump() for trigger in data.triggers]
 
         # Sync provider-managed triggers (raises HTTPException if any fail)
         provider_webhooks = await trigger_service.sync_triggers(
@@ -300,51 +287,6 @@ async def create_workflow_deployment(
             new_triggers_metadata=triggers_metadata,
         )
         webhooks_info.extend([WebhookInfo(**wh) for wh in provider_webhooks])
-
-        # Handle non-provider webhooks (user-defined webhooks)
-        for trigger_meta in triggers_metadata:
-            if (
-                trigger_meta["type"] == "webhook"
-                and "provider_type" not in trigger_meta
-            ):
-                # Generate path if not provided
-                webhook_path = trigger_meta.get("path") or f"/webhook/{uuid4()}"
-                webhook_method = trigger_meta.get("method") or "POST"
-
-                # Check if webhook already exists
-                existing_webhook_result = await session.execute(
-                    select(IncomingWebhook)
-                    .where(IncomingWebhook.path == webhook_path)
-                    .where(IncomingWebhook.method == webhook_method)
-                )
-                existing_webhook = existing_webhook_result.scalar_one_or_none()
-
-                if existing_webhook:
-                    incoming_webhook = existing_webhook
-                    logger.info(
-                        "Reusing existing user-defined webhook",
-                        webhook_id=str(incoming_webhook.id),
-                        path=webhook_path,
-                    )
-                else:
-                    # Create new webhook (user-defined, no trigger association)
-                    # Note: This creates a webhook without a trigger_id for backwards compatibility
-                    # TODO: Consider deprecating user-defined webhooks in favor of provider triggers
-                    logger.warning(
-                        "User-defined webhooks are deprecated, please use provider triggers",
-                        path=webhook_path,
-                    )
-
-                # Build webhook URL
-                webhook_url = f"{settings.PUBLIC_API_URL}{webhook_path}"
-                webhooks_info.append(
-                    WebhookInfo(
-                        id=existing_webhook.id if existing_webhook else uuid4(),
-                        url=webhook_url,
-                        path=webhook_path,
-                        method=webhook_method,
-                    )
-                )
 
     logger.info(
         "Created new workflow deployment",
