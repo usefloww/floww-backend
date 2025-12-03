@@ -63,6 +63,7 @@ class AuthConfig(BaseSettings):
     AUTH_CLIENT_ID: str = ""
     AUTH_CLIENT_SECRET: str = ""
     AUTH_ISSUER_URL: str = ""  # OIDC issuer URL for discovery
+    DEVICE_AUTH_AUDIENCE: str | None = None
 
     JWT_ALGORITHM: str = "RS256"
 
@@ -125,6 +126,11 @@ class SchedulerConfig(BaseSettings):
         return ""
 
 
+class IntegrationsConfig(BaseSettings):
+    GOOGLE_OAUTH_CLIENT_ID: str = ""
+    GOOGLE_OAUTH_CLIENT_SECRET: str = ""
+
+
 class Settings(
     AuthConfig,
     CentrifugoConfig,
@@ -135,6 +141,7 @@ class Settings(
     SingleOrgConfig,
     BillingConfig,
     SchedulerConfig,
+    IntegrationsConfig,
     BaseSettings,
 ):
     model_config = SettingsConfigDict(

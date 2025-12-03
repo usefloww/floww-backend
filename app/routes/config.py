@@ -14,6 +14,7 @@ class AuthConfig(BaseModel):
     authorization_endpoint: str
     issuer: str
     jwks_uri: str
+    audience: str | None
 
 
 class DockerConfig(BaseModel):
@@ -48,6 +49,7 @@ async def get_config():
             authorization_endpoint=auth_config.authorization_endpoint,
             issuer=auth_config.issuer,
             jwks_uri=auth_config.jwks_uri,
+            audience=settings.DEVICE_AUTH_AUDIENCE,
         ),
         docker=DockerConfig(
             registry_url=settings.REGISTRY_URL,
