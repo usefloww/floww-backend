@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     ExecutionHistory,
+    ExecutionLog,
     ExecutionStatus,
+    LogLevel,
     Namespace,
     Provider,
     Runtime,
@@ -23,6 +25,7 @@ from app.services.execution_history_service import (
     get_execution_by_id,
     get_executions_for_workflow,
     get_recent_executions,
+    search_execution_logs,
     serialize_execution,
     update_execution_completed,
     update_execution_failed,
@@ -142,7 +145,6 @@ async def test_create_execution_record(session):
     assert execution.completed_at is None
     assert execution.deployment_id is None
     assert execution.error_message is None
-    assert execution.error_stack is None
 
     # Verify it's in the database
     result = await session.execute(
@@ -215,7 +217,6 @@ async def test_update_execution_completed(session):
     # Verify status updated
     assert completed_execution.status == ExecutionStatus.COMPLETED
     assert completed_execution.error_message is None
-    assert completed_execution.error_stack is None
 
     # Refetch to get server-generated timestamp
     await session.refresh(completed_execution)
@@ -245,20 +246,17 @@ async def test_update_execution_failed(session):
     )
 
     error_message = "Test error occurred"
-    error_stack = "Error: Test error\n  at line 1"
 
     # Update to failed
     failed_execution = await update_execution_failed(
         session=session,
         execution_id=execution.id,
         error_message=error_message,
-        error_stack=error_stack,
     )
 
     # Verify status updated with error details
     assert failed_execution.status == ExecutionStatus.FAILED
     assert failed_execution.error_message == error_message
-    assert failed_execution.error_stack == error_stack
 
     # Refetch to get server-generated timestamp
     await session.refresh(failed_execution)
@@ -271,33 +269,6 @@ async def test_update_execution_failed(session):
     db_execution = result.scalar_one()
     assert db_execution.status == ExecutionStatus.FAILED
     assert db_execution.error_message == error_message
-    assert db_execution.error_stack == error_stack
-
-
-@pytest.mark.asyncio
-async def test_update_execution_failed_without_stack(session):
-    """Test updating execution to FAILED status without error stack."""
-    user = await create_test_user(session)
-    workflow = await create_test_workflow(session, user)
-    trigger = await create_test_trigger(session, workflow)
-
-    execution = await create_execution_record(
-        session=session,
-        workflow_id=workflow.id,
-        trigger_id=trigger.id,
-    )
-
-    error_message = "Test error without stack"
-
-    # Update to failed without stack
-    failed_execution = await update_execution_failed(
-        session=session,
-        execution_id=execution.id,
-        error_message=error_message,
-    )
-
-    assert failed_execution.error_message == error_message
-    assert failed_execution.error_stack is None
 
 
 @pytest.mark.asyncio
@@ -322,10 +293,6 @@ async def test_update_execution_no_deployment(session):
 
     # Verify status updated
     assert updated_execution.status == ExecutionStatus.NO_DEPLOYMENT
-    assert (
-        updated_execution.error_message
-        == "No active deployment found for this workflow"
-    )
 
     # Refetch to get server-generated timestamp
     await session.refresh(updated_execution)
@@ -666,3 +633,207 @@ async def test_serialize_execution_partial_data(session):
     assert serialized["duration_ms"] is None
     assert serialized["deployment_id"] is None
     assert serialized["error_message"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_execution_completed_with_structured_logs(session):
+    """Test completing execution with structured log entries."""
+    user = await create_test_user(session)
+    workflow = await create_test_workflow(session, user)
+    trigger = await create_test_trigger(session, workflow)
+
+    execution = await create_execution_record(
+        session=session, workflow_id=workflow.id, trigger_id=trigger.id
+    )
+
+    structured_logs = [
+        {"timestamp": "2025-01-01T10:00:00Z", "level": "info", "message": "Starting"},
+        {"timestamp": "2025-01-01T10:00:01Z", "level": "debug", "message": "Debug info"},
+        {"timestamp": "2025-01-01T10:00:02Z", "level": "error", "message": "Something failed"},
+    ]
+
+    await update_execution_completed(
+        session=session,
+        execution_id=execution.id,
+        logs=structured_logs,
+        duration_ms=2000,
+    )
+    await session.flush()
+
+    # Verify log entries were created
+    result = await session.execute(
+        select(ExecutionLog).where(ExecutionLog.execution_history_id == execution.id)
+    )
+    log_entries = list(result.scalars().all())
+
+    assert len(log_entries) == 3
+    levels = {log.log_level for log in log_entries}
+    assert LogLevel.INFO in levels
+    assert LogLevel.DEBUG in levels
+    assert LogLevel.ERROR in levels
+
+    messages = {log.message for log in log_entries}
+    assert "Starting" in messages
+    assert "Debug info" in messages
+    assert "Something failed" in messages
+
+
+@pytest.mark.asyncio
+async def test_update_execution_completed_with_legacy_string_log(session):
+    """Test completing execution with legacy string log format."""
+    user = await create_test_user(session)
+    workflow = await create_test_workflow(session, user)
+    trigger = await create_test_trigger(session, workflow)
+
+    execution = await create_execution_record(
+        session=session, workflow_id=workflow.id, trigger_id=trigger.id
+    )
+
+    legacy_log = "Some plain text log output"
+
+    await update_execution_completed(
+        session=session,
+        execution_id=execution.id,
+        logs=legacy_log,
+    )
+    await session.flush()
+
+    # Verify single log entry was created with LOG level
+    result = await session.execute(
+        select(ExecutionLog).where(ExecutionLog.execution_history_id == execution.id)
+    )
+    log_entries = list(result.scalars().all())
+
+    assert len(log_entries) == 1
+    assert log_entries[0].log_level == LogLevel.LOG
+    assert log_entries[0].message == legacy_log
+
+
+@pytest.mark.asyncio
+async def test_update_execution_completed_with_duration(session):
+    """Test that duration_ms is stored when provided."""
+    user = await create_test_user(session)
+    workflow = await create_test_workflow(session, user)
+    trigger = await create_test_trigger(session, workflow)
+
+    execution = await create_execution_record(
+        session=session, workflow_id=workflow.id, trigger_id=trigger.id
+    )
+
+    await update_execution_completed(
+        session=session,
+        execution_id=execution.id,
+        duration_ms=1234,
+    )
+    await session.refresh(execution)
+
+    assert execution.duration_ms == 1234
+
+    # Verify serialization uses SDK-reported duration
+    retrieved = await get_execution_by_id(session=session, execution_id=execution.id)
+    serialized = serialize_execution(retrieved)
+    assert serialized["duration_ms"] == 1234
+
+
+@pytest.mark.asyncio
+async def test_search_execution_logs_by_level(session):
+    """Test filtering logs by level."""
+    user = await create_test_user(session)
+    workflow = await create_test_workflow(session, user)
+    trigger = await create_test_trigger(session, workflow)
+
+    execution = await create_execution_record(
+        session=session, workflow_id=workflow.id, trigger_id=trigger.id
+    )
+
+    logs = [
+        {"timestamp": "2025-01-01T10:00:00Z", "level": "info", "message": "Info msg"},
+        {"timestamp": "2025-01-01T10:00:01Z", "level": "error", "message": "Error msg"},
+        {"timestamp": "2025-01-01T10:00:02Z", "level": "info", "message": "Another info"},
+    ]
+
+    await update_execution_completed(session=session, execution_id=execution.id, logs=logs)
+    await session.flush()
+
+    # Search for error logs only
+    error_logs = await search_execution_logs(
+        session=session,
+        workflow_id=workflow.id,
+        level="error",
+    )
+    assert len(error_logs) == 1
+    assert error_logs[0].message == "Error msg"
+
+    # Search for info logs
+    info_logs = await search_execution_logs(
+        session=session,
+        workflow_id=workflow.id,
+        level="info",
+    )
+    assert len(info_logs) == 2
+
+
+@pytest.mark.asyncio
+async def test_search_execution_logs_by_text(session):
+    """Test searching logs by message content."""
+    user = await create_test_user(session)
+    workflow = await create_test_workflow(session, user)
+    trigger = await create_test_trigger(session, workflow)
+
+    execution = await create_execution_record(
+        session=session, workflow_id=workflow.id, trigger_id=trigger.id
+    )
+
+    logs = [
+        {"timestamp": "2025-01-01T10:00:00Z", "level": "info", "message": "User logged in"},
+        {"timestamp": "2025-01-01T10:00:01Z", "level": "info", "message": "Processing data"},
+        {"timestamp": "2025-01-01T10:00:02Z", "level": "info", "message": "User logged out"},
+    ]
+
+    await update_execution_completed(session=session, execution_id=execution.id, logs=logs)
+    await session.flush()
+
+    # Search for "logged"
+    logged_results = await search_execution_logs(
+        session=session,
+        workflow_id=workflow.id,
+        search_query="logged",
+    )
+    assert len(logged_results) == 2
+
+    # Search for "Processing"
+    processing_results = await search_execution_logs(
+        session=session,
+        workflow_id=workflow.id,
+        search_query="Processing",
+    )
+    assert len(processing_results) == 1
+
+
+@pytest.mark.asyncio
+async def test_serialize_execution_includes_log_entries(session):
+    """Test that serialization includes log_entries array."""
+    user = await create_test_user(session)
+    workflow = await create_test_workflow(session, user)
+    trigger = await create_test_trigger(session, workflow)
+
+    execution = await create_execution_record(
+        session=session, workflow_id=workflow.id, trigger_id=trigger.id
+    )
+
+    logs = [
+        {"timestamp": "2025-01-01T10:00:00Z", "level": "info", "message": "Test log"},
+    ]
+
+    await update_execution_completed(session=session, execution_id=execution.id, logs=logs)
+    await session.flush()
+
+    # Retrieve with relationships (including log_entries)
+    retrieved = await get_execution_by_id(session=session, execution_id=execution.id)
+    serialized = serialize_execution(retrieved)
+
+    assert "log_entries" in serialized
+    assert len(serialized["log_entries"]) == 1
+    assert serialized["log_entries"][0]["level"] == "info"
+    assert serialized["log_entries"][0]["message"] == "Test log"
+    assert "execution_id" in serialized["log_entries"][0]

@@ -82,6 +82,14 @@ class ExecutionStatus(str, Enum):
     NO_DEPLOYMENT = "no_deployment"  # No active deployment found
 
 
+class LogLevel(str, Enum):
+    DEBUG = "debug"
+    INFO = "info"
+    WARN = "warn"
+    ERROR = "error"
+    LOG = "log"
+
+
 class SubscriptionTier(str, Enum):
     FREE = "free"
     HOBBY = "hobby"
@@ -919,15 +927,17 @@ class ExecutionHistory(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    duration_ms: Mapped[Optional[int]] = mapped_column(nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    error_stack: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    logs: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
     workflow: Mapped["Workflow"] = relationship("Workflow")
     trigger: Mapped[Optional["Trigger"]] = relationship("Trigger")
     deployment: Mapped[Optional["WorkflowDeployment"]] = relationship(
         "WorkflowDeployment"
+    )
+    log_entries: Mapped[list["ExecutionLog"]] = relationship(
+        back_populates="execution", cascade="all, delete-orphan"
     )
 
     __table_args__ = (
@@ -942,3 +952,43 @@ class ExecutionHistory(Base):
 
     def __repr__(self):
         return self._repr(id=self.id, workflow_id=self.workflow_id, status=self.status)
+
+
+class ExecutionLog(Base):
+    """
+    Structured log entries for workflow executions.
+    Each entry represents a single log statement from user code.
+    """
+
+    __tablename__ = "execution_logs"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
+    )
+    execution_history_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("execution_history.id", ondelete="CASCADE"),
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    log_level: Mapped[LogLevel] = mapped_column(
+        SQLEnum(LogLevel), nullable=False, default=LogLevel.LOG
+    )
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Relationships
+    execution: Mapped["ExecutionHistory"] = relationship(back_populates="log_entries")
+
+    __table_args__ = (
+        Index("idx_execution_logs_execution_id", "execution_history_id"),
+        Index("idx_execution_logs_timestamp", "timestamp"),
+        Index("idx_execution_logs_level", "log_level"),
+    )
+
+    def __repr__(self):
+        return self._repr(
+            id=self.id,
+            execution_history_id=self.execution_history_id,
+            log_level=self.log_level,
+        )

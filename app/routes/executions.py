@@ -7,7 +7,7 @@ Provides endpoints for:
 - Viewing execution details
 """
 
-from typing import Optional
+from typing import Any, Optional, Union
 from uuid import UUID
 
 import structlog
@@ -20,7 +20,9 @@ from app.models import ExecutionStatus, Workflow
 from app.services.execution_history_service import (
     get_execution_by_id,
     get_executions_for_workflow,
+    search_execution_logs,
     serialize_execution,
+    serialize_log,
     update_execution_completed,
     update_execution_failed,
 )
@@ -34,12 +36,18 @@ router = APIRouter(prefix="/executions", tags=["Executions"])
 
 class ExecutionErrorRequest(BaseModel):
     message: str
-    stack: Optional[str] = None
+
+
+class StructuredLogEntry(BaseModel):
+    timestamp: str
+    level: str
+    message: str
 
 
 class ExecutionCompleteRequest(BaseModel):
     error: Optional[ExecutionErrorRequest] = None
-    logs: Optional[str] = None
+    logs: Optional[Union[str, list[StructuredLogEntry]]] = None
+    duration_ms: Optional[int] = None
 
 
 @router.post("/{execution_id}/complete")
@@ -82,14 +90,22 @@ async def complete_execution(
             status_code=403, detail="Token does not match execution workflow"
         )
 
+    # Convert structured logs to dict format for service layer
+    logs_data: Optional[Union[str, list[dict[str, Any]]]] = None
+    if body.logs is not None:
+        if isinstance(body.logs, str):
+            logs_data = body.logs
+        else:
+            logs_data = [entry.model_dump() for entry in body.logs]
+
     # Update execution based on success/failure
     if body.error:
         await update_execution_failed(
             session,
             execution_id,
             error_message=body.error.message,
-            error_stack=body.error.stack,
-            logs=body.logs,
+            logs=logs_data,
+            duration_ms=body.duration_ms,
         )
         logger.info(
             "Execution marked as failed",
@@ -97,7 +113,12 @@ async def complete_execution(
             error_message=body.error.message,
         )
     else:
-        await update_execution_completed(session, execution_id, logs=body.logs)
+        await update_execution_completed(
+            session,
+            execution_id,
+            logs=logs_data,
+            duration_ms=body.duration_ms,
+        )
         logger.info("Execution marked as completed", execution_id=str(execution_id))
 
     return {"status": "ok"}
@@ -184,3 +205,53 @@ async def get_execution_detail(
         )
 
     return serialize_execution(execution)
+
+
+@router.get("/workflows/{workflow_id}/logs")
+async def get_workflow_logs(
+    workflow_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+    q: Optional[str] = None,
+    level: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    """
+    Search logs across all executions for a workflow.
+
+    Query parameters:
+    - q: Optional text search query
+    - level: Optional log level filter (debug, info, warn, error, log)
+    - limit: Maximum number of results (default 100, max 500)
+    - offset: Number of results to skip (default 0)
+    """
+    # Verify user has access to workflow
+    query = UserAccessibleQuery(current_user.id).workflows()
+    result = await session.execute(query.where(Workflow.id == workflow_id))
+    workflow = result.scalar_one_or_none()
+
+    if not workflow:
+        raise HTTPException(
+            status_code=404, detail="Workflow not found or access denied"
+        )
+
+    # Limit max results
+    if limit > 500:
+        limit = 500
+
+    logs = await search_execution_logs(
+        session,
+        workflow_id=workflow_id,
+        search_query=q,
+        level=level,
+        limit=limit,
+        offset=offset,
+    )
+
+    return {
+        "workflow_id": str(workflow_id),
+        "logs": [serialize_log(log) for log in logs],
+        "limit": limit,
+        "offset": offset,
+    }
