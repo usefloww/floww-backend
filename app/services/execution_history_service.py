@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional, Union
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from sqlalchemy.sql import func
@@ -407,9 +407,10 @@ def serialize_execution(execution: ExecutionHistory) -> dict:
             webhook_path = execution.trigger.incoming_webhooks[0].path
             webhook_method = execution.trigger.incoming_webhooks[0].method
 
-    # Serialize log entries if loaded
+    # Serialize log entries if already loaded (avoid lazy loading in sync context)
     log_entries = None
-    if hasattr(execution, "log_entries") and execution.log_entries is not None:
+    insp = inspect(execution)
+    if "log_entries" in insp.dict and execution.log_entries is not None:
         log_entries = [serialize_log(log) for log in execution.log_entries]
 
     return {
