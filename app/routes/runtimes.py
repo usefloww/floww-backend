@@ -151,15 +151,23 @@ async def create_runtime(
     if image_digest is None:
         raise HTTPException(400, "Image does not exist")
 
-    runtime = Runtime(
-        config_hash=config_hash,
-        config=runtime_data.config.model_dump(),
-        creation_status=RuntimeCreationStatus.IN_PROGRESS,
-        creation_logs=[],
-    )
     if existing_runtime:
-        runtime.id = existing_runtime.id
-    session.add(runtime)
+        # Update the existing runtime instead of creating a new one
+        runtime = existing_runtime
+        runtime.config_hash = config_hash
+        runtime.config = runtime_data.config.model_dump()
+        runtime.creation_status = RuntimeCreationStatus.IN_PROGRESS
+        runtime.creation_logs = []
+    else:
+        # Create a new runtime
+        runtime = Runtime(
+            config_hash=config_hash,
+            config=runtime_data.config.model_dump(),
+            creation_status=RuntimeCreationStatus.IN_PROGRESS,
+            creation_logs=[],
+        )
+        session.add(runtime)
+
     await session.flush()
     await session.refresh(runtime)
 
