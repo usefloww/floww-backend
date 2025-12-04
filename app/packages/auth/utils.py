@@ -45,7 +45,7 @@ async def validate_jwt(
     token: str,
     jwks_keys: list[dict],
     issuer: str,
-    audience: str | None,
+    allowed_audiences: list[str | None],
     algorithm: str,
 ) -> dict:
     """
@@ -55,7 +55,7 @@ async def validate_jwt(
         token: JWT token to validate
         jwks_keys: List of JWKS keys from the JWKS endpoint
         issuer: Expected issuer to validate against
-        audience: Expected audience (usually client ID)
+        allowed_audiences: Expected audiences (usually client IDs)
         algorithm: JWT algorithm to use for validation
 
     Returns:
@@ -89,13 +89,45 @@ async def validate_jwt(
             except (IndexError, KeyError, ValueError) as e:
                 raise jwt.PyJWTError(f"Failed to load public key from JWKS: {str(e)}")
 
-        payload = jwt.decode(
-            token,
-            public_key,
-            algorithms=[algorithm],
-            issuer=issuer,
-            audience=audience,
+        if not allowed_audiences:
+            raise jwt.PyJWTError("No allowed audiences provided")
+
+        payload = None
+
+        # Decode the token without verifying audience to inspect its 'aud' claim
+        unverified_payload = jwt.decode(
+            token, options={"verify_signature": False, "verify_aud": False}
         )
+        unverified_audience = unverified_payload.get("aud")
+
+        last_audience_error = None
+        for audience in allowed_audiences:
+            if audience is None:
+                continue
+            try:
+                payload = jwt.decode(
+                    token,
+                    public_key,
+                    algorithms=[algorithm],
+                    issuer=issuer,
+                    audience=audience,
+                )
+                # If we succeed, break immediately
+                break
+            except jwt.PyJWTError as e:
+                # Check if error is due to audience mismatch, continue to try others
+                if "Audience doesn't match" in str(e):
+                    last_audience_error = e
+                    continue
+                else:
+                    # For all other errors, raise immediately
+                    raise e
+        else:
+            # If we exhausted all audiences and no match, raise last audience error and show the unverified audience
+            raise jwt.PyJWTError(
+                f"Invalid audience. Token 'aud': {unverified_audience} | "
+                f"{str(last_audience_error) if last_audience_error else 'No valid audience found'}"
+            )
 
         # Validate that sub claim exists
         if payload.get("sub") is None:

@@ -67,11 +67,15 @@ def auth_provider_factory() -> AuthProvider:
         )
 
     if settings.AUTH_TYPE == "oidc":
+        kwargs = {}
+        if settings.DEVICE_AUTH_AUDIENCE:
+            kwargs["device_auth_audience"] = settings.DEVICE_AUTH_AUDIENCE
         return OIDCProvider(
             client_id=settings.AUTH_CLIENT_ID,
             client_secret=settings.AUTH_CLIENT_SECRET,
             issuer_url=settings.AUTH_ISSUER_URL,
             jwt_algorithm=settings.JWT_ALGORITHM,
+            **kwargs,
         )
 
     # Default to WorkOS

@@ -79,12 +79,20 @@ class AuthProvider(ABC):
 
 class OIDCProvider(AuthProvider):
     def __init__(
-        self, client_id: str, client_secret: str, issuer_url: str, jwt_algorithm: str
+        self,
+        client_id: str,
+        client_secret: str,
+        issuer_url: str,
+        jwt_algorithm: str,
+        device_auth_audience: str | None = None,
     ):
         self.client_id = client_id
         self.client_secret = client_secret
         self.issuer_url = issuer_url
         self.jwt_algorithm = jwt_algorithm
+        self.allowed_audiences = [client_id]
+        if device_auth_audience:
+            self.allowed_audiences.append(device_auth_audience)
 
     async def get_config(self) -> AuthConfig:
         discovery = await get_oidc_discovery(self.issuer_url)
@@ -108,7 +116,7 @@ class OIDCProvider(AuthProvider):
             token=token,
             jwks_keys=jwks_keys,
             issuer=config.issuer,
-            audience=config.audience,
+            allowed_audiences=self.allowed_audiences,
             algorithm=self.jwt_algorithm,
         )
 
@@ -229,7 +237,7 @@ class WorkOSProvider(AuthProvider):
             token=token,
             jwks_keys=jwks_keys,
             issuer=config.issuer,
-            audience=config.audience,
+            allowed_audiences=[self.client_id, config.audience],
             algorithm=self.jwt_algorithm,
         )
 
