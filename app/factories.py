@@ -43,7 +43,6 @@ def runtime_factory() -> RuntimeI:
         )
     elif settings.RUNTIME_TYPE == "docker":
         return DockerRuntime(
-            public_api_url=settings.PUBLIC_API_URL,
             repository_name=settings.REGISTRY_REPOSITORY_NAME,
             registry_url=settings.REGISTRY_URL_RUNTIME,
         )
