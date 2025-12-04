@@ -19,7 +19,8 @@ except ImportError:
 async def get_or_create_customer(user: User, subscription: Subscription) -> str:
     """
     Get or create a Stripe customer for a user.
-    Returns the Stripe customer ID.
+    returns:
+        str: Stripe customer ID
     """
     if not stripe_client:
         raise ValueError("Stripe is not configured")
