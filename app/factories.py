@@ -101,7 +101,7 @@ def registry_client_factory() -> RegistryClient:
     if settings.RUNTIME_TYPE == "lambda":
         ecr_client = aws_session_factory().client("ecr")
         config = RegistryConfig(
-            registry_url=settings.REGISTRY_URL_INTERNAL,
+            registry_url=settings.REGISTRY_URL,
             public_api_url=settings.PUBLIC_API_URL,
         )
         return ECRRegistryClient(
@@ -112,7 +112,7 @@ def registry_client_factory() -> RegistryClient:
 
     elif settings.RUNTIME_TYPE == "docker":
         config = RegistryConfig(
-            registry_url=settings.REGISTRY_URL_INTERNAL,
+            registry_url=settings.REGISTRY_URL,
             public_api_url=settings.PUBLIC_API_URL,
         )
         return DockerRegistryClient(
