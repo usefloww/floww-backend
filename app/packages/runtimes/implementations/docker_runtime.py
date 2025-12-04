@@ -17,8 +17,7 @@ from ..runtime_types import (
 
 
 class DockerRuntime(RuntimeI):
-    def __init__(self, public_api_url: str, repository_name: str, registry_url: str):
-        self.public_api_url = public_api_url
+    def __init__(self, repository_name: str, registry_url: str):
         self.repository_name = repository_name
         self.registry_url = registry_url
 
@@ -34,8 +33,8 @@ class DockerRuntime(RuntimeI):
         )
 
         await create_container(
-            runtime_config.runtime_id,
-            image_uri,
+            runtime_id=runtime_config.runtime_id,
+            image_uri=image_uri,
         )
         return RuntimeCreationStatus(
             status="IN_PROGRESS",
@@ -67,7 +66,7 @@ class DockerRuntime(RuntimeI):
         self,
         trigger_id: str,
         runtime_config: RuntimeConfig,
-        user_code: dict[str, str],
+        user_code: dict[str, Any],
         payload: dict[str, Any],
     ) -> None:
         """
