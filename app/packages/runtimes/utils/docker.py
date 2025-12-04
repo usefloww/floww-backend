@@ -6,6 +6,7 @@ of idle containers.
 """
 
 import asyncio
+import inspect
 import socket
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -551,11 +552,17 @@ async def _get_last_activity_time(container, details: dict) -> datetime:
         # Get all container logs with timestamps
         # Note: aiodocker returns logs as async generator
         log_lines = []
-        async for log_chunk in container.log(
+        log_generator = container.log(
             stdout=True,
             stderr=True,
             timestamps=True,
-        ):
+        )
+        # Handle case where log() might return a coroutine instead of async generator
+        if inspect.iscoroutine(log_generator):
+            # If it's a coroutine, await it first to get the async generator
+            log_generator = await log_generator
+
+        async for log_chunk in log_generator:
             log_lines.append(log_chunk)
 
         # Search backwards for the last non-health log line
