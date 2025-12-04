@@ -60,6 +60,7 @@ class RuntimeCreationStatus(Enum):
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    REMOVED = "REMOVED"
 
 
 class OrganizationRole(Enum):
@@ -969,9 +970,7 @@ class ExecutionLog(Base):
         PGUUID(as_uuid=True),
         ForeignKey("execution_history.id", ondelete="CASCADE"),
     )
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     log_level: Mapped[LogLevel] = mapped_column(
         SQLEnum(LogLevel), nullable=False, default=LogLevel.LOG
     )

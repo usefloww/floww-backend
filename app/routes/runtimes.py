@@ -132,7 +132,10 @@ async def create_runtime(
     )
     existing_runtime = existing_runtime_result.scalar_one_or_none()
 
-    if existing_runtime:
+    if (
+        existing_runtime
+        and existing_runtime.creation_status != RuntimeCreationStatus.REMOVED
+    ):
         raise HTTPException(
             409,
             {
@@ -154,6 +157,8 @@ async def create_runtime(
         creation_status=RuntimeCreationStatus.IN_PROGRESS,
         creation_logs=[],
     )
+    if existing_runtime:
+        runtime.id = existing_runtime.id
     session.add(runtime)
     await session.flush()
     await session.refresh(runtime)
