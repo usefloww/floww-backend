@@ -17,13 +17,8 @@ class AuthConfig(BaseModel):
     audience: str | None
 
 
-class DockerConfig(BaseModel):
-    registry_url: str
-
-
 class ConfigRead(BaseModel):
     auth: AuthConfig
-    docker: DockerConfig
     websocket_url: str
     """url to centrifugo"""
     is_cloud: bool
@@ -50,9 +45,6 @@ async def get_config():
             issuer=auth_config.issuer,
             jwks_uri=auth_config.jwks_uri,
             audience=settings.DEVICE_AUTH_AUDIENCE,
-        ),
-        docker=DockerConfig(
-            registry_url=settings.REGISTRY_URL,
         ),
         websocket_url=websocket_url,
         is_cloud=settings.IS_CLOUD,

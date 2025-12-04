@@ -17,20 +17,20 @@ from ..runtime_types import (
 
 
 class DockerRuntime(RuntimeI):
-    def __init__(self, public_api_url: str, repository_name: str):
+    def __init__(self, public_api_url: str, repository_name: str, registry_url: str):
         self.public_api_url = public_api_url
         self.repository_name = repository_name
+        self.registry_url = registry_url
 
     async def create_runtime(
         self,
         runtime_config: RuntimeConfig,
     ) -> RuntimeCreationStatus:
-        # Construct full image URI for Docker (needs to pull through public API proxy)
-        public_api_host = self.public_api_url.replace("https://", "").replace(
-            "http://", ""
-        )
+        # Construct full image URI using registry URL (Docker needs direct registry access)
+        # Remove protocol from registry URL for Docker image reference
+        registry_host = self.registry_url.replace("https://", "").replace("http://", "")
         image_uri = (
-            f"{public_api_host}/{self.repository_name}@{runtime_config.image_digest}"
+            f"{registry_host}/{self.repository_name}@{runtime_config.image_digest}"
         )
 
         await create_container(

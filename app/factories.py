@@ -37,7 +37,7 @@ def runtime_factory() -> RuntimeI:
         return LambdaRuntime(
             lambda_client=lambda_client,
             execution_role_arn=settings.LAMBDA_EXECUTION_ROLE_ARN,
-            registry_url=settings.REGISTRY_URL,
+            registry_url=settings.REGISTRY_URL_RUNTIME,
             repository_name=settings.REGISTRY_REPOSITORY_NAME,
             backend_url=settings.PUBLIC_API_URL,
         )
@@ -45,6 +45,7 @@ def runtime_factory() -> RuntimeI:
         return DockerRuntime(
             public_api_url=settings.PUBLIC_API_URL,
             repository_name=settings.REGISTRY_REPOSITORY_NAME,
+            registry_url=settings.REGISTRY_URL_RUNTIME,
         )
     elif settings.RUNTIME_TYPE == "kubernetes":
         return KubernetesRuntime()
@@ -100,7 +101,7 @@ def registry_client_factory() -> RegistryClient:
     if settings.RUNTIME_TYPE == "lambda":
         ecr_client = aws_session_factory().client("ecr")
         config = RegistryConfig(
-            registry_url=settings.REGISTRY_URL,
+            registry_url=settings.REGISTRY_URL_INTERNAL,
             public_api_url=settings.PUBLIC_API_URL,
         )
         return ECRRegistryClient(
@@ -111,7 +112,7 @@ def registry_client_factory() -> RegistryClient:
 
     elif settings.RUNTIME_TYPE == "docker":
         config = RegistryConfig(
-            registry_url=settings.REGISTRY_URL,
+            registry_url=settings.REGISTRY_URL_INTERNAL,
             public_api_url=settings.PUBLIC_API_URL,
         )
         return DockerRegistryClient(

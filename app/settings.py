@@ -29,6 +29,7 @@ class LambdaConfig(BaseSettings):
 
 class RegistryConfig(BaseSettings):
     REGISTRY_URL: str = ""
+    REGISTRY_URL_RUNTIME: str = ""
     REGISTRY_REPOSITORY_NAME: str = ""
     REGISTRY_AUTH_USER: str = ""
     REGISTRY_AUTH_PASSWORD: str = ""
@@ -37,6 +38,12 @@ class RegistryConfig(BaseSettings):
     """Random secret used to secure the registry pull endpoint
     This can be used to securily pull images from the registry
     """
+
+    @model_validator(mode="after")
+    def fill_runtime(self):
+        if not self.REGISTRY_URL_RUNTIME:
+            self.REGISTRY_URL_RUNTIME = self.REGISTRY_URL
+        return self
 
 
 class DatabaseConfig(BaseSettings):
