@@ -513,7 +513,7 @@ async def send_webhook_to_container(
 
 
 async def cleanup_idle_containers(idle_timeout: Optional[int] = None):
-    """Remove containers that have been idle for longer than the timeout.
+    """Stop containers that have been idle for longer than the timeout.
 
     This function should be called periodically (e.g., via a background task).
 
@@ -549,12 +549,12 @@ async def cleanup_idle_containers(idle_timeout: Optional[int] = None):
                         container, details
                     )
 
-                    # Check if container should be removed
+                    # Check if container should be stopped
                     if details["State"]["Running"]:
                         # Check if idle for too long
                         if last_activity_time < cutoff_time:
                             logger.info(
-                                "Removing idle container",
+                                "Stopping idle container",
                                 runtime_id=runtime_id,
                                 container_name=container_name,
                                 last_activity=last_activity_time.isoformat(),
@@ -562,7 +562,7 @@ async def cleanup_idle_containers(idle_timeout: Optional[int] = None):
                                     datetime.now(timezone.utc) - last_activity_time
                                 ).total_seconds(),
                             )
-                            await container.delete(force=True)
+                            await container.stop()
                         else:
                             logger.debug(
                                 "Container still active",
@@ -571,13 +571,12 @@ async def cleanup_idle_containers(idle_timeout: Optional[int] = None):
                                 last_activity=last_activity_time.isoformat(),
                             )
                     else:
-                        # Remove stopped containers immediately
-                        logger.info(
-                            "Removing stopped container",
+                        # Container already stopped, skip
+                        logger.debug(
+                            "Container already stopped",
                             runtime_id=runtime_id,
                             container_name=container_name,
                         )
-                        await container.delete(force=True)
 
                 except Exception as e:
                     logger.error(
