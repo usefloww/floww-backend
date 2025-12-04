@@ -136,6 +136,8 @@ async def create_container(runtime_id: str, image_hash: str) -> None:
                     image_hash=image_hash,
                 )
 
+                await _ensure_image_exists(docker, image_hash)
+
                 # Create container configuration
                 config = {
                     "Image": image_hash,

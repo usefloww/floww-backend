@@ -102,8 +102,6 @@ async def validate_jwt(
 
         last_audience_error = None
         for audience in allowed_audiences:
-            if audience is None:
-                continue
             try:
                 payload = jwt.decode(
                     token,

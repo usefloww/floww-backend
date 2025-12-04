@@ -237,7 +237,7 @@ class WorkOSProvider(AuthProvider):
             token=token,
             jwks_keys=jwks_keys,
             issuer=config.issuer,
-            allowed_audiences=[self.client_id, config.audience],
+            allowed_audiences=[config.audience],
             algorithm=self.jwt_algorithm,
         )
 
