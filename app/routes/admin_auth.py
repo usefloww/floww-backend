@@ -229,10 +229,7 @@ async def password_login(
     # Create JWT token
     auth_provider = auth_provider_factory()
     if not isinstance(auth_provider, PasswordAuthProvider):
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Password auth provider not configured correctly",
-        )
+        raise RuntimeError("Password auth provider not configured correctly")
 
     jwt_token = auth_provider.create_token(str(user.id))
 
@@ -311,10 +308,7 @@ async def password_setup(
     # Auto-login: create JWT token
     auth_provider = auth_provider_factory()
     if not isinstance(auth_provider, PasswordAuthProvider):
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Password auth provider not configured correctly",
-        )
+        raise RuntimeError("Password auth provider not configured correctly")
 
     jwt_token = auth_provider.create_token(str(user.id))
 

@@ -4,7 +4,7 @@ from app.tests.fixtures_clients import UserClient
 async def test_create_and_retrieve_workflow(client_a: UserClient, session):
     workflow_data = {
         "name": "My Test Workflow",
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "description": "A workflow for testing",
     }
     response = await client_a.post("/api/workflows", json=workflow_data)
@@ -29,7 +29,7 @@ async def test_create_multiple_workflows(client_a: UserClient):
         "/api/workflows",
         json={
             "name": "Workflow Alpha",
-            "namespace_id": str(client_a.personal_namespace.id),
+            "namespace_id": str(client_a.namespace.id),
         },
     )
     assert response1.status_code == 200
@@ -39,7 +39,7 @@ async def test_create_multiple_workflows(client_a: UserClient):
         "/api/workflows",
         json={
             "name": "Workflow Beta",
-            "namespace_id": str(client_a.personal_namespace.id),
+            "namespace_id": str(client_a.namespace.id),
         },
     )
     assert response2.status_code == 200
@@ -59,7 +59,7 @@ async def test_create_multiple_workflows(client_a: UserClient):
 async def test_workflow_with_minimal_data(client_a: UserClient):
     workflow_data = {
         "name": "Minimal Workflow",
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
     }
     response = await client_a.post("/api/workflows", json=workflow_data)
     assert response.status_code == 200
@@ -81,7 +81,7 @@ async def test_workflow_creation_includes_metadata(client_a: UserClient):
     # Create workflow
     workflow_data = {
         "name": "Metadata Workflow",
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "description": "Testing metadata",
     }
     response = await client_a.post("/api/workflows", json=workflow_data)
@@ -99,7 +99,7 @@ async def test_workflows_are_accessible_to_user(
     # Create workflow
     workflow_data = {
         "name": "Accessible Workflow",
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
     }
     response = await client_a.post("/api/workflows", json=workflow_data)
     assert response.status_code == 200

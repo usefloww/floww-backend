@@ -14,7 +14,7 @@ async def workflow_a(client_a: UserClient, session: AsyncSession):
     """Workflow for client_a to use in permission tests."""
     workflow = Workflow(
         name="Test Workflow A",
-        namespace_id=client_a.personal_namespace.id,
+        namespace_id=client_a.namespace.id,
         created_by_id=client_a.user.id,
     )
     session.add(workflow)
@@ -28,7 +28,7 @@ async def workflow_b(client_a: UserClient, session: AsyncSession):
     """Second workflow for client_a to test permission grants."""
     workflow = Workflow(
         name="Test Workflow B",
-        namespace_id=client_a.personal_namespace.id,
+        namespace_id=client_a.namespace.id,
         created_by_id=client_a.user.id,
     )
     session.add(workflow)
@@ -401,7 +401,7 @@ async def test_workflow_cannot_access_table_from_other_namespace(
     # client_b creates a workflow in their namespace
     workflow_b_data = {
         "name": "Client B Workflow",
-        "namespace_id": str(client_b.personal_namespace.id),
+        "namespace_id": str(client_b.namespace.id),
     }
     response = await client_b.post("/api/workflows", json=workflow_b_data)
     assert response.status_code == 200

@@ -218,25 +218,14 @@ async def create_workflow_deployment(
 
     # Call runtime.get_definitions()
     runtime_impl = runtime_factory()
-    try:
-        runtime_definitions = await runtime_impl.get_definitions(
-            runtime_config=RuntimeConfig(
-                runtime_id=str(runtime.id),
-                image_digest=(runtime.config or {}).get("image_hash", ""),
-            ),
-            user_code=workflow_deployment.user_code,
-            provider_configs=provider_configs,
-        )
-    except Exception as e:
-        logger.error(
-            "Failed to call get_definitions on runtime",
-            deployment_id=str(workflow_deployment.id),
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to validate deployment with runtime: {str(e)}",
-        )
+    runtime_definitions = await runtime_impl.get_definitions(
+        runtime_config=RuntimeConfig(
+            runtime_id=str(runtime.id),
+            image_digest=(runtime.config or {}).get("image_hash", ""),
+        ),
+        user_code=workflow_deployment.user_code,
+        provider_configs=provider_configs,
+    )
 
     # Validate definitions were successfully extracted
     is_valid, error_message = validate_definitions(runtime_definitions)

@@ -192,26 +192,18 @@ async def create_checkout_session(
             detail="This organization already has an active Hobby subscription",
         )
 
-    try:
-        checkout_session = await stripe_service.create_checkout_session(
-            organization=organization,
-            subscription=subscription,
-            success_url=body.success_url,
-            cancel_url=body.cancel_url,
-            session_db=session,
-        )
+    checkout_session = await stripe_service.create_checkout_session(
+        organization=organization,
+        subscription=subscription,
+        success_url=body.success_url,
+        cancel_url=body.cancel_url,
+        session_db=session,
+    )
 
-        return CheckoutSessionResponse(
-            session_id=checkout_session["session_id"],
-            url=checkout_session["url"],
-        )
-    except Exception as e:
-        logger.error(
-            "Failed to create checkout session",
-            error=str(e),
-            organization_id=organization_id,
-        )
-        raise HTTPException(status_code=500, detail="Failed to create checkout session")
+    return CheckoutSessionResponse(
+        session_id=checkout_session["session_id"],
+        url=checkout_session["url"],
+    )
 
 
 @router.post("/{organization_id}/portal", response_model=CustomerPortalResponse)
@@ -242,17 +234,9 @@ async def create_customer_portal_session(
             detail="No Stripe customer found. Please create a subscription first.",
         )
 
-    try:
-        portal_session = await stripe_service.create_customer_portal_session(
-            subscription=subscription,
-            return_url=body.return_url,
-        )
+    portal_session = await stripe_service.create_customer_portal_session(
+        subscription=subscription,
+        return_url=body.return_url,
+    )
 
-        return CustomerPortalResponse(url=portal_session["url"])
-    except Exception as e:
-        logger.error(
-            "Failed to create portal session",
-            error=str(e),
-            organization_id=organization_id,
-        )
-        raise HTTPException(status_code=500, detail="Failed to create portal session")
+    return CustomerPortalResponse(url=portal_session["url"])

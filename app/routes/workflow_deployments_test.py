@@ -1,4 +1,5 @@
 import uuid
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +12,7 @@ from app.tests.fixtures_clients import UserClient
 async def workflow_1(client_a: UserClient, session: AsyncSession):
     workflow = Workflow(
         name="Test Workflow 1",
-        namespace_id=client_a.personal_namespace.id,
+        namespace_id=client_a.namespace.id,
         created_by_id=client_a.user.id,
     )
     session.add(workflow)
@@ -24,7 +25,7 @@ async def workflow_1(client_a: UserClient, session: AsyncSession):
 async def workflow_2(client_a: UserClient, session: AsyncSession):
     workflow = Workflow(
         name="Test Workflow 2",
-        namespace_id=client_a.personal_namespace.id,
+        namespace_id=client_a.namespace.id,
         created_by_id=client_a.user.id,
     )
     session.add(workflow)
@@ -45,12 +46,19 @@ async def runtime(session: AsyncSession):
     return runtime
 
 
+@patch("app.routes.workflow_deployments.runtime_factory")
 async def test_create_and_retrieve_deployment(
+    mock_runtime_factory,
     client_a: UserClient,
     session: AsyncSession,
     workflow_1: Workflow,
     runtime: Runtime,
 ):
+    # Mock runtime implementation
+    mock_runtime_impl = AsyncMock()
+    mock_runtime_impl.get_definitions.return_value = {"triggers": [], "providers": []}
+    mock_runtime_factory.return_value = mock_runtime_impl
+
     # Test: Create deployment
     deployment_data = {
         "workflow_id": str(workflow_1.id),
@@ -75,12 +83,19 @@ async def test_create_and_retrieve_deployment(
     assert len(deployments) == 1
 
 
+@patch("app.routes.workflow_deployments.runtime_factory")
 async def test_deployment_with_complex_code(
+    mock_runtime_factory,
     client_a: UserClient,
     session: AsyncSession,
     workflow_1: Workflow,
     runtime: Runtime,
 ):
+    # Mock runtime implementation
+    mock_runtime_impl = AsyncMock()
+    mock_runtime_impl.get_definitions.return_value = {"triggers": [], "providers": []}
+    mock_runtime_factory.return_value = mock_runtime_impl
+
     deployment_data = {
         "workflow_id": str(workflow_1.id),
         "runtime_id": str(runtime.id),
@@ -101,13 +116,20 @@ async def test_deployment_with_complex_code(
     assert "index.js" in str(created_deployment)
 
 
+@patch("app.routes.workflow_deployments.runtime_factory")
 async def test_filter_deployments_by_workflow(
+    mock_runtime_factory,
     client_a: UserClient,
     session: AsyncSession,
     workflow_1: Workflow,
     workflow_2: Workflow,
     runtime: Runtime,
 ):
+    # Mock runtime implementation
+    mock_runtime_impl = AsyncMock()
+    mock_runtime_impl.get_definitions.return_value = {"triggers": [], "providers": []}
+    mock_runtime_factory.return_value = mock_runtime_impl
+
     # Create deployment for workflow1
     deployment_data1 = {
         "workflow_id": str(workflow_1.id),
@@ -141,9 +163,19 @@ async def test_filter_deployments_by_workflow(
     assert len(deployments) == 2
 
 
+@patch("app.routes.workflow_deployments.runtime_factory")
 async def test_deployment_includes_metadata(
-    client_a: UserClient, session: AsyncSession, workflow_1: Workflow, runtime: Runtime
+    mock_runtime_factory,
+    client_a: UserClient,
+    session: AsyncSession,
+    workflow_1: Workflow,
+    runtime: Runtime,
 ):
+    # Mock runtime implementation
+    mock_runtime_impl = AsyncMock()
+    mock_runtime_impl.get_definitions.return_value = {"triggers": [], "providers": []}
+    mock_runtime_factory.return_value = mock_runtime_impl
+
     # Create deployment
     deployment_data = {
         "workflow_id": str(workflow_1.id),

@@ -187,10 +187,12 @@ class TestCustomerPortal:
     async def test_create_customer_portal_session_no_customer(
         self,
         test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
+        mock_stripe_portal,
     ):
         """Raises ValueError when no stripe_customer_id"""
         _, subscription, _ = test_org_with_free_subscription
 
+        # The mock_stripe_portal fixture ensures stripe_client is set
         with pytest.raises(ValueError, match="No Stripe customer ID found"):
             await stripe_service.create_customer_portal_session(
                 subscription=subscription,
@@ -221,34 +223,36 @@ class TestWebhookVerification:
             payload, sig_header, "whsec_test"
         )
 
-    async def test_construct_webhook_event_invalid_signature(self):
+    async def test_construct_webhook_event_invalid_signature(
+        self, mock_stripe_webhook_event
+    ):
         """Raises SignatureVerificationError"""
         payload = b'{"type": "customer.subscription.updated"}'
         sig_header = "invalid_signature"
 
         import stripe
 
-        with patch("stripe.Webhook.construct_event") as mock_construct:
-            mock_construct.side_effect = stripe.SignatureVerificationError(
-                "Invalid signature", sig_header
-            )
+        mock_stripe_webhook_event.side_effect = stripe.SignatureVerificationError(
+            "Invalid signature", sig_header
+        )
 
-            from app.settings import settings
+        from app.settings import settings
 
-            with patch.object(settings, "STRIPE_WEBHOOK_SECRET", "whsec_test"):
-                with pytest.raises(stripe.SignatureVerificationError):
-                    stripe_service.construct_webhook_event(payload, sig_header)
+        with patch.object(settings, "STRIPE_WEBHOOK_SECRET", "whsec_test"):
+            with pytest.raises(stripe.SignatureVerificationError):
+                stripe_service.construct_webhook_event(payload, sig_header)
 
-    async def test_construct_webhook_event_invalid_payload(self):
+    async def test_construct_webhook_event_invalid_payload(
+        self, mock_stripe_webhook_event
+    ):
         """Raises ValueError"""
         payload = b"invalid json"
         sig_header = "test_signature"
 
-        with patch("stripe.Webhook.construct_event") as mock_construct:
-            mock_construct.side_effect = ValueError("Invalid payload")
+        mock_stripe_webhook_event.side_effect = ValueError("Invalid payload")
 
-            from app.settings import settings
+        from app.settings import settings
 
-            with patch.object(settings, "STRIPE_WEBHOOK_SECRET", "whsec_test"):
-                with pytest.raises(ValueError, match="Invalid payload"):
-                    stripe_service.construct_webhook_event(payload, sig_header)
+        with patch.object(settings, "STRIPE_WEBHOOK_SECRET", "whsec_test"):
+            with pytest.raises(ValueError, match="Invalid payload"):
+                stripe_service.construct_webhook_event(payload, sig_header)

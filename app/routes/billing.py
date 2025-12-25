@@ -52,35 +52,31 @@ async def stripe_webhook(
 
     logger.info("Received Stripe webhook", event_type=event_type, event_id=event["id"])
 
-    try:
-        if event_type == "checkout.session.completed":
-            await billing_service.handle_checkout_completed(
-                session, event_data, event["id"]
-            )
-        elif event_type == "customer.subscription.created":
-            await billing_service.handle_subscription_created(
-                session, event_data, event["id"]
-            )
-        elif event_type == "customer.subscription.updated":
-            await billing_service.handle_subscription_updated(
-                session, event_data, event["id"]
-            )
-        elif event_type == "customer.subscription.deleted":
-            await billing_service.handle_subscription_deleted(
-                session, event_data, event["id"]
-            )
-        elif event_type == "invoice.payment_failed":
-            await billing_service.handle_payment_failed_event(
-                session, event_data, event["id"]
-            )
-        elif event_type == "invoice.payment_succeeded":
-            await billing_service.handle_payment_succeeded_event(
-                session, event_data, event["id"]
-            )
-        else:
-            logger.info("Unhandled event type", event_type=event_type)
+    if event_type == "checkout.session.completed":
+        await billing_service.handle_checkout_completed(
+            session, event_data, event["id"]
+        )
+    elif event_type == "customer.subscription.created":
+        await billing_service.handle_subscription_created(
+            session, event_data, event["id"]
+        )
+    elif event_type == "customer.subscription.updated":
+        await billing_service.handle_subscription_updated(
+            session, event_data, event["id"]
+        )
+    elif event_type == "customer.subscription.deleted":
+        await billing_service.handle_subscription_deleted(
+            session, event_data, event["id"]
+        )
+    elif event_type == "invoice.payment_failed":
+        await billing_service.handle_payment_failed_event(
+            session, event_data, event["id"]
+        )
+    elif event_type == "invoice.payment_succeeded":
+        await billing_service.handle_payment_succeeded_event(
+            session, event_data, event["id"]
+        )
+    else:
+        logger.info("Unhandled event type", event_type=event_type)
 
-        return {"status": "success"}
-    except Exception as e:
-        logger.error("Error processing webhook", error=str(e), event_type=event_type)
-        raise HTTPException(status_code=500, detail="Error processing webhook")
+    return {"status": "success"}

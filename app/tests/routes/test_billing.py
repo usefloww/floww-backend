@@ -3,11 +3,31 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Subscription, SubscriptionTier, SubscriptionStatus
+from app.models import (
+    Organization,
+    OrganizationMember,
+    Subscription,
+    SubscriptionStatus,
+    SubscriptionTier,
+)
 from app.services.user_service import get_or_create_user
 from app.settings import settings
+
+
+async def _get_user_organization(session: AsyncSession, user) -> Organization:
+    """Get the user's first organization."""
+    org_query = (
+        select(Organization)
+        .join(OrganizationMember)
+        .where(OrganizationMember.user_id == user.id)
+        .order_by(OrganizationMember.created_at)
+        .limit(1)
+    )
+    org_result = await session.execute(org_query)
+    return org_result.scalar_one()
 
 
 class TestWebhookRoute:
@@ -26,8 +46,10 @@ class TestWebhookRoute:
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.FREE,
             status=SubscriptionStatus.ACTIVE,
         )
@@ -69,8 +91,10 @@ class TestWebhookRoute:
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.FREE,
             status=SubscriptionStatus.ACTIVE,
         )
@@ -113,8 +137,10 @@ class TestWebhookRoute:
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.ACTIVE,
             stripe_subscription_id="sub_test_12345",
@@ -158,8 +184,10 @@ class TestWebhookRoute:
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.ACTIVE,
             stripe_subscription_id="sub_test_12345",
@@ -200,8 +228,10 @@ class TestWebhookRoute:
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.ACTIVE,
             stripe_subscription_id="sub_test_12345",
@@ -242,8 +272,10 @@ class TestWebhookRoute:
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.PAST_DUE,
             stripe_subscription_id="sub_test_12345",
@@ -352,7 +384,7 @@ class TestWebhookRoute:
         mock_event = {
             "id": "evt_test_12345",
             "type": "checkout.session.completed",
-            "data": {"object": {}},
+            "data": {"object": {"metadata": {}}},
         }
         mock_stripe_webhook_event.return_value = mock_event
 

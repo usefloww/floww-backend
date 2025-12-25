@@ -190,9 +190,8 @@ async def webhook_listener(request: Request, path: str, session: SessionDep):
             "Webhook has neither provider_id nor trigger_id",
             webhook_id=str(webhook.id),
         )
-        return JSONResponse(
-            content={"error": "Invalid webhook configuration"},
-            status_code=500,
+        raise ValueError(
+            "Invalid webhook configuration: webhook has neither provider_id nor trigger_id"
         )
 
 
@@ -219,10 +218,7 @@ async def _handle_provider_webhook(
             "Unknown provider type",
             provider_type=provider.type,
         )
-        return JSONResponse(
-            content={"error": f"Unknown provider type: {provider.type}"},
-            status_code=500,
-        )
+        raise ValueError(f"Unknown provider type: {provider.type}")
 
     # Instantiate provider
     provider_instance = provider_class()

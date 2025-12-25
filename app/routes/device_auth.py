@@ -281,24 +281,12 @@ async def device_token(
     elif code_status == DeviceCodeStatus.APPROVED:
         if user_id is None:
             # Should not happen, but handle it
-            return JSONResponse(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content=TokenErrorResponse(
-                    error="server_error",
-                    error_description="Device code approved but user_id is missing",
-                ).model_dump(),
-            )
+            raise RuntimeError("Device code approved but user_id is missing")
 
         # Generate JWT token
         auth_provider = auth_provider_factory()
         if not isinstance(auth_provider, PasswordAuthProvider):
-            return JSONResponse(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content=TokenErrorResponse(
-                    error="server_error",
-                    error_description="Password auth provider not configured correctly",
-                ).model_dump(),
-            )
+            raise RuntimeError("Password auth provider not configured correctly")
 
         jwt_token = auth_provider.create_token(str(user_id))
 
@@ -324,13 +312,7 @@ async def device_token(
 
     else:
         # Unknown status
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=TokenErrorResponse(
-                error="server_error",
-                error_description="Unknown device code status",
-            ).model_dump(),
-        )
+        raise ValueError(f"Unknown device code status: {code_status}")
 
 
 @router.post("/auth/token/refresh")
@@ -364,13 +346,7 @@ async def token_refresh(
     # Generate new access token
     auth_provider = auth_provider_factory()
     if not isinstance(auth_provider, PasswordAuthProvider):
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=TokenErrorResponse(
-                error="server_error",
-                error_description="Password auth provider not configured correctly",
-            ).model_dump(),
-        )
+        raise RuntimeError("Password auth provider not configured correctly")
 
     jwt_token = auth_provider.create_token(str(user_id))
 

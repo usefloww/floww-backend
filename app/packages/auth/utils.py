@@ -19,9 +19,8 @@ async def get_oidc_discovery(issuer_url: str) -> dict:
         response = await client.get(discovery_url, timeout=10.0)
 
         if response.status_code != 200:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to fetch OIDC discovery from {discovery_url}",
+            raise RuntimeError(
+                f"Failed to fetch OIDC discovery from {discovery_url}: {response.status_code}"
             )
 
         _discovery_cache[issuer_url] = response.json()
@@ -137,11 +136,6 @@ async def validate_jwt(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid token: {str(e)}",
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Token validation error: {str(e)}",
         )
 
 

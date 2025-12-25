@@ -15,12 +15,15 @@ async def test_create_and_retrieve_organization(client_a: UserClient):
     organization_id = created_organization["id"]
 
     # Test: Retrieve organizations and verify it appears
+    # User has their auto-created personal org plus the new one
     response = await client_a.get("/api/organizations")
     assert response.status_code == 200
 
     organizations = response.json()["results"]
-    assert len(organizations) == 1
-    assert organizations[0]["name"] == "test-org"
+    # User has 2 orgs: auto-created personal org + new test-org
+    assert len(organizations) == 2
+    org_names = [org["name"] for org in organizations]
+    assert "test-org" in org_names
 
     # Test: Verify a namespace was automatically created for the organization
     response = await client_a.get("/api/namespaces")
@@ -70,20 +73,25 @@ async def test_organizations_are_isolated_between_users(
     response = await client_a.post("/api/organizations", json=organization_data)
     assert response.status_code == 200
 
-    # Verify it's accessible to the creator
+    # Verify it's accessible to the creator (along with their personal org)
     response = await client_a.get("/api/organizations")
     assert response.status_code == 200
 
     organizations = response.json()["results"]
-    assert len(organizations) == 1
-    assert organizations[0]["name"] == "user-a-org"
+    # User has 2 orgs: auto-created personal org + new user-a-org
+    assert len(organizations) == 2
+    org_names = [org["name"] for org in organizations]
+    assert "user-a-org" in org_names
 
-    # Verify it's not accessible to the other user
+    # Verify user-a-org is not accessible to the other user
     response = await client_b.get("/api/organizations")
     assert response.status_code == 200
 
     organizations = response.json()["results"]
-    assert len(organizations) == 0
+    # client_b only has their personal org (auto-created)
+    assert len(organizations) == 1
+    org_names = [org["name"] for org in organizations]
+    assert "user-a-org" not in org_names
 
 
 async def test_create_duplicate_organization_name_returns_409(client_a: UserClient):

@@ -3,17 +3,37 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Subscription, SubscriptionStatus, SubscriptionTier
+from app.models import (
+    Organization,
+    OrganizationMember,
+    Subscription,
+    SubscriptionStatus,
+    SubscriptionTier,
+)
 from app.services.user_service import get_or_create_user
 from app.settings import settings
 
 
-class TestGetMySubscription:
-    """Tests for GET /api/subscriptions/me"""
+async def _get_user_organization(session: AsyncSession, user) -> Organization:
+    """Get the user's first organization."""
+    org_query = (
+        select(Organization)
+        .join(OrganizationMember)
+        .where(OrganizationMember.user_id == user.id)
+        .order_by(OrganizationMember.created_at)
+        .limit(1)
+    )
+    org_result = await session.execute(org_query)
+    return org_result.scalar_one()
 
-    async def test_get_my_subscription_free_tier(
+
+class TestGetOrganizationSubscription:
+    """Tests for GET /api/organizations/{organization_id}/subscription"""
+
+    async def test_get_subscription_free_tier(
         self,
         client: AsyncClient,
         session: AsyncSession,
@@ -23,8 +43,10 @@ class TestGetMySubscription:
         user = await get_or_create_user(session, f"test_free_{uuid4()}", create=False)
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.FREE,
             status=SubscriptionStatus.ACTIVE,
         )
@@ -33,7 +55,9 @@ class TestGetMySubscription:
 
         client.headers["Authorization"] = f"Bearer {user.workos_user_id}"
 
-        response = await client.get("/api/subscriptions/me")
+        response = await client.get(
+            f"/api/organizations/{organization.id}/subscription"
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -41,18 +65,20 @@ class TestGetMySubscription:
         assert data["status"] == "active"
         assert data["has_active_pro"] is False
 
-    async def test_get_my_subscription_pro_tier(
+    async def test_get_subscription_pro_tier(
         self,
         client: AsyncClient,
         session: AsyncSession,
         dependency_overrides,
     ):
-        """Returns subscription with tier=pro, has_active_pro=true"""
+        """Returns subscription with tier=hobby, has_active_pro=true"""
         user = await get_or_create_user(session, f"test_pro_{uuid4()}", create=False)
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.ACTIVE,
             stripe_customer_id="cus_test",
@@ -63,7 +89,9 @@ class TestGetMySubscription:
 
         client.headers["Authorization"] = f"Bearer {user.workos_user_id}"
 
-        response = await client.get("/api/subscriptions/me")
+        response = await client.get(
+            f"/api/organizations/{organization.id}/subscription"
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -71,7 +99,7 @@ class TestGetMySubscription:
         assert data["status"] == "active"
         assert data["has_active_pro"] is True
 
-    async def test_get_my_subscription_trialing(
+    async def test_get_subscription_trialing(
         self,
         client: AsyncClient,
         session: AsyncSession,
@@ -81,10 +109,12 @@ class TestGetMySubscription:
         user = await get_or_create_user(session, f"test_trial_{uuid4()}", create=False)
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         trial_ends_at = datetime.now(timezone.utc) + timedelta(days=14)
 
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.TRIALING,
             trial_ends_at=trial_ends_at,
@@ -94,14 +124,16 @@ class TestGetMySubscription:
 
         client.headers["Authorization"] = f"Bearer {user.workos_user_id}"
 
-        response = await client.get("/api/subscriptions/me")
+        response = await client.get(
+            f"/api/organizations/{organization.id}/subscription"
+        )
 
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "trialing"
         assert data["trial_ends_at"] is not None
 
-    async def test_get_my_subscription_grace_period(
+    async def test_get_subscription_grace_period(
         self,
         client: AsyncClient,
         session: AsyncSession,
@@ -111,10 +143,12 @@ class TestGetMySubscription:
         user = await get_or_create_user(session, f"test_grace_{uuid4()}", create=False)
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         grace_period_ends_at = datetime.now(timezone.utc) + timedelta(days=7)
 
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.PAST_DUE,
             grace_period_ends_at=grace_period_ends_at,
@@ -124,14 +158,16 @@ class TestGetMySubscription:
 
         client.headers["Authorization"] = f"Bearer {user.workos_user_id}"
 
-        response = await client.get("/api/subscriptions/me")
+        response = await client.get(
+            f"/api/organizations/{organization.id}/subscription"
+        )
 
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "past_due"
         assert data["grace_period_ends_at"] is not None
 
-    async def test_get_my_subscription_not_cloud(
+    async def test_get_subscription_not_cloud(
         self,
         client: AsyncClient,
         session: AsyncSession,
@@ -143,28 +179,45 @@ class TestGetMySubscription:
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         client.headers["Authorization"] = f"Bearer {user.workos_user_id}"
 
         with patch.object(settings, "IS_CLOUD", False):
-            response = await client.get("/api/subscriptions/me")
+            response = await client.get(
+                f"/api/organizations/{organization.id}/subscription"
+            )
 
         assert response.status_code == 404
 
-    async def test_get_my_subscription_unauthenticated(
+    async def test_get_subscription_unauthorized(
         self,
         client: AsyncClient,
+        session: AsyncSession,
         dependency_overrides,
     ):
-        """Returns 401 without auth"""
-        response = await client.get("/api/subscriptions/me")
+        """Returns 404 when user doesn't have access to org"""
+        user1 = await get_or_create_user(session, f"test_user1_{uuid4()}", create=False)
+        user2 = await get_or_create_user(session, f"test_user2_{uuid4()}", create=False)
+        await session.flush()
 
-        assert response.status_code == 401
+        # Get user1's organization
+        organization = await _get_user_organization(session, user1)
+
+        # Try to access with user2's auth
+        client.headers["Authorization"] = f"Bearer {user2.workos_user_id}"
+
+        response = await client.get(
+            f"/api/organizations/{organization.id}/subscription"
+        )
+
+        assert response.status_code == 404
 
 
-class TestGetMyUsage:
-    """Tests for GET /api/subscriptions/usage"""
+class TestGetOrganizationUsage:
+    """Tests for GET /api/organizations/{organization_id}/usage"""
 
-    async def test_get_my_usage_free_tier(
+    async def test_get_usage_free_tier(
         self,
         client: AsyncClient,
         session: AsyncSession,
@@ -176,8 +229,10 @@ class TestGetMyUsage:
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.FREE,
             status=SubscriptionStatus.ACTIVE,
         )
@@ -186,14 +241,14 @@ class TestGetMyUsage:
 
         client.headers["Authorization"] = f"Bearer {user.workos_user_id}"
 
-        response = await client.get("/api/subscriptions/usage")
+        response = await client.get(f"/api/organizations/{organization.id}/usage")
 
         assert response.status_code == 200
         data = response.json()
         assert data["workflows_limit"] == settings.FREE_TIER_WORKFLOW_LIMIT
         assert data["executions_limit"] == settings.FREE_TIER_EXECUTION_LIMIT_PER_MONTH
 
-    async def test_get_my_usage_pro_tier(
+    async def test_get_usage_pro_tier(
         self,
         client: AsyncClient,
         session: AsyncSession,
@@ -205,8 +260,10 @@ class TestGetMyUsage:
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.ACTIVE,
         )
@@ -215,14 +272,14 @@ class TestGetMyUsage:
 
         client.headers["Authorization"] = f"Bearer {user.workos_user_id}"
 
-        response = await client.get("/api/subscriptions/usage")
+        response = await client.get(f"/api/organizations/{organization.id}/usage")
 
         assert response.status_code == 200
         data = response.json()
         assert data["workflows_limit"] == settings.PRO_TIER_WORKFLOW_LIMIT
         assert data["executions_limit"] == settings.PRO_TIER_EXECUTION_LIMIT_PER_MONTH
 
-    async def test_get_my_usage_not_cloud(
+    async def test_get_usage_not_cloud(
         self,
         client: AsyncClient,
         session: AsyncSession,
@@ -234,16 +291,18 @@ class TestGetMyUsage:
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         client.headers["Authorization"] = f"Bearer {user.workos_user_id}"
 
         with patch.object(settings, "IS_CLOUD", False):
-            response = await client.get("/api/subscriptions/usage")
+            response = await client.get(f"/api/organizations/{organization.id}/usage")
 
         assert response.status_code == 404
 
 
 class TestCreateCheckoutSession:
-    """Tests for POST /api/subscriptions/checkout"""
+    """Tests for POST /api/organizations/{organization_id}/checkout"""
 
     async def test_create_checkout_session_success(
         self,
@@ -259,8 +318,10 @@ class TestCreateCheckoutSession:
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.FREE,
             status=SubscriptionStatus.ACTIVE,
         )
@@ -277,7 +338,7 @@ class TestCreateCheckoutSession:
 
         with patch.object(settings, "STRIPE_PRICE_ID_PRO", "price_test_pro"):
             response = await client.post(
-                "/api/subscriptions/checkout",
+                f"/api/organizations/{organization.id}/checkout",
                 json={
                     "success_url": "https://example.com/success",
                     "cancel_url": "https://example.com/cancel",
@@ -295,14 +356,16 @@ class TestCreateCheckoutSession:
         session: AsyncSession,
         dependency_overrides,
     ):
-        """Returns 400 when user already has active pro"""
+        """Returns 400 when organization already has active pro"""
         user = await get_or_create_user(
             session, f"test_already_pro_{uuid4()}", create=False
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.ACTIVE,
         )
@@ -312,7 +375,7 @@ class TestCreateCheckoutSession:
         client.headers["Authorization"] = f"Bearer {user.workos_user_id}"
 
         response = await client.post(
-            "/api/subscriptions/checkout",
+            f"/api/organizations/{organization.id}/checkout",
             json={
                 "success_url": "https://example.com/success",
                 "cancel_url": "https://example.com/cancel",
@@ -320,7 +383,7 @@ class TestCreateCheckoutSession:
         )
 
         assert response.status_code == 400
-        assert "already have an active Hobby subscription" in response.json()["detail"]
+        assert "already has an active Hobby subscription" in response.json()["detail"]
 
     async def test_create_checkout_session_not_cloud(
         self,
@@ -334,11 +397,13 @@ class TestCreateCheckoutSession:
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         client.headers["Authorization"] = f"Bearer {user.workos_user_id}"
 
         with patch.object(settings, "IS_CLOUD", False):
             response = await client.post(
-                "/api/subscriptions/checkout",
+                f"/api/organizations/{organization.id}/checkout",
                 json={
                     "success_url": "https://example.com/success",
                     "cancel_url": "https://example.com/cancel",
@@ -360,8 +425,10 @@ class TestCreateCheckoutSession:
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.FREE,
             status=SubscriptionStatus.ACTIVE,
         )
@@ -374,7 +441,7 @@ class TestCreateCheckoutSession:
 
         with patch.object(settings, "STRIPE_PRICE_ID_PRO", "price_test_pro"):
             response = await client.post(
-                "/api/subscriptions/checkout",
+                f"/api/organizations/{organization.id}/checkout",
                 json={
                     "success_url": "https://example.com/success",
                     "cancel_url": "https://example.com/cancel",
@@ -385,7 +452,7 @@ class TestCreateCheckoutSession:
 
 
 class TestCreatePortalSession:
-    """Tests for POST /api/subscriptions/portal"""
+    """Tests for POST /api/organizations/{organization_id}/portal"""
 
     async def test_create_portal_session_success(
         self,
@@ -398,8 +465,10 @@ class TestCreatePortalSession:
         user = await get_or_create_user(session, f"test_portal_{uuid4()}", create=False)
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.ACTIVE,
             stripe_customer_id="cus_test_12345",
@@ -414,7 +483,7 @@ class TestCreatePortalSession:
         )
 
         response = await client.post(
-            "/api/subscriptions/portal",
+            f"/api/organizations/{organization.id}/portal",
             json={"return_url": "https://example.com/return"},
         )
 
@@ -434,8 +503,10 @@ class TestCreatePortalSession:
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.FREE,
             status=SubscriptionStatus.ACTIVE,
         )
@@ -445,7 +516,7 @@ class TestCreatePortalSession:
         client.headers["Authorization"] = f"Bearer {user.workos_user_id}"
 
         response = await client.post(
-            "/api/subscriptions/portal",
+            f"/api/organizations/{organization.id}/portal",
             json={"return_url": "https://example.com/return"},
         )
 
@@ -464,11 +535,13 @@ class TestCreatePortalSession:
         )
         await session.flush()
 
+        organization = await _get_user_organization(session, user)
+
         client.headers["Authorization"] = f"Bearer {user.workos_user_id}"
 
         with patch.object(settings, "IS_CLOUD", False):
             response = await client.post(
-                "/api/subscriptions/portal",
+                f"/api/organizations/{organization.id}/portal",
                 json={"return_url": "https://example.com/return"},
             )
 

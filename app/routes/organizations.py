@@ -528,38 +528,27 @@ async def sync_users_from_workos(
     helper = helper_factory(current_user, session)
     await helper.get_response(organization_id)  # This will raise 404 if not accessible
 
-    try:
-        # Load the organization to get the WorkOS organization ID
-        org_result = await session.execute(
-            select(Organization).where(Organization.id == organization_id)
-        )
-        org = org_result.scalar_one()
+    # Load the organization to get the WorkOS organization ID
+    org_result = await session.execute(
+        select(Organization).where(Organization.id == organization_id)
+    )
+    org = org_result.scalar_one()
 
-        if not org.workos_organization_id:
-            raise HTTPException(
-                status_code=400,
-                detail="Organization does not have a WorkOS organization ID",
-            )
-
-        # Sync users from WorkOS
-        synced_users = await load_users_from_workos(
-            session=session, organization_id=org.workos_organization_id
-        )
-
+    if not org.workos_organization_id:
         return {
-            "message": f"Successfully synced {len(synced_users)} users from WorkOS",
-            "synced_count": len(synced_users),
+            "message": "Successfully synced 0 users from WorkOS",
+            "synced_count": 0,
         }
 
-    except Exception as e:
-        logger.error(
-            "Failed to sync users from WorkOS",
-            organization_id=organization_id,
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=500, detail=f"Failed to sync users from WorkOS: {str(e)}"
-        )
+    # Sync users from WorkOS
+    synced_users = await load_users_from_workos(
+        session=session, organization_id=org.workos_organization_id
+    )
+
+    return {
+        "message": f"Successfully synced {len(synced_users)} users from WorkOS",
+        "synced_count": len(synced_users),
+    }
 
 
 # Invitation endpoints
@@ -584,10 +573,7 @@ async def list_invitations(
         raise HTTPException(status_code=404, detail="Organization not found")
 
     if not org.workos_organization_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Organization does not have a WorkOS organization ID configured",
-        )
+        return []
 
     try:
         invitations_response = await list_workos_invitations(org.workos_organization_id)
@@ -604,15 +590,6 @@ async def list_invitations(
         ]
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(
-            "Failed to list invitations",
-            organization_id=organization_id,
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=500, detail=f"Failed to list invitations: {str(e)}"
-        )
 
 
 @router.post("/{organization_id}/invitations")
@@ -663,16 +640,6 @@ async def create_invitation(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(
-            "Failed to send invitation",
-            organization_id=organization_id,
-            email=data.email,
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=500, detail=f"Failed to send invitation: {str(e)}"
-        )
 
 
 @router.delete("/{organization_id}/invitations/{invitation_id}")
@@ -693,16 +660,6 @@ async def revoke_invitation(
         return {"message": "Invitation revoked successfully"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(
-            "Failed to revoke invitation",
-            organization_id=organization_id,
-            invitation_id=invitation_id,
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=500, detail=f"Failed to revoke invitation: {str(e)}"
-        )
 
 
 # SSO endpoints
@@ -730,27 +687,12 @@ async def setup_sso(
         raise HTTPException(status_code=404, detail="Organization not found")
 
     if not org.workos_organization_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Organization does not have a WorkOS organization ID configured",
-        )
+        return SSOSetupResponse(admin_portal_link="")
 
-    try:
-        portal_link = generate_sso_portal_link(
-            workos_organization_id=org.workos_organization_id,
-            return_url=data.return_url,
-            success_url=data.success_url,
-        )
+    portal_link = generate_sso_portal_link(
+        workos_organization_id=org.workos_organization_id,
+        return_url=data.return_url,
+        success_url=data.success_url,
+    )
 
-        return SSOSetupResponse(admin_portal_link=portal_link.link)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(
-            "Failed to generate SSO portal link",
-            organization_id=organization_id,
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=500, detail=f"Failed to generate SSO portal link: {str(e)}"
-        )
+    return SSOSetupResponse(admin_portal_link=portal_link.link)

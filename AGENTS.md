@@ -178,6 +178,13 @@ class OIDCProvider:
     async def get_issuer(self) -> str: ...
 ```
 
+
+### Error handling
+
+Never explicitely raise a 500 unless there is a very good reason to. All exceptions result
+in a 500 being returned by a middleware that also does proper alerting and logging. You should not be replicating this behaviour as this will circumvent all of that setup.
+
+
 ## Testing Philosophy
 
 - Pure functions are easier to test than class methods

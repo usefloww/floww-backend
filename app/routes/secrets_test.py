@@ -3,14 +3,13 @@ from sqlalchemy import select
 from app.models import Secret
 from app.tests.fixtures_clients import UserClient
 
-
 # Basic CRUD Flow Tests
 
 
 async def test_create_and_list_secret(client_a: UserClient):
     """Test creating a secret and verifying it appears in list without value."""
     secret_data = {
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "name": "api_key",
         "provider": "github",
         "value": "ghp_secret123",
@@ -22,15 +21,13 @@ async def test_create_and_list_secret(client_a: UserClient):
     created = response.json()
     assert created["name"] == "api_key"
     assert created["provider"] == "github"
-    assert created["namespace_id"] == str(client_a.personal_namespace.id)
+    assert created["namespace_id"] == str(client_a.namespace.id)
     assert "value" not in created  # List response doesn't include value
     assert "id" in created
     assert "created_at" in created
 
     # List secrets in namespace
-    response = await client_a.get(
-        f"/api/secrets/namespace/{client_a.personal_namespace.id}"
-    )
+    response = await client_a.get(f"/api/secrets/namespace/{client_a.namespace.id}")
     assert response.status_code == 200
     secrets = response.json()
     assert len(secrets) == 1
@@ -43,7 +40,7 @@ async def test_get_secret_with_decrypted_value(client_a: UserClient):
     """Test getting a secret by ID returns decrypted value."""
     # Create secret
     secret_data = {
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "name": "database_password",
         "provider": "postgres",
         "value": "super_secret_password",
@@ -65,7 +62,7 @@ async def test_update_secret_provider(client_a: UserClient):
     """Test updating a secret's provider."""
     # Create secret
     secret_data = {
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "name": "oauth_token",
         "provider": "google",
         "value": "token123",
@@ -93,7 +90,7 @@ async def test_update_secret_value(client_a: UserClient):
     """Test updating a secret's value."""
     # Create secret
     secret_data = {
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "name": "api_key",
         "provider": "stripe",
         "value": "old_key",
@@ -118,7 +115,7 @@ async def test_update_secret_both_fields(client_a: UserClient):
     """Test updating both provider and value simultaneously."""
     # Create secret
     secret_data = {
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "name": "webhook_secret",
         "provider": "slack",
         "value": "old_webhook",
@@ -146,7 +143,7 @@ async def test_delete_secret(client_a: UserClient):
     """Test deleting a secret."""
     # Create secret
     secret_data = {
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "name": "temp_secret",
         "provider": "temp",
         "value": "temporary",
@@ -173,7 +170,7 @@ async def test_value_is_encrypted_in_database(client_a: UserClient, session):
 
     # Create secret
     secret_data = {
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "name": "encrypted_secret",
         "provider": "test",
         "value": plaintext_value,
@@ -203,7 +200,7 @@ async def test_value_is_encrypted_in_database(client_a: UserClient, session):
 async def test_duplicate_secret_name_returns_conflict(client_a: UserClient):
     """Test that creating a secret with duplicate name returns 409."""
     secret_data = {
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "name": "unique_name",
         "provider": "github",
         "value": "secret1",
@@ -215,7 +212,7 @@ async def test_duplicate_secret_name_returns_conflict(client_a: UserClient):
 
     # Attempt to create duplicate
     duplicate_data = {
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "name": "unique_name",
         "provider": "gitlab",  # Different provider, same name
         "value": "secret2",
@@ -238,13 +235,13 @@ async def test_filter_secrets_by_provider(client_a: UserClient):
     ]
 
     for secret_data in secrets:
-        secret_data["namespace_id"] = str(client_a.personal_namespace.id)
+        secret_data["namespace_id"] = str(client_a.namespace.id)
         response = await client_a.post("/api/secrets/", json=secret_data)
         assert response.status_code == 201
 
     # Filter by github provider
     response = await client_a.get(
-        f"/api/secrets/namespace/{client_a.personal_namespace.id}?provider=github"
+        f"/api/secrets/namespace/{client_a.namespace.id}?provider=github"
     )
     assert response.status_code == 200
     filtered_secrets = response.json()
@@ -262,13 +259,13 @@ async def test_filter_secrets_by_name(client_a: UserClient):
     ]
 
     for secret_data in secrets:
-        secret_data["namespace_id"] = str(client_a.personal_namespace.id)
+        secret_data["namespace_id"] = str(client_a.namespace.id)
         response = await client_a.post("/api/secrets/", json=secret_data)
         assert response.status_code == 201
 
     # Filter by name
     response = await client_a.get(
-        f"/api/secrets/namespace/{client_a.personal_namespace.id}?name=webhook_secret"
+        f"/api/secrets/namespace/{client_a.namespace.id}?name=webhook_secret"
     )
     assert response.status_code == 200
     filtered_secrets = response.json()
@@ -286,13 +283,13 @@ async def test_filter_secrets_by_provider_and_name(client_a: UserClient):
     ]
 
     for secret_data in secrets:
-        secret_data["namespace_id"] = str(client_a.personal_namespace.id)
+        secret_data["namespace_id"] = str(client_a.namespace.id)
         response = await client_a.post("/api/secrets/", json=secret_data)
         assert response.status_code == 201
 
     # Filter by both
     response = await client_a.get(
-        f"/api/secrets/namespace/{client_a.personal_namespace.id}?provider=github&name=github_api_key"
+        f"/api/secrets/namespace/{client_a.namespace.id}?provider=github&name=github_api_key"
     )
     assert response.status_code == 200
     filtered_secrets = response.json()
@@ -310,7 +307,7 @@ async def test_users_cannot_list_other_users_secrets(
     """Test that users can't see secrets from other users' namespaces."""
     # client_a creates a secret
     secret_data = {
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "name": "client_a_secret",
         "provider": "github",
         "value": "secret_a",
@@ -319,16 +316,12 @@ async def test_users_cannot_list_other_users_secrets(
     assert response.status_code == 201
 
     # client_a can see their secret
-    response = await client_a.get(
-        f"/api/secrets/namespace/{client_a.personal_namespace.id}"
-    )
+    response = await client_a.get(f"/api/secrets/namespace/{client_a.namespace.id}")
     assert response.status_code == 200
     assert len(response.json()) == 1
 
     # client_b can't see client_a's secrets
-    response = await client_b.get(
-        f"/api/secrets/namespace/{client_a.personal_namespace.id}"
-    )
+    response = await client_b.get(f"/api/secrets/namespace/{client_a.namespace.id}")
     assert response.status_code == 200
     assert len(response.json()) == 0  # Empty list due to access control
 
@@ -339,7 +332,7 @@ async def test_users_cannot_access_other_users_secrets(
     """Test that users can't get/update/delete other users' secrets."""
     # client_a creates a secret
     secret_data = {
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "name": "private_secret",
         "provider": "github",
         "value": "secret_value",
@@ -377,7 +370,7 @@ async def test_cannot_create_secret_in_inaccessible_namespace(
     """Test that users can't create secrets in namespaces they don't have access to."""
     # Try to create secret in client_b's namespace using client_a
     secret_data = {
-        "namespace_id": str(client_b.personal_namespace.id),
+        "namespace_id": str(client_b.namespace.id),
         "name": "unauthorized_secret",
         "provider": "github",
         "value": "secret",

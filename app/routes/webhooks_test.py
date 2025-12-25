@@ -22,7 +22,7 @@ from app.utils.encryption import encrypt_secret
 async def workflow(client_a: UserClient, session: AsyncSession):
     workflow = Workflow(
         name="Test Webhook Workflow",
-        namespace_id=client_a.personal_namespace.id,
+        namespace_id=client_a.namespace.id,
         created_by_id=client_a.user.id,
     )
     session.add(workflow)
@@ -34,7 +34,7 @@ async def workflow(client_a: UserClient, session: AsyncSession):
 @pytest.fixture(scope="function")
 async def provider(client_a: UserClient, session: AsyncSession):
     provider = Provider(
-        namespace_id=client_a.personal_namespace.id,
+        namespace_id=client_a.namespace.id,
         type="gitlab",
         alias="test-gitlab",
         encrypted_config=encrypt_secret(

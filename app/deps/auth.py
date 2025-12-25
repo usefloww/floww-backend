@@ -86,10 +86,7 @@ async def get_current_user_optional(
         user = result.scalar_one_or_none()
 
         if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Anonymous user not properly initialized",
-            )
+            raise RuntimeError("Anonymous user not properly initialized")
 
         structlog.contextvars.bind_contextvars(user_id=user.id)
         return user

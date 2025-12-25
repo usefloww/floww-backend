@@ -9,7 +9,7 @@ from app.utils.encryption import decrypt_secret
 
 async def test_create_and_retrieve_provider(client_a: UserClient):
     provider_data = {
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "type": "gitlab",
         "alias": "my-gitlab",
         "config": {
@@ -23,7 +23,7 @@ async def test_create_and_retrieve_provider(client_a: UserClient):
     created_provider = response.json()
     assert created_provider["type"] == "gitlab"
     assert created_provider["alias"] == "my-gitlab"
-    assert created_provider["namespace_id"] == str(client_a.personal_namespace.id)
+    assert created_provider["namespace_id"] == str(client_a.namespace.id)
     assert created_provider["config"]["token"] == "glpat-xxxxxxxxxxxxxxxxxxxx"
     assert created_provider["config"]["base_url"] == "https://gitlab.com"
 
@@ -41,7 +41,7 @@ async def test_create_multiple_providers(client_a: UserClient):
     response1 = await client_a.post(
         "/api/providers",
         json={
-            "namespace_id": str(client_a.personal_namespace.id),
+            "namespace_id": str(client_a.namespace.id),
             "type": "github",
             "alias": "github-provider",
             "config": {"token": "ghp_xxxxxxxxxxxxxxxxxxxx", "org": "myorg"},
@@ -53,7 +53,7 @@ async def test_create_multiple_providers(client_a: UserClient):
     response2 = await client_a.post(
         "/api/providers",
         json={
-            "namespace_id": str(client_a.personal_namespace.id),
+            "namespace_id": str(client_a.namespace.id),
             "type": "gitlab",
             "alias": "gitlab-provider",
             "config": {"token": "glpat-xxxxxxxxxxxxxxxxxxxx", "project_id": "12345"},
@@ -84,7 +84,7 @@ async def test_list_providers_returns_correct_structure(client_a: UserClient):
 
 async def test_provider_creation_includes_metadata(client_a: UserClient):
     provider_data = {
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "type": "docker",
         "alias": "docker-registry",
         "config": {"registry": "docker.io", "username": "myuser", "password": "mypass"},
@@ -95,7 +95,7 @@ async def test_provider_creation_includes_metadata(client_a: UserClient):
     created_provider = response.json()
     assert "id" in created_provider
     assert "namespace_id" in created_provider
-    assert created_provider["namespace_id"] == str(client_a.personal_namespace.id)
+    assert created_provider["namespace_id"] == str(client_a.namespace.id)
 
 
 async def test_providers_are_accessible_to_user(
@@ -103,7 +103,7 @@ async def test_providers_are_accessible_to_user(
 ):
     # Create provider for client A
     provider_data = {
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "type": "aws",
         "alias": "aws-provider",
         "config": {
@@ -137,7 +137,7 @@ async def test_config_encryption_decryption(client_a: UserClient, session):
     }
 
     provider_data = {
-        "namespace_id": str(client_a.personal_namespace.id),
+        "namespace_id": str(client_a.namespace.id),
         "type": "custom",
         "alias": "test-encryption",
         "config": original_config,
