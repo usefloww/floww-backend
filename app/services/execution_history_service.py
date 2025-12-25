@@ -11,12 +11,18 @@ from datetime import datetime, timezone
 from typing import Any, Optional, Union
 from uuid import UUID
 
-from sqlalchemy import inspect, select, text
+from sqlalchemy import inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from sqlalchemy.sql import func
 
-from app.models import ExecutionHistory, ExecutionLog, ExecutionStatus, LogLevel, Trigger
+from app.models import (
+    ExecutionHistory,
+    ExecutionLog,
+    ExecutionStatus,
+    LogLevel,
+    Trigger,
+)
 
 
 async def create_execution_record(
@@ -346,7 +352,9 @@ async def search_execution_logs(
     """
     query = (
         select(ExecutionLog)
-        .join(ExecutionHistory, ExecutionLog.execution_history_id == ExecutionHistory.id)
+        .join(
+            ExecutionHistory, ExecutionLog.execution_history_id == ExecutionHistory.id
+        )
         .where(ExecutionHistory.workflow_id == workflow_id)
     )
 

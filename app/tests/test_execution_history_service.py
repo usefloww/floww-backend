@@ -13,6 +13,9 @@ from app.models import (
     ExecutionStatus,
     LogLevel,
     Namespace,
+    Organization,
+    OrganizationMember,
+    OrganizationRole,
     Provider,
     Runtime,
     Trigger,
@@ -47,8 +50,26 @@ async def create_test_user(session: AsyncSession) -> User:
 
 
 async def create_test_workflow(session: AsyncSession, user: User) -> Workflow:
-    """Create a test workflow with namespace."""
-    namespace = Namespace(user_owner_id=user.id)
+    """Create a test workflow with organization-owned namespace."""
+    # Create organization for the user
+    org = Organization(
+        name=f"test-org-{uuid4().hex[:8]}",
+        display_name="Test Organization",
+    )
+    session.add(org)
+    await session.flush()
+
+    # Add user as org member
+    org_member = OrganizationMember(
+        organization_id=org.id,
+        user_id=user.id,
+        role=OrganizationRole.OWNER,
+    )
+    session.add(org_member)
+    await session.flush()
+
+    # Create organization-owned namespace
+    namespace = Namespace(organization_owner_id=org.id)
     session.add(namespace)
     await session.flush()
 
@@ -648,8 +669,16 @@ async def test_update_execution_completed_with_structured_logs(session):
 
     structured_logs = [
         {"timestamp": "2025-01-01T10:00:00Z", "level": "info", "message": "Starting"},
-        {"timestamp": "2025-01-01T10:00:01Z", "level": "debug", "message": "Debug info"},
-        {"timestamp": "2025-01-01T10:00:02Z", "level": "error", "message": "Something failed"},
+        {
+            "timestamp": "2025-01-01T10:00:01Z",
+            "level": "debug",
+            "message": "Debug info",
+        },
+        {
+            "timestamp": "2025-01-01T10:00:02Z",
+            "level": "error",
+            "message": "Something failed",
+        },
     ]
 
     await update_execution_completed(
@@ -749,10 +778,16 @@ async def test_search_execution_logs_by_level(session):
     logs = [
         {"timestamp": "2025-01-01T10:00:00Z", "level": "info", "message": "Info msg"},
         {"timestamp": "2025-01-01T10:00:01Z", "level": "error", "message": "Error msg"},
-        {"timestamp": "2025-01-01T10:00:02Z", "level": "info", "message": "Another info"},
+        {
+            "timestamp": "2025-01-01T10:00:02Z",
+            "level": "info",
+            "message": "Another info",
+        },
     ]
 
-    await update_execution_completed(session=session, execution_id=execution.id, logs=logs)
+    await update_execution_completed(
+        session=session, execution_id=execution.id, logs=logs
+    )
     await session.flush()
 
     # Search for error logs only
@@ -785,12 +820,26 @@ async def test_search_execution_logs_by_text(session):
     )
 
     logs = [
-        {"timestamp": "2025-01-01T10:00:00Z", "level": "info", "message": "User logged in"},
-        {"timestamp": "2025-01-01T10:00:01Z", "level": "info", "message": "Processing data"},
-        {"timestamp": "2025-01-01T10:00:02Z", "level": "info", "message": "User logged out"},
+        {
+            "timestamp": "2025-01-01T10:00:00Z",
+            "level": "info",
+            "message": "User logged in",
+        },
+        {
+            "timestamp": "2025-01-01T10:00:01Z",
+            "level": "info",
+            "message": "Processing data",
+        },
+        {
+            "timestamp": "2025-01-01T10:00:02Z",
+            "level": "info",
+            "message": "User logged out",
+        },
     ]
 
-    await update_execution_completed(session=session, execution_id=execution.id, logs=logs)
+    await update_execution_completed(
+        session=session, execution_id=execution.id, logs=logs
+    )
     await session.flush()
 
     # Search for "logged"
@@ -825,7 +874,9 @@ async def test_serialize_execution_includes_log_entries(session):
         {"timestamp": "2025-01-01T10:00:00Z", "level": "info", "message": "Test log"},
     ]
 
-    await update_execution_completed(session=session, execution_id=execution.id, logs=logs)
+    await update_execution_completed(
+        session=session, execution_id=execution.id, logs=logs
+    )
     await session.flush()
 
     # Retrieve with relationships (including log_entries)

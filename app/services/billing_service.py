@@ -9,10 +9,11 @@ from app.models import (
     BillingEvent,
     ExecutionHistory,
     ExecutionStatus,
+    Namespace,
+    Organization,
     Subscription,
     SubscriptionStatus,
     SubscriptionTier,
-    User,
     Workflow,
 )
 from app.settings import settings
@@ -20,13 +21,15 @@ from app.settings import settings
 logger = structlog.stdlib.get_logger(__name__)
 
 
-async def get_or_create_subscription(session: AsyncSession, user: User) -> Subscription:
+async def get_or_create_subscription(
+    session: AsyncSession, organization: Organization
+) -> Subscription:
     """
-    Get or create a subscription for a user.
-    New users start on the free tier.
+    Get or create a subscription for an organization.
+    New organizations start on the free tier.
     """
     result = await session.execute(
-        select(Subscription).where(Subscription.user_id == user.id)
+        select(Subscription).where(Subscription.organization_id == organization.id)
     )
     existing_subscription = result.scalar_one_or_none()
 
@@ -34,13 +37,13 @@ async def get_or_create_subscription(session: AsyncSession, user: User) -> Subsc
         return existing_subscription
 
     subscription = Subscription(
-        user_id=user.id,
+        organization_id=organization.id,
         tier=SubscriptionTier.FREE,
         status=SubscriptionStatus.ACTIVE,
     )
     session.add(subscription)
     await session.flush()
-    logger.info("Created free tier subscription", user_id=user.id)
+    logger.info("Created free tier subscription", organization_id=organization.id)
     return subscription
 
 
@@ -97,19 +100,22 @@ async def get_execution_limit(subscription: Subscription) -> int:
     return settings.FREE_TIER_EXECUTION_LIMIT_PER_MONTH
 
 
-async def get_workflow_count(session: AsyncSession, user_id: UUID) -> int:
-    """Get the number of workflows for a user"""
+async def get_workflow_count(session: AsyncSession, organization_id: UUID) -> int:
+    """Get the number of workflows for an organization"""
+    # Find the namespace owned by this organization
     result = await session.execute(
         select(func.count(Workflow.id))
         .select_from(Workflow)
         .join(Workflow.namespace)
-        .where(Workflow.namespace.has(user_owner_id=user_id))
+        .where(Namespace.organization_owner_id == organization_id)
     )
     return result.scalar_one()
 
 
-async def get_execution_count_this_month(session: AsyncSession, user_id: UUID) -> int:
-    """Get the number of workflow executions this month for a user"""
+async def get_execution_count_this_month(
+    session: AsyncSession, organization_id: UUID
+) -> int:
+    """Get the number of workflow executions this month for an organization"""
     now = datetime.now(timezone.utc)
     start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
@@ -119,7 +125,7 @@ async def get_execution_count_this_month(session: AsyncSession, user_id: UUID) -
         .join(ExecutionHistory.workflow)
         .join(Workflow.namespace)
         .where(
-            Workflow.namespace.has(user_owner_id=user_id),
+            Namespace.organization_owner_id == organization_id,
             ExecutionHistory.received_at >= start_of_month,
             ExecutionHistory.status.in_(
                 [
@@ -133,19 +139,18 @@ async def get_execution_count_this_month(session: AsyncSession, user_id: UUID) -
     return result.scalar_one()
 
 
-async def check_workflow_limit(session: AsyncSession, user: User) -> tuple[bool, str]:
+async def check_workflow_limit(
+    session: AsyncSession, organization: Organization
+) -> tuple[bool, str]:
     """
-    Check if user can create more workflows.
+    Check if organization can create more workflows.
     Returns (can_create: bool, message: str)
     """
     if not settings.IS_CLOUD:
         return True, ""
 
-    if user.is_admin:
-        return True, ""
-
-    subscription = await get_or_create_subscription(session, user)
-    current_count = await get_workflow_count(session, user.id)
+    subscription = await get_or_create_subscription(session, organization)
+    current_count = await get_workflow_count(session, organization.id)
     limit = await get_workflow_limit(subscription)
 
     if current_count >= limit:
@@ -161,19 +166,18 @@ async def check_workflow_limit(session: AsyncSession, user: User) -> tuple[bool,
     return True, ""
 
 
-async def check_execution_limit(session: AsyncSession, user: User) -> tuple[bool, str]:
+async def check_execution_limit(
+    session: AsyncSession, organization: Organization
+) -> tuple[bool, str]:
     """
-    Check if user can execute more workflows this month.
+    Check if organization can execute more workflows this month.
     Returns (can_execute: bool, message: str)
     """
     if not settings.IS_CLOUD:
         return True, ""
 
-    if user.is_admin:
-        return True, ""
-
-    subscription = await get_or_create_subscription(session, user)
-    current_count = await get_execution_count_this_month(session, user.id)
+    subscription = await get_or_create_subscription(session, organization)
+    current_count = await get_execution_count_this_month(session, organization.id)
     limit = await get_execution_limit(subscription)
 
     if current_count >= limit:
@@ -394,9 +398,7 @@ async def handle_subscription_created(
 
     trial_end_ts = event_data.get("trial_end")
     trial_end = (
-        datetime.fromtimestamp(trial_end_ts, tz=timezone.utc)
-        if trial_end_ts
-        else None
+        datetime.fromtimestamp(trial_end_ts, tz=timezone.utc) if trial_end_ts else None
     )
 
     stripe_status = event_data.get("status")

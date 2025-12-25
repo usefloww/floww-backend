@@ -3,12 +3,15 @@ from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models import (
     BillingEvent,
     ExecutionHistory,
     ExecutionStatus,
     Namespace,
+    Organization,
+    OrganizationMember,
     Subscription,
     SubscriptionStatus,
     SubscriptionTier,
@@ -18,17 +21,40 @@ from app.services import billing_service
 from app.services.user_service import get_or_create_user
 
 
+async def _get_user_org_and_namespace(session: AsyncSession, user_id):
+    """Helper to get organization and namespace for a user."""
+    org_query = (
+        select(Organization)
+        .join(OrganizationMember)
+        .where(OrganizationMember.user_id == user_id)
+        .order_by(OrganizationMember.created_at)
+        .limit(1)
+    )
+    org_result = await session.execute(org_query)
+    organization = org_result.scalar_one()
+
+    namespace_query = (
+        select(Namespace)
+        .options(selectinload(Namespace.organization_owner))
+        .where(Namespace.organization_owner_id == organization.id)
+    )
+    namespace_result = await session.execute(namespace_query)
+    namespace = namespace_result.scalar_one()
+
+    return organization, namespace
+
+
 class TestFullSubscriptionFlow:
     """Integration tests for full subscription lifecycle"""
 
     async def test_signup_to_trial_to_paid(self, session: AsyncSession):
         """
-        Full flow: New user -> Trial -> Paid subscription
-        1. New user signs up (gets FREE subscription)
+        Full flow: New organization -> Trial -> Paid subscription
+        1. New user signs up (gets FREE subscription via organization)
         2. Creates checkout session
         3. Webhook: checkout.session.completed
         4. Webhook: customer.subscription.created (trialing)
-        5. User has PRO access during trial
+        5. Organization has PRO access during trial
         6. Webhook: customer.subscription.updated (active after trial)
         """
         user = await get_or_create_user(
@@ -36,7 +62,11 @@ class TestFullSubscriptionFlow:
         )
         await session.flush()
 
-        subscription = await billing_service.get_or_create_subscription(session, user)
+        organization, _ = await _get_user_org_and_namespace(session, user.id)
+
+        subscription = await billing_service.get_or_create_subscription(
+            session, organization
+        )
         assert subscription.tier == SubscriptionTier.FREE
         assert subscription.status == SubscriptionStatus.ACTIVE
 
@@ -98,20 +128,22 @@ class TestFullSubscriptionFlow:
     async def test_payment_failure_to_grace_to_recovery(self, session: AsyncSession):
         """
         Flow: Payment failure -> Grace period -> Recovery
-        1. User has active HOBBY subscription
+        1. Organization has active HOBBY subscription
         2. Webhook: invoice.payment_failed
-        3. User enters grace period (PAST_DUE)
-        4. User still has PRO access for 7 days
+        3. Organization enters grace period (PAST_DUE)
+        4. Organization still has PRO access for 7 days
         5. Webhook: invoice.payment_succeeded
-        6. User reactivated
+        6. Organization reactivated
         """
         user = await get_or_create_user(
             session, f"test_flow_recovery_{uuid4()}", create=False
         )
         await session.flush()
 
+        organization, _ = await _get_user_org_and_namespace(session, user.id)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.ACTIVE,
             stripe_subscription_id="sub_test_12345",
@@ -151,19 +183,21 @@ class TestFullSubscriptionFlow:
     async def test_cancel_at_period_end(self, session: AsyncSession):
         """
         Flow: Cancel at period end
-        1. User cancels subscription via portal
+        1. Organization cancels subscription via portal
         2. Webhook: customer.subscription.updated (cancel_at_period_end=true)
-        3. User keeps PRO until current_period_end
+        3. Organization keeps PRO until current_period_end
         4. Webhook: customer.subscription.deleted
-        5. User downgraded to FREE
+        5. Organization downgraded to FREE
         """
         user = await get_or_create_user(
             session, f"test_flow_cancel_{uuid4()}", create=False
         )
         await session.flush()
 
+        organization, _ = await _get_user_org_and_namespace(session, user.id)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.ACTIVE,
             stripe_subscription_id="sub_test_12345",
@@ -211,17 +245,19 @@ class TestFullSubscriptionFlow:
     async def test_immediate_cancellation(self, session: AsyncSession):
         """
         Flow: Immediate cancellation
-        1. User requests immediate cancellation
+        1. Organization requests immediate cancellation
         2. Webhook: customer.subscription.deleted
-        3. User immediately downgraded to FREE
+        3. Organization immediately downgraded to FREE
         """
         user = await get_or_create_user(
             session, f"test_flow_immediate_cancel_{uuid4()}", create=False
         )
         await session.flush()
 
+        organization, _ = await _get_user_org_and_namespace(session, user.id)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.ACTIVE,
             stripe_subscription_id="sub_test_12345",
@@ -247,9 +283,9 @@ class TestFullSubscriptionFlow:
 class TestLimitEnforcementIntegration:
     """Integration tests for limit enforcement"""
 
-    async def test_free_user_blocked_at_workflow_limit(self, session: AsyncSession):
+    async def test_free_org_blocked_at_workflow_limit(self, session: AsyncSession):
         """
-        1. Free user creates 3 workflows
+        1. Free organization creates 3 workflows
         2. Attempt to create 4th is blocked
         """
         user = await get_or_create_user(
@@ -257,32 +293,31 @@ class TestLimitEnforcementIntegration:
         )
         await session.flush()
 
+        organization, namespace = await _get_user_org_and_namespace(session, user.id)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.FREE,
             status=SubscriptionStatus.ACTIVE,
         )
         session.add(subscription)
         await session.flush()
 
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
-
         for i in range(3):
             workflow = Workflow(name=f"workflow{i}", namespace_id=namespace.id)
             session.add(workflow)
         await session.flush()
 
-        can_create, message = await billing_service.check_workflow_limit(session, user)
+        can_create, message = await billing_service.check_workflow_limit(
+            session, organization
+        )
 
         assert can_create is False
         assert "limit" in message.lower()
 
-    async def test_free_user_blocked_at_execution_limit(self, session: AsyncSession):
+    async def test_free_org_blocked_at_execution_limit(self, session: AsyncSession):
         """
-        1. Free user executes 100 workflows this month
+        1. Free organization executes 100 workflows this month
         2. 101st execution is blocked
         """
         user = await get_or_create_user(
@@ -290,18 +325,15 @@ class TestLimitEnforcementIntegration:
         )
         await session.flush()
 
+        organization, namespace = await _get_user_org_and_namespace(session, user.id)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.FREE,
             status=SubscriptionStatus.ACTIVE,
         )
         session.add(subscription)
         await session.flush()
-
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
 
         workflow = Workflow(name="test_workflow", namespace_id=namespace.id)
         session.add(workflow)
@@ -318,7 +350,7 @@ class TestLimitEnforcementIntegration:
         await session.flush()
 
         can_execute, message = await billing_service.check_execution_limit(
-            session, user
+            session, organization
         )
 
         assert can_execute is False
@@ -326,7 +358,7 @@ class TestLimitEnforcementIntegration:
 
     async def test_usage_resets_on_new_month(self, session: AsyncSession):
         """
-        1. Free user executes 100 workflows in previous month
+        1. Free organization executes 100 workflows in previous month
         2. Can execute more in new month
         """
         user = await get_or_create_user(
@@ -334,18 +366,15 @@ class TestLimitEnforcementIntegration:
         )
         await session.flush()
 
+        organization, namespace = await _get_user_org_and_namespace(session, user.id)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.FREE,
             status=SubscriptionStatus.ACTIVE,
         )
         session.add(subscription)
         await session.flush()
-
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
 
         workflow = Workflow(name="test_workflow", namespace_id=namespace.id)
         session.add(workflow)
@@ -362,7 +391,7 @@ class TestLimitEnforcementIntegration:
         await session.flush()
 
         can_execute, message = await billing_service.check_execution_limit(
-            session, user
+            session, organization
         )
 
         assert can_execute is True
@@ -379,8 +408,10 @@ class TestEdgeCases:
         )
         await session.flush()
 
+        organization, _ = await _get_user_org_and_namespace(session, user.id)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.FREE,
             status=SubscriptionStatus.ACTIVE,
         )
@@ -430,10 +461,12 @@ class TestEdgeCases:
         )
         await session.flush()
 
+        organization, _ = await _get_user_org_and_namespace(session, user.id)
+
         trial_ends_at = datetime.now(timezone.utc) + timedelta(hours=1)
 
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.TRIALING,
             trial_ends_at=trial_ends_at,
@@ -459,18 +492,15 @@ class TestEdgeCases:
         )
         await session.flush()
 
+        organization, namespace = await _get_user_org_and_namespace(session, user.id)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.FREE,
             status=SubscriptionStatus.ACTIVE,
         )
         session.add(subscription)
         await session.flush()
-
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
 
         workflow = Workflow(name="test_workflow", namespace_id=namespace.id)
         session.add(workflow)
@@ -495,18 +525,22 @@ class TestEdgeCases:
             session.add(execution)
         await session.flush()
 
-        count = await billing_service.get_execution_count_this_month(session, user.id)
+        count = await billing_service.get_execution_count_this_month(
+            session, organization.id
+        )
         assert count == 50
 
     async def test_grace_period_expiration(self, session: AsyncSession):
-        """User loses PRO access when grace period expires"""
+        """Organization loses PRO access when grace period expires"""
         user = await get_or_create_user(
             session, f"test_grace_expired_{uuid4()}", create=False
         )
         await session.flush()
 
+        organization, _ = await _get_user_org_and_namespace(session, user.id)
+
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.PAST_DUE,
             grace_period_ends_at=datetime.now(timezone.utc) + timedelta(hours=1),

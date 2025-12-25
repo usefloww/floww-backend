@@ -3,13 +3,13 @@ from typing import Optional, cast
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
 from app.deps.auth import CurrentUser
-from app.deps.billing import check_can_create_workflow
+from app.deps.billing import check_can_create_workflow_in_namespace
 from app.deps.db import SessionDep, TransactionSessionDep
 from app.models import Namespace, Workflow, WorkflowDeployment
 from app.services.crud_helpers import CrudHelper, ListResult
@@ -156,7 +156,6 @@ async def create_workflow(
     data: WorkflowCreate,
     current_user: CurrentUser,
     session: TransactionSessionDep,
-    _: None = Depends(check_can_create_workflow),
 ):
     """Create a new workflow."""
     # Verify user has access to the namespace
@@ -170,6 +169,9 @@ async def create_workflow(
 
     if not namespace:
         raise HTTPException(status_code=400, detail="Namespace not found")
+
+    # Check workflow limit for the namespace's organization
+    await check_can_create_workflow_in_namespace(session, data.namespace_id)
 
     # Create a workflow manually with created_by_id
     workflow = Workflow(
@@ -210,7 +212,6 @@ async def import_n8n_workflow(
     data: N8nImportRequest,
     current_user: CurrentUser,
     session: TransactionSessionDep,
-    _: None = Depends(check_can_create_workflow),
 ) -> N8nImportResponse:
     """
     Import a workflow from n8n JSON format.
@@ -229,6 +230,9 @@ async def import_n8n_workflow(
 
     if not namespace:
         raise HTTPException(status_code=400, detail="Namespace not found")
+
+    # Check workflow limit for the namespace's organization
+    await check_can_create_workflow_in_namespace(session, data.namespace_id)
 
     # Extract workflow info from n8n JSON
     n8n_workflow = data.n8n_json

@@ -2,7 +2,7 @@ from typing import Union
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.deps.db import SessionDep
@@ -19,33 +19,19 @@ from app.models import (
     Workflow,
     WorkflowDeployment,
 )
-from app.settings import settings
 
 
 def _namespace_filter(user_id):
     """
-    Build namespace filter based on mode.
+    Build namespace filter based on organization membership.
 
-    In single-org mode without personal namespaces, only check organization ownership.
-    In multi-tenant mode, check both personal and organization ownership.
+    All namespaces are now organization-owned. Filter by organizations the user is a member of.
     """
-    if settings.SINGLE_ORG_MODE and not settings.SINGLE_ORG_ALLOW_PERSONAL_NAMESPACES:
-        # Single-org mode: only check organization ownership
-        return Namespace.organization_owner_id.in_(
-            select(OrganizationMember.organization_id).where(
-                OrganizationMember.user_id == user_id
-            )
+    return Namespace.organization_owner_id.in_(
+        select(OrganizationMember.organization_id).where(
+            OrganizationMember.user_id == user_id
         )
-    else:
-        # Multi-tenant mode or single-org with personal namespaces: check both
-        return or_(
-            Namespace.user_owner_id == user_id,
-            Namespace.organization_owner_id.in_(
-                select(OrganizationMember.organization_id).where(
-                    OrganizationMember.user_id == user_id
-                )
-            ),
-        )
+    )
 
 
 class UserAccessibleQuery:

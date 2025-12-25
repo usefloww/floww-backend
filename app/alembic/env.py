@@ -16,6 +16,13 @@ config = context.config
 target_metadata = models.Base.metadata
 
 
+def include_object(object, name, type_, reflected, compare_to):
+    if name is not None and "apscheduler" in name:
+        return False
+
+    return True
+
+
 def get_url():
     """
     Return the database URL from settings. Make sure it uses asyncpg:
@@ -33,6 +40,7 @@ def do_run_migrations(connection):
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -69,6 +77,7 @@ def run_migrations_offline():
         target_metadata=target_metadata,
         literal_binds=True,
         compare_type=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():

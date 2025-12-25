@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Subscription, User
+from app.models import Namespace, Organization, Subscription
 from app.services import stripe_service
 
 
@@ -13,47 +13,52 @@ class TestCustomerManagement:
     async def test_get_or_create_customer_new(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
         mock_stripe_customer,
     ):
         """Creates new Stripe customer and returns customer ID"""
-        user, subscription = test_user_with_free_subscription
+        organization, subscription, _ = test_org_with_free_subscription
 
         mock_stripe_customer.return_value = MagicMock(id="cus_new_12345")
 
-        customer_id = await stripe_service.get_or_create_customer(user, subscription)
+        customer_id = await stripe_service.get_or_create_customer(
+            organization, subscription
+        )
 
         assert customer_id == "cus_new_12345"
         mock_stripe_customer.assert_called_once()
         call_kwargs = mock_stripe_customer.call_args[1]
-        assert call_kwargs["email"] == user.email
-        assert call_kwargs["metadata"]["user_id"] == str(user.id)
+        assert call_kwargs["name"] == organization.display_name
+        assert call_kwargs["metadata"]["organization_id"] == str(organization.id)
         assert call_kwargs["metadata"]["subscription_id"] == str(subscription.id)
 
     async def test_get_or_create_customer_existing(
         self,
-        test_user_with_pro_subscription: tuple[User, Subscription],
+        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
         mock_stripe_customer,
     ):
         """Returns existing customer_id from subscription, does not create duplicate"""
-        user, subscription = test_user_with_pro_subscription
+        organization, subscription, _ = test_org_with_pro_subscription
 
         existing_customer_id = subscription.stripe_customer_id
 
-        customer_id = await stripe_service.get_or_create_customer(user, subscription)
+        customer_id = await stripe_service.get_or_create_customer(
+            organization, subscription
+        )
 
         assert customer_id == existing_customer_id
         mock_stripe_customer.assert_not_called()
 
     async def test_get_or_create_customer_without_stripe(
-        self, test_user_with_free_subscription: tuple[User, Subscription]
+        self,
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Raises ValueError when Stripe not configured"""
-        user, subscription = test_user_with_free_subscription
+        organization, subscription, _ = test_org_with_free_subscription
 
         with patch.object(stripe_service, "stripe_client", None):
             with pytest.raises(ValueError, match="Stripe is not configured"):
-                await stripe_service.get_or_create_customer(user, subscription)
+                await stripe_service.get_or_create_customer(organization, subscription)
 
 
 class TestCheckoutSession:
@@ -62,12 +67,12 @@ class TestCheckoutSession:
     async def test_create_checkout_session_with_trial(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
         mock_stripe_customer,
         mock_stripe_checkout,
     ):
         """Creates session with trial_period_days and correct metadata"""
-        user, subscription = test_user_with_free_subscription
+        organization, subscription, _ = test_org_with_free_subscription
 
         mock_stripe_customer.return_value = MagicMock(id="cus_test_12345")
         mock_stripe_checkout.return_value = MagicMock(
@@ -77,11 +82,12 @@ class TestCheckoutSession:
 
         from app.settings import settings
 
-        with patch.object(settings, "STRIPE_PRICE_ID_PRO", "price_test_pro"), patch.object(
-            settings, "TRIAL_PERIOD_DAYS", 14
+        with (
+            patch.object(settings, "STRIPE_PRICE_ID_PRO", "price_test_pro"),
+            patch.object(settings, "TRIAL_PERIOD_DAYS", 14),
         ):
             result = await stripe_service.create_checkout_session(
-                user=user,
+                organization=organization,
                 subscription=subscription,
                 success_url="https://example.com/success",
                 cancel_url="https://example.com/cancel",
@@ -94,7 +100,7 @@ class TestCheckoutSession:
         call_kwargs = mock_stripe_checkout.call_args[1]
         assert "subscription_data" in call_kwargs
         assert "trial_period_days" in call_kwargs["subscription_data"]
-        assert call_kwargs["metadata"]["user_id"] == str(user.id)
+        assert call_kwargs["metadata"]["organization_id"] == str(organization.id)
         assert call_kwargs["metadata"]["subscription_id"] == str(subscription.id)
 
         assert subscription.stripe_customer_id == "cus_test_12345"
@@ -102,11 +108,11 @@ class TestCheckoutSession:
     async def test_create_checkout_session_without_trial(
         self,
         session: AsyncSession,
-        test_user_with_pro_subscription: tuple[User, Subscription],
+        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
         mock_stripe_checkout,
     ):
-        """Creates session without trial (existing PRO user)"""
-        user, subscription = test_user_with_pro_subscription
+        """Creates session without trial (existing PRO organization)"""
+        organization, subscription, _ = test_org_with_pro_subscription
 
         mock_stripe_checkout.return_value = MagicMock(
             id="cs_test_12345",
@@ -117,7 +123,7 @@ class TestCheckoutSession:
 
         with patch.object(settings, "STRIPE_PRICE_ID_PRO", "price_test_pro"):
             await stripe_service.create_checkout_session(
-                user=user,
+                organization=organization,
                 subscription=subscription,
                 success_url="https://example.com/success",
                 cancel_url="https://example.com/cancel",
@@ -130,11 +136,11 @@ class TestCheckoutSession:
 
     async def test_create_checkout_session_without_price_id(
         self,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
         mock_stripe_customer,
     ):
         """Raises ValueError when STRIPE_PRICE_ID_PRO not set"""
-        user, subscription = test_user_with_free_subscription
+        organization, subscription, _ = test_org_with_free_subscription
 
         mock_stripe_customer.return_value = MagicMock(id="cus_test_12345")
 
@@ -145,7 +151,7 @@ class TestCheckoutSession:
                 ValueError, match="STRIPE_PRICE_ID_PRO is not configured"
             ):
                 await stripe_service.create_checkout_session(
-                    user=user,
+                    organization=organization,
                     subscription=subscription,
                     success_url="https://example.com/success",
                     cancel_url="https://example.com/cancel",
@@ -157,11 +163,11 @@ class TestCustomerPortal:
 
     async def test_create_customer_portal_session(
         self,
-        test_user_with_pro_subscription: tuple[User, Subscription],
+        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
         mock_stripe_portal,
     ):
         """Creates portal session with correct customer_id and returns portal URL"""
-        _, subscription = test_user_with_pro_subscription
+        _, subscription, _ = test_org_with_pro_subscription
 
         mock_stripe_portal.return_value = MagicMock(
             url="https://billing.stripe.com/test",
@@ -180,10 +186,10 @@ class TestCustomerPortal:
 
     async def test_create_customer_portal_session_no_customer(
         self,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Raises ValueError when no stripe_customer_id"""
-        _, subscription = test_user_with_free_subscription
+        _, subscription, _ = test_org_with_free_subscription
 
         with pytest.raises(ValueError, match="No Stripe customer ID found"):
             await stripe_service.create_customer_portal_session(

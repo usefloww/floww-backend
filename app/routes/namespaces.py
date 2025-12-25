@@ -26,20 +26,17 @@ async def list_namespaces(current_user: CurrentUser, session: SessionDep):
 
     results = []
     for namespace in namespaces:
-        namespace_data = {"id": str(namespace.id)}
-
-        if namespace.user_owner_id:
-            # Personal namespace
-            namespace_data["user"] = {"id": str(namespace.user_owner_id)}
-        elif namespace.organization_owner_id and namespace.organization_owner:
-            # Organization namespace
-            namespace_data["organization"] = {
-                "id": str(namespace.organization_owner.id),
-                "name": namespace.organization_owner.name,
-                "display_name": namespace.organization_owner.display_name,
+        # All namespaces are now organization-owned
+        if namespace.organization_owner_id and namespace.organization_owner:
+            namespace_data = {
+                "id": str(namespace.id),
+                "organization": {
+                    "id": str(namespace.organization_owner.id),
+                    "name": namespace.organization_owner.name,
+                    "display_name": namespace.organization_owner.display_name,
+                },
             }
-
-        results.append(namespace_data)
+            results.append(namespace_data)
 
     return {
         "results": results,

@@ -6,7 +6,17 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
-from app.models import ExecutionLog, LogLevel, Namespace, Provider, Trigger, User, Workflow
+from app.models import (
+    LogLevel,
+    Namespace,
+    Organization,
+    OrganizationMember,
+    OrganizationRole,
+    Provider,
+    Trigger,
+    User,
+    Workflow,
+)
 from app.services.execution_history_service import (
     create_execution_record,
     get_execution_by_id,
@@ -27,8 +37,26 @@ async def create_test_user(session) -> User:
 
 
 async def create_test_workflow(session, user: User) -> Workflow:
-    """Create a test workflow with namespace."""
-    namespace = Namespace(user_owner_id=user.id)
+    """Create a test workflow with organization-owned namespace."""
+    # Create organization for the user
+    org = Organization(
+        name=f"test-org-{uuid4().hex[:8]}",
+        display_name="Test Organization",
+    )
+    session.add(org)
+    await session.flush()
+
+    # Add user as org member
+    org_member = OrganizationMember(
+        organization_id=org.id,
+        user_id=user.id,
+        role=OrganizationRole.OWNER,
+    )
+    session.add(org_member)
+    await session.flush()
+
+    # Create organization-owned namespace
+    namespace = Namespace(organization_owner_id=org.id)
     session.add(namespace)
     await session.flush()
 

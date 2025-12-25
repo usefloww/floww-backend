@@ -7,13 +7,23 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import IncomingWebhook, Namespace, Provider, Trigger, User, Workflow
+from app.models import (
+    IncomingWebhook,
+    Namespace,
+    Organization,
+    OrganizationMember,
+    OrganizationRole,
+    Provider,
+    Trigger,
+    User,
+    Workflow,
+)
 from app.services.trigger_service import TriggerService
 from app.utils.encryption import encrypt_secret
 
 
 async def create_test_namespace(session: AsyncSession) -> tuple[UUID, UUID]:
-    """Create a test user and namespace, returning (user_id, namespace_id)."""
+    """Create a test user and organization-owned namespace, returning (user_id, namespace_id)."""
     user = User(
         workos_user_id=f"test_user_{uuid4()}",
         email="test@example.com",
@@ -21,7 +31,25 @@ async def create_test_namespace(session: AsyncSession) -> tuple[UUID, UUID]:
     session.add(user)
     await session.flush()
 
-    namespace = Namespace(user_owner_id=user.id)
+    # Create organization for the user
+    org = Organization(
+        name=f"test-org-{uuid4().hex[:8]}",
+        display_name="Test Organization",
+    )
+    session.add(org)
+    await session.flush()
+
+    # Add user as org member
+    org_member = OrganizationMember(
+        organization_id=org.id,
+        user_id=user.id,
+        role=OrganizationRole.OWNER,
+    )
+    session.add(org_member)
+    await session.flush()
+
+    # Create organization-owned namespace
+    namespace = Namespace(organization_owner_id=org.id)
     session.add(namespace)
     await session.flush()
 

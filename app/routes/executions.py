@@ -194,9 +194,7 @@ async def get_execution_detail(
 
     # Verify user has access to the workflow
     query = UserAccessibleQuery(current_user.id).workflows()
-    result = await session.execute(
-        query.where(Workflow.id == execution.workflow_id)
-    )
+    result = await session.execute(query.where(Workflow.id == execution.workflow_id))
     workflow = result.scalar_one_or_none()
 
     if not workflow:

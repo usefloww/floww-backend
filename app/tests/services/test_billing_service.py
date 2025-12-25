@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
-from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,46 +9,51 @@ from app.models import (
     ExecutionHistory,
     ExecutionStatus,
     Namespace,
+    Organization,
     Subscription,
     SubscriptionStatus,
     SubscriptionTier,
-    User,
     Workflow,
 )
 from app.services import billing_service
-from app.services.user_service import get_or_create_user
 from app.settings import settings
 
 
 class TestSubscriptionCRUD:
     """Tests for subscription CRUD operations"""
 
-    async def test_get_or_create_subscription_new_user(
-        self, session: AsyncSession, test_user: User
+    async def test_get_or_create_subscription_new_organization(
+        self,
+        session: AsyncSession,
+        test_org: tuple,
     ):
-        """Creates new subscription for user without one"""
+        """Creates new subscription for organization without one"""
+        _, organization, _ = test_org
+
         subscription = await billing_service.get_or_create_subscription(
-            session, test_user
+            session, organization
         )
 
         assert subscription is not None
-        assert subscription.user_id == test_user.id
+        assert subscription.organization_id == organization.id
         assert subscription.tier == SubscriptionTier.FREE
         assert subscription.status == SubscriptionStatus.ACTIVE
 
     async def test_get_or_create_subscription_existing(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
-        """Returns existing subscription for user who has one"""
-        user, existing_subscription = test_user_with_free_subscription
+        """Returns existing subscription for organization who has one"""
+        organization, existing_subscription, _ = test_org_with_free_subscription
 
-        subscription = await billing_service.get_or_create_subscription(session, user)
+        subscription = await billing_service.get_or_create_subscription(
+            session, organization
+        )
 
         assert subscription.id == existing_subscription.id
         result = await session.execute(
-            select(Subscription).where(Subscription.user_id == user.id)
+            select(Subscription).where(Subscription.organization_id == organization.id)
         )
         all_subscriptions = result.scalars().all()
         assert len(all_subscriptions) == 1
@@ -59,9 +63,9 @@ class TestProSubscriptionStatus:
     """Tests for checking active hobby subscription status"""
 
     async def test_has_active_pro_subscription_free_tier(
-        self, test_user_with_free_subscription: tuple[User, Subscription]
+        self, test_user_with_free_subscription: tuple[Organization, Subscription]
     ):
-        """Returns False for FREE tier user"""
+        """Returns False for FREE tier organization"""
         _, subscription = test_user_with_free_subscription
 
         result = await billing_service.has_active_hobby_subscription(subscription)
@@ -69,7 +73,7 @@ class TestProSubscriptionStatus:
         assert result is False
 
     async def test_has_active_pro_subscription_active_pro(
-        self, test_user_with_pro_subscription: tuple[User, Subscription]
+        self, test_user_with_pro_subscription: tuple[Organization, Subscription]
     ):
         """Returns True for ACTIVE HOBBY subscription"""
         _, subscription = test_user_with_pro_subscription
@@ -79,7 +83,7 @@ class TestProSubscriptionStatus:
         assert result is True
 
     async def test_has_active_pro_subscription_trialing(
-        self, test_user_in_trial: tuple[User, Subscription]
+        self, test_user_in_trial: tuple[Organization, Subscription]
     ):
         """Returns True when in trial period (before trial_ends_at)"""
         _, subscription = test_user_in_trial
@@ -89,7 +93,7 @@ class TestProSubscriptionStatus:
         assert result is True
 
     async def test_has_active_pro_subscription_trial_expired(
-        self, test_user_trial_expired: tuple[User, Subscription]
+        self, test_user_trial_expired: tuple[Organization, Subscription]
     ):
         """Returns False when trial expired"""
         _, subscription = test_user_trial_expired
@@ -99,7 +103,7 @@ class TestProSubscriptionStatus:
         assert result is False
 
     async def test_has_active_pro_subscription_grace_period(
-        self, test_user_in_grace_period: tuple[User, Subscription]
+        self, test_user_in_grace_period: tuple[Organization, Subscription]
     ):
         """Returns True when PAST_DUE with valid grace period"""
         _, subscription = test_user_in_grace_period
@@ -109,7 +113,7 @@ class TestProSubscriptionStatus:
         assert result is True
 
     async def test_has_active_pro_subscription_grace_period_expired(
-        self, test_user_grace_expired: tuple[User, Subscription]
+        self, test_user_grace_expired: tuple[Organization, Subscription]
     ):
         """Returns False when grace period expired"""
         _, subscription = test_user_grace_expired
@@ -118,15 +122,16 @@ class TestProSubscriptionStatus:
 
         assert result is False
 
-    async def test_has_active_pro_subscription_canceled(self, session: AsyncSession):
+    async def test_has_active_pro_subscription_canceled(
+        self,
+        session: AsyncSession,
+        test_org: tuple,
+    ):
         """Returns False for CANCELED subscription"""
-        user = await get_or_create_user(
-            session, f"test_canceled_{uuid4()}", create=False
-        )
-        await session.flush()
+        _, organization, _ = test_org
 
         subscription = Subscription(
-            user_id=user.id,
+            organization_id=organization.id,
             tier=SubscriptionTier.HOBBY,
             status=SubscriptionStatus.CANCELED,
         )
@@ -142,7 +147,7 @@ class TestLimitChecking:
     """Tests for limit checking functions"""
 
     async def test_get_workflow_limit_free_tier(
-        self, test_user_with_free_subscription: tuple[User, Subscription]
+        self, test_user_with_free_subscription: tuple[Organization, Subscription]
     ):
         """Returns FREE_TIER_WORKFLOW_LIMIT (3)"""
         _, subscription = test_user_with_free_subscription
@@ -152,7 +157,7 @@ class TestLimitChecking:
         assert limit == settings.FREE_TIER_WORKFLOW_LIMIT
 
     async def test_get_workflow_limit_pro_tier(
-        self, test_user_with_pro_subscription: tuple[User, Subscription]
+        self, test_user_with_pro_subscription: tuple[Organization, Subscription]
     ):
         """Returns PRO_TIER_WORKFLOW_LIMIT (100)"""
         _, subscription = test_user_with_pro_subscription
@@ -162,7 +167,7 @@ class TestLimitChecking:
         assert limit == settings.PRO_TIER_WORKFLOW_LIMIT
 
     async def test_get_execution_limit_free_tier(
-        self, test_user_with_free_subscription: tuple[User, Subscription]
+        self, test_user_with_free_subscription: tuple[Organization, Subscription]
     ):
         """Returns FREE_TIER_EXECUTION_LIMIT_PER_MONTH (100)"""
         _, subscription = test_user_with_free_subscription
@@ -172,7 +177,7 @@ class TestLimitChecking:
         assert limit == settings.FREE_TIER_EXECUTION_LIMIT_PER_MONTH
 
     async def test_get_execution_limit_pro_tier(
-        self, test_user_with_pro_subscription: tuple[User, Subscription]
+        self, test_user_with_pro_subscription: tuple[Organization, Subscription]
     ):
         """Returns PRO_TIER_EXECUTION_LIMIT_PER_MONTH (10,000)"""
         _, subscription = test_user_with_pro_subscription
@@ -184,22 +189,19 @@ class TestLimitChecking:
     async def test_check_workflow_limit_under_limit(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
-        """Returns (True, "") when user has 2 workflows (limit 3)"""
-        user, _ = test_user_with_free_subscription
-
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
+        """Returns (True, "") when organization has 2 workflows (limit 3)"""
+        organization, _, namespace = test_org_with_free_subscription
 
         workflow1 = Workflow(name="workflow1", namespace_id=namespace.id)
         workflow2 = Workflow(name="workflow2", namespace_id=namespace.id)
         session.add_all([workflow1, workflow2])
         await session.flush()
 
-        can_create, message = await billing_service.check_workflow_limit(session, user)
+        can_create, message = await billing_service.check_workflow_limit(
+            session, organization
+        )
 
         assert can_create is True
         assert message == ""
@@ -207,22 +209,19 @@ class TestLimitChecking:
     async def test_check_workflow_limit_at_limit(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
-        """Returns (False, message) when user has 3 workflows (limit 3)"""
-        user, _ = test_user_with_free_subscription
-
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
+        """Returns (False, message) when organization has 3 workflows (limit 3)"""
+        organization, _, namespace = test_org_with_free_subscription
 
         for i in range(3):
             workflow = Workflow(name=f"workflow{i}", namespace_id=namespace.id)
             session.add(workflow)
         await session.flush()
 
-        can_create, message = await billing_service.check_workflow_limit(session, user)
+        can_create, message = await billing_service.check_workflow_limit(
+            session, organization
+        )
 
         assert can_create is False
         assert "limit" in message.lower()
@@ -231,15 +230,10 @@ class TestLimitChecking:
     async def test_check_workflow_limit_disabled_when_not_cloud(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Returns (True, "") when IS_CLOUD=False regardless of limit"""
-        user, _ = test_user_with_free_subscription
-
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
+        organization, _, namespace = test_org_with_free_subscription
 
         for i in range(10):
             workflow = Workflow(name=f"workflow{i}", namespace_id=namespace.id)
@@ -248,7 +242,7 @@ class TestLimitChecking:
 
         with patch.object(settings, "IS_CLOUD", False):
             can_create, message = await billing_service.check_workflow_limit(
-                session, user
+                session, organization
             )
 
         assert can_create is True
@@ -257,15 +251,10 @@ class TestLimitChecking:
     async def test_check_execution_limit_under_limit(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
-        """Returns (True, "") when user has 50 executions this month"""
-        user, _ = test_user_with_free_subscription
-
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
+        """Returns (True, "") when organization has 50 executions this month"""
+        organization, _, namespace = test_org_with_free_subscription
 
         workflow = Workflow(name="test_workflow", namespace_id=namespace.id)
         session.add(workflow)
@@ -282,7 +271,7 @@ class TestLimitChecking:
         await session.flush()
 
         can_execute, message = await billing_service.check_execution_limit(
-            session, user
+            session, organization
         )
 
         assert can_execute is True
@@ -291,15 +280,10 @@ class TestLimitChecking:
     async def test_check_execution_limit_at_limit(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
-        """Returns (False, message) when user has 100 executions this month"""
-        user, _ = test_user_with_free_subscription
-
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
+        """Returns (False, message) when organization has 100 executions this month"""
+        organization, _, namespace = test_org_with_free_subscription
 
         workflow = Workflow(name="test_workflow", namespace_id=namespace.id)
         session.add(workflow)
@@ -316,7 +300,7 @@ class TestLimitChecking:
         await session.flush()
 
         can_execute, message = await billing_service.check_execution_limit(
-            session, user
+            session, organization
         )
 
         assert can_execute is False
@@ -326,15 +310,10 @@ class TestLimitChecking:
     async def test_check_execution_limit_new_month_resets(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Executions from previous month don't count"""
-        user, _ = test_user_with_free_subscription
-
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
+        organization, _, namespace = test_org_with_free_subscription
 
         workflow = Workflow(name="test_workflow", namespace_id=namespace.id)
         session.add(workflow)
@@ -351,7 +330,7 @@ class TestLimitChecking:
         await session.flush()
 
         can_execute, message = await billing_service.check_execution_limit(
-            session, user
+            session, organization
         )
 
         assert can_execute is True
@@ -360,15 +339,10 @@ class TestLimitChecking:
     async def test_check_execution_limit_only_counts_valid_statuses(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Only counts COMPLETED, STARTED, RECEIVED; not FAILED, TIMEOUT, NO_DEPLOYMENT"""
-        user, _ = test_user_with_free_subscription
-
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
+        organization, _, namespace = test_org_with_free_subscription
 
         workflow = Workflow(name="test_workflow", namespace_id=namespace.id)
         session.add(workflow)
@@ -394,7 +368,7 @@ class TestLimitChecking:
         await session.flush()
 
         can_execute, message = await billing_service.check_execution_limit(
-            session, user
+            session, organization
         )
 
         assert can_execute is True
@@ -406,10 +380,10 @@ class TestTrialAndGracePeriod:
     async def test_start_trial(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Sets tier to PRO, status to TRIALING, trial_ends_at to now + 14 days"""
-        _, subscription = test_user_with_free_subscription
+        _, subscription, _ = test_org_with_free_subscription
 
         before = datetime.now(timezone.utc)
         await billing_service.start_trial(session, subscription)
@@ -427,10 +401,10 @@ class TestTrialAndGracePeriod:
     async def test_start_grace_period(
         self,
         session: AsyncSession,
-        test_user_with_pro_subscription: tuple[User, Subscription],
+        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Sets status to PAST_DUE, grace_period_ends_at to now + 7 days"""
-        _, subscription = test_user_with_pro_subscription
+        _, subscription, _ = test_org_with_pro_subscription
 
         before = datetime.now(timezone.utc)
         await billing_service.start_grace_period(session, subscription)
@@ -447,10 +421,10 @@ class TestTrialAndGracePeriod:
     async def test_activate_pro_subscription(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Sets tier to PRO, status to ACTIVE, clears trial/grace, sets Stripe fields"""
-        _, subscription = test_user_with_free_subscription
+        _, subscription, _ = test_org_with_free_subscription
 
         subscription.trial_ends_at = datetime.now(timezone.utc) + timedelta(days=14)
         subscription.grace_period_ends_at = datetime.now(timezone.utc) + timedelta(
@@ -475,10 +449,10 @@ class TestTrialAndGracePeriod:
     async def test_downgrade_to_free(
         self,
         session: AsyncSession,
-        test_user_with_pro_subscription: tuple[User, Subscription],
+        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Sets tier to FREE, status to ACTIVE, clears all Stripe-related fields"""
-        _, subscription = test_user_with_pro_subscription
+        _, subscription, _ = test_org_with_pro_subscription
 
         await billing_service.downgrade_to_free(session, subscription)
 
@@ -493,10 +467,10 @@ class TestTrialAndGracePeriod:
     async def test_cancel_subscription_immediate(
         self,
         session: AsyncSession,
-        test_user_with_pro_subscription: tuple[User, Subscription],
+        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Immediately downgrades to FREE tier and clears Stripe fields"""
-        _, subscription = test_user_with_pro_subscription
+        _, subscription, _ = test_org_with_pro_subscription
 
         await billing_service.cancel_subscription(session, subscription, immediate=True)
 
@@ -509,10 +483,10 @@ class TestTrialAndGracePeriod:
     async def test_cancel_subscription_at_period_end(
         self,
         session: AsyncSession,
-        test_user_with_pro_subscription: tuple[User, Subscription],
+        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Sets cancel_at_period_end flag, does not immediately change tier"""
-        _, subscription = test_user_with_pro_subscription
+        _, subscription, _ = test_org_with_pro_subscription
         original_tier = subscription.tier
 
         await billing_service.cancel_subscription(
@@ -529,10 +503,10 @@ class TestWebhookEventHandlers:
     async def test_handle_checkout_completed(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Updates subscription with stripe_customer_id and creates BillingEvent"""
-        _, subscription = test_user_with_free_subscription
+        _, subscription, _ = test_org_with_free_subscription
 
         event_data = {
             "customer": "cus_test_12345",
@@ -574,10 +548,10 @@ class TestWebhookEventHandlers:
     async def test_handle_subscription_created_trialing(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Starts trial period and sets stripe_subscription_id"""
-        _, subscription = test_user_with_free_subscription
+        _, subscription, _ = test_org_with_free_subscription
 
         event_data = {
             "id": "sub_test_12345",
@@ -607,10 +581,10 @@ class TestWebhookEventHandlers:
     async def test_handle_subscription_created_active(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Activates hobby subscription without trial"""
-        _, subscription = test_user_with_free_subscription
+        _, subscription, _ = test_org_with_free_subscription
 
         event_data = {
             "id": "sub_test_12345",
@@ -640,10 +614,10 @@ class TestWebhookEventHandlers:
     async def test_handle_subscription_updated_to_active(
         self,
         session: AsyncSession,
-        test_user_in_grace_period: tuple[User, Subscription],
+        test_org_in_grace_period: tuple[Organization, Subscription, Namespace],
     ):
         """Reactivates from PAST_DUE and clears grace_period_ends_at"""
-        _, subscription = test_user_in_grace_period
+        _, subscription, _ = test_org_in_grace_period
 
         event_data = {
             "id": subscription.stripe_subscription_id,
@@ -671,10 +645,10 @@ class TestWebhookEventHandlers:
     async def test_handle_subscription_updated_to_canceled(
         self,
         session: AsyncSession,
-        test_user_with_pro_subscription: tuple[User, Subscription],
+        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Downgrades to FREE tier"""
-        _, subscription = test_user_with_pro_subscription
+        _, subscription, _ = test_org_with_pro_subscription
 
         event_data = {
             "id": subscription.stripe_subscription_id,
@@ -700,10 +674,10 @@ class TestWebhookEventHandlers:
     async def test_handle_subscription_updated_cancel_at_period_end(
         self,
         session: AsyncSession,
-        test_user_with_pro_subscription: tuple[User, Subscription],
+        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Sets cancel_at_period_end flag"""
-        _, subscription = test_user_with_pro_subscription
+        _, subscription, _ = test_org_with_pro_subscription
 
         event_data = {
             "id": subscription.stripe_subscription_id,
@@ -730,10 +704,10 @@ class TestWebhookEventHandlers:
     async def test_handle_subscription_deleted(
         self,
         session: AsyncSession,
-        test_user_with_pro_subscription: tuple[User, Subscription],
+        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Downgrades to FREE tier and creates BillingEvent"""
-        _, subscription = test_user_with_pro_subscription
+        _, subscription, _ = test_org_with_pro_subscription
 
         event_data = {"id": subscription.stripe_subscription_id}
         stripe_event_id = "evt_test_12345"
@@ -761,10 +735,10 @@ class TestWebhookEventHandlers:
     async def test_handle_payment_failed_event(
         self,
         session: AsyncSession,
-        test_user_with_pro_subscription: tuple[User, Subscription],
+        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Starts grace period and sets status to PAST_DUE"""
-        _, subscription = test_user_with_pro_subscription
+        _, subscription, _ = test_org_with_pro_subscription
 
         event_data = {"subscription": subscription.stripe_subscription_id}
         stripe_event_id = "evt_test_12345"
@@ -785,10 +759,10 @@ class TestWebhookEventHandlers:
     async def test_handle_payment_succeeded_event_from_past_due(
         self,
         session: AsyncSession,
-        test_user_in_grace_period: tuple[User, Subscription],
+        test_org_in_grace_period: tuple[Organization, Subscription, Namespace],
     ):
         """Reactivates subscription and clears grace period"""
-        _, subscription = test_user_in_grace_period
+        _, subscription, _ = test_org_in_grace_period
 
         event_data = {"subscription": subscription.stripe_subscription_id}
         stripe_event_id = "evt_test_12345"
@@ -809,10 +783,10 @@ class TestWebhookEventHandlers:
     async def test_handle_payment_succeeded_event_already_active(
         self,
         session: AsyncSession,
-        test_user_with_pro_subscription: tuple[User, Subscription],
+        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """No status change needed"""
-        _, subscription = test_user_with_pro_subscription
+        _, subscription, _ = test_org_with_pro_subscription
 
         event_data = {"subscription": subscription.stripe_subscription_id}
         stripe_event_id = "evt_test_12345"

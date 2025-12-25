@@ -214,7 +214,4 @@ async def test_webhook_no_active_deployment(
     assert len(executions) == 1
     assert executions[0].status == ExecutionStatus.NO_DEPLOYMENT
     assert executions[0].trigger_id == incoming_webhook.trigger.id
-    assert (
-        executions[0].error_message
-        == "No active deployment found for this workflow"
-    )
+    assert executions[0].error_message == "No active deployment found for this workflow"

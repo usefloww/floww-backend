@@ -1,6 +1,6 @@
 import structlog
 
-from app.models import Subscription, User, SubscriptionTier
+from app.models import Organization, Subscription, SubscriptionTier
 from app.settings import settings
 
 logger = structlog.stdlib.get_logger(__name__)
@@ -16,9 +16,11 @@ except ImportError:
     logger.debug("Stripe SDK not installed - billing features will not be available")
 
 
-async def get_or_create_customer(user: User, subscription: Subscription) -> str:
+async def get_or_create_customer(
+    organization: Organization, subscription: Subscription
+) -> str:
     """
-    Get or create a Stripe customer for a user.
+    Get or create a Stripe customer for an organization.
     returns:
         str: Stripe customer ID
     """
@@ -29,17 +31,16 @@ async def get_or_create_customer(user: User, subscription: Subscription) -> str:
         return subscription.stripe_customer_id
 
     customer = stripe_client.Customer.create(
-        email=user.email,
-        name=f"{user.first_name or ''} {user.last_name or ''}".strip() or user.email,
+        name=organization.display_name,
         metadata={
-            "user_id": str(user.id),
+            "organization_id": str(organization.id),
             "subscription_id": str(subscription.id),
         },
     )
 
     logger.info(
         "Created Stripe customer",
-        user_id=user.id,
+        organization_id=organization.id,
         customer_id=customer.id,
     )
 
@@ -47,14 +48,14 @@ async def get_or_create_customer(user: User, subscription: Subscription) -> str:
 
 
 async def create_checkout_session(
-    user: User,
+    organization: Organization,
     subscription: Subscription,
     success_url: str,
     cancel_url: str,
     session_db=None,
 ) -> dict:
     """
-    Create a Stripe Checkout session for upgrading to Pro.
+    Create a Stripe Checkout session for upgrading to Hobby.
     Returns the session data including the checkout URL.
 
     If session_db is provided, updates the subscription with the customer_id.
@@ -65,7 +66,7 @@ async def create_checkout_session(
     if not settings.STRIPE_PRICE_ID_PRO:
         raise ValueError("STRIPE_PRICE_ID_PRO is not configured")
 
-    customer_id = await get_or_create_customer(user, subscription)
+    customer_id = await get_or_create_customer(organization, subscription)
 
     # Update subscription with customer_id if not already set
     if not subscription.stripe_customer_id:
@@ -91,12 +92,12 @@ async def create_checkout_session(
         "success_url": success_url,
         "cancel_url": cancel_url,
         "metadata": {
-            "user_id": str(user.id),
+            "organization_id": str(organization.id),
             "subscription_id": str(subscription.id),
         },
         "subscription_data": {
             "metadata": {
-                "user_id": str(user.id),
+                "organization_id": str(organization.id),
                 "subscription_id": str(subscription.id),
             },
         },
@@ -111,7 +112,7 @@ async def create_checkout_session(
 
     logger.info(
         "Created checkout session",
-        user_id=user.id,
+        organization_id=organization.id,
         session_id=session.id,
         has_trial=has_trial,
     )

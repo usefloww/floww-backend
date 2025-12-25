@@ -3,59 +3,48 @@ from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps.billing import (
-    check_can_create_workflow,
-    check_can_execute_workflow,
-    require_pro_tier,
+    check_can_create_workflow_in_namespace,
+    check_can_execute_workflow_in_org,
+    require_pro_tier_for_org,
 )
 from app.models import (
     ExecutionHistory,
     ExecutionStatus,
     Namespace,
+    Organization,
     Subscription,
-    User,
     Workflow,
 )
 from app.settings import settings
 
 
 class TestCheckCanCreateWorkflow:
-    """Tests for check_can_create_workflow dependency"""
+    """Tests for check_can_create_workflow_in_namespace dependency"""
 
     async def test_check_can_create_workflow_allowed(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Passes when under limit"""
-        user, _ = test_user_with_free_subscription
-
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
+        _, _, namespace = test_org_with_free_subscription
 
         workflow = Workflow(name="workflow1", namespace_id=namespace.id)
         session.add(workflow)
         await session.flush()
 
-        await check_can_create_workflow(user, session)
+        await check_can_create_workflow_in_namespace(session, namespace.id)
 
     async def test_check_can_create_workflow_blocked(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Raises HTTPException(402) when at limit"""
-        user, _ = test_user_with_free_subscription
-
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
+        _, _, namespace = test_org_with_free_subscription
 
         for i in range(3):
             workflow = Workflow(name=f"workflow{i}", namespace_id=namespace.id)
@@ -63,7 +52,7 @@ class TestCheckCanCreateWorkflow:
         await session.flush()
 
         with pytest.raises(HTTPException) as exc_info:
-            await check_can_create_workflow(user, session)
+            await check_can_create_workflow_in_namespace(session, namespace.id)
 
         assert exc_info.value.status_code == 402
         assert "limit" in str(exc_info.value.detail).lower()
@@ -71,15 +60,10 @@ class TestCheckCanCreateWorkflow:
     async def test_check_can_create_workflow_disabled(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Always passes when IS_CLOUD=False"""
-        user, _ = test_user_with_free_subscription
-
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
+        _, _, namespace = test_org_with_free_subscription
 
         for i in range(10):
             workflow = Workflow(name=f"workflow{i}", namespace_id=namespace.id)
@@ -87,24 +71,19 @@ class TestCheckCanCreateWorkflow:
         await session.flush()
 
         with patch.object(settings, "IS_CLOUD", False):
-            await check_can_create_workflow(user, session)
+            await check_can_create_workflow_in_namespace(session, namespace.id)
 
 
 class TestCheckCanExecuteWorkflow:
-    """Tests for check_can_execute_workflow dependency"""
+    """Tests for check_can_execute_workflow_in_org dependency"""
 
     async def test_check_can_execute_workflow_allowed(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Passes when under limit"""
-        user, _ = test_user_with_free_subscription
-
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
+        organization, _, namespace = test_org_with_free_subscription
 
         workflow = Workflow(name="test_workflow", namespace_id=namespace.id)
         session.add(workflow)
@@ -120,20 +99,15 @@ class TestCheckCanExecuteWorkflow:
             session.add(execution)
         await session.flush()
 
-        await check_can_execute_workflow(user, session)
+        await check_can_execute_workflow_in_org(session, organization)
 
     async def test_check_can_execute_workflow_blocked(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
         """Raises HTTPException(402) when at limit"""
-        user, _ = test_user_with_free_subscription
-
-        result = await session.execute(
-            select(Namespace).where(Namespace.user_owner_id == user.id)
-        )
-        namespace = result.scalar_one()
+        organization, _, namespace = test_org_with_free_subscription
 
         workflow = Workflow(name="test_workflow", namespace_id=namespace.id)
         session.add(workflow)
@@ -150,35 +124,35 @@ class TestCheckCanExecuteWorkflow:
         await session.flush()
 
         with pytest.raises(HTTPException) as exc_info:
-            await check_can_execute_workflow(user, session)
+            await check_can_execute_workflow_in_org(session, organization)
 
         assert exc_info.value.status_code == 402
         assert "limit" in str(exc_info.value.detail).lower()
 
 
 class TestRequireProTier:
-    """Tests for require_pro_tier dependency"""
+    """Tests for require_pro_tier_for_org dependency"""
 
     async def test_require_pro_tier_allowed(
         self,
         session: AsyncSession,
-        test_user_with_pro_subscription: tuple[User, Subscription],
+        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
     ):
-        """Passes for pro users"""
-        user, _ = test_user_with_pro_subscription
+        """Passes for pro organizations"""
+        organization, _, _ = test_org_with_pro_subscription
 
-        await require_pro_tier(user, session)
+        await require_pro_tier_for_org(session, organization)
 
     async def test_require_pro_tier_blocked(
         self,
         session: AsyncSession,
-        test_user_with_free_subscription: tuple[User, Subscription],
+        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
     ):
-        """Raises HTTPException(402) for free users"""
-        user, _ = test_user_with_free_subscription
+        """Raises HTTPException(402) for free organizations"""
+        organization, _, _ = test_org_with_free_subscription
 
         with pytest.raises(HTTPException) as exc_info:
-            await require_pro_tier(user, session)
+            await require_pro_tier_for_org(session, organization)
 
         assert exc_info.value.status_code == 402
         assert "Hobby subscription required" in str(exc_info.value.detail)

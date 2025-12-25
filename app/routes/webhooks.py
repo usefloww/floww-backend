@@ -30,7 +30,7 @@ async def _check_execution_limit_for_workflow(
     workflow_id: UUID,
 ) -> None:
     """
-    Check if the workflow owner has reached their execution limit.
+    Check if the workflow's organization has reached their execution limit.
     Raises HTTPException if limit is reached.
     """
     if not settings.IS_CLOUD:
@@ -38,21 +38,23 @@ async def _check_execution_limit_for_workflow(
 
     result = await session.execute(
         select(Workflow)
-        .options(joinedload(Workflow.namespace).joinedload(Namespace.user_owner))
+        .options(
+            joinedload(Workflow.namespace).joinedload(Namespace.organization_owner)
+        )
         .where(Workflow.id == workflow_id)
     )
     workflow = result.scalar_one_or_none()
 
-    if workflow and workflow.namespace and workflow.namespace.user_owner:
-        user = workflow.namespace.user_owner
+    if workflow and workflow.namespace and workflow.namespace.organization_owner:
+        organization = workflow.namespace.organization_owner
         can_execute, message = await billing_service.check_execution_limit(
-            session, user
+            session, organization
         )
 
         if not can_execute:
             logger.warning(
-                "Execution limit reached for user",
-                user_id=user.id,
+                "Execution limit reached for organization",
+                organization_id=organization.id,
                 workflow_id=workflow_id,
             )
             raise HTTPException(

@@ -149,9 +149,6 @@ class User(Base):
     deployments: Mapped[list["WorkflowDeployment"]] = relationship(
         foreign_keys="WorkflowDeployment.deployed_by_id", back_populates="deployed_by"
     )
-    subscription: Mapped[Optional["Subscription"]] = relationship(
-        back_populates="user", uselist=False, cascade="all, delete-orphan"
-    )
 
     def __repr__(self):
         return self._repr(
@@ -244,8 +241,10 @@ class Subscription(Base):
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
     )
-    user_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        unique=True,
     )
     stripe_customer_id: Mapped[Optional[str]] = mapped_column(
         String(255), unique=True, nullable=True
@@ -277,16 +276,19 @@ class Subscription(Base):
     )
 
     # Relationships
-    user: Mapped["User"] = relationship(back_populates="subscription")
+    organization: Mapped["Organization"] = relationship(back_populates="subscription")
     billing_events: Mapped[list["BillingEvent"]] = relationship(
         back_populates="subscription", cascade="all, delete-orphan"
     )
 
-    __table_args__ = (Index("idx_subscriptions_user", "user_id"),)
+    __table_args__ = (Index("idx_subscriptions_organization", "organization_id"),)
 
     def __repr__(self):
         return self._repr(
-            id=self.id, user_id=self.user_id, tier=self.tier, status=self.status
+            id=self.id,
+            organization_id=self.organization_id,
+            tier=self.tier,
+            status=self.status,
         )
 
 
@@ -345,6 +347,9 @@ class Organization(Base):
     )
     owned_namespaces: Mapped[list["Namespace"]] = relationship(
         back_populates="organization_owner", cascade="all, delete-orphan"
+    )
+    subscription: Mapped[Optional["Subscription"]] = relationship(
+        back_populates="organization", uselist=False, cascade="all, delete-orphan"
     )
 
     def __repr__(self):

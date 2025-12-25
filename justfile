@@ -33,3 +33,9 @@ test-ai-generator:
     source .venv/bin/activate
     export PYTHONPATH=$(pwd)
     python -m app.packages.ai_generator.ai_generator
+
+prod-shell:
+    #!/bin/bash
+    source .venv/bin/activate
+    export PYTHONPATH=$(pwd)
+    python -m app.utils.prod_shell

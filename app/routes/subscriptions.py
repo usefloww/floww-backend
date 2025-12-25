@@ -2,26 +2,29 @@
 Subscription and billing API endpoints.
 
 Provides endpoints for:
-- Getting current subscription status
+- Getting organization subscription status
 - Getting usage statistics
 - Creating checkout sessions
 - Creating customer portal sessions
 """
 
 from typing import Optional
+from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep, TransactionSessionDep
+from app.models import Organization, OrganizationMember
 from app.services import billing_service, stripe_service
 from app.settings import settings
 
 logger = structlog.stdlib.get_logger(__name__)
 
-router = APIRouter(prefix="/subscriptions", tags=["Subscriptions"])
+router = APIRouter(prefix="/organizations", tags=["Subscriptions"])
 
 
 class SubscriptionResponse(BaseModel):
@@ -59,20 +62,50 @@ class CustomerPortalResponse(BaseModel):
     url: str
 
 
-@router.get("/me", response_model=SubscriptionResponse)
-async def get_my_subscription(
+async def _get_organization_with_access(
+    session: SessionDep,
+    organization_id: UUID,
+    user_id: UUID,
+) -> Organization:
+    """Get organization if user has access."""
+    result = await session.execute(
+        select(Organization)
+        .join(OrganizationMember)
+        .where(
+            Organization.id == organization_id,
+            OrganizationMember.user_id == user_id,
+        )
+    )
+    organization = result.scalar_one_or_none()
+
+    if not organization:
+        raise HTTPException(
+            status_code=404,
+            detail="Organization not found",
+        )
+
+    return organization
+
+
+@router.get("/{organization_id}/subscription", response_model=SubscriptionResponse)
+async def get_organization_subscription(
+    organization_id: UUID,
     current_user: CurrentUser,
     session: SessionDep,
 ):
-    """Get the current user's subscription information"""
+    """Get the organization's subscription information"""
     if not settings.IS_CLOUD:
         raise HTTPException(
             status_code=404,
             detail="Billing is not enabled in this environment",
         )
 
+    organization = await _get_organization_with_access(
+        session, organization_id, current_user.id
+    )
+
     subscription = await billing_service.get_or_create_subscription(
-        session, current_user
+        session, organization
     )
     has_active_pro = await billing_service.has_active_hobby_subscription(subscription)
 
@@ -93,27 +126,32 @@ async def get_my_subscription(
     )
 
 
-@router.get("/usage", response_model=UsageResponse)
-async def get_my_usage(
+@router.get("/{organization_id}/usage", response_model=UsageResponse)
+async def get_organization_usage(
+    organization_id: UUID,
     current_user: CurrentUser,
     session: SessionDep,
 ):
-    """Get the current user's usage statistics"""
+    """Get the organization's usage statistics"""
     if not settings.IS_CLOUD:
         raise HTTPException(
             status_code=404,
             detail="Billing is not enabled in this environment",
         )
 
-    subscription = await billing_service.get_or_create_subscription(
-        session, current_user
+    organization = await _get_organization_with_access(
+        session, organization_id, current_user.id
     )
 
-    workflows_count = await billing_service.get_workflow_count(session, current_user.id)
+    subscription = await billing_service.get_or_create_subscription(
+        session, organization
+    )
+
+    workflows_count = await billing_service.get_workflow_count(session, organization.id)
     workflows_limit = await billing_service.get_workflow_limit(subscription)
 
     executions_count = await billing_service.get_execution_count_this_month(
-        session, current_user.id
+        session, organization.id
     )
     executions_limit = await billing_service.get_execution_limit(subscription)
 
@@ -125,33 +163,38 @@ async def get_my_usage(
     )
 
 
-@router.post("/checkout", response_model=CheckoutSessionResponse)
+@router.post("/{organization_id}/checkout", response_model=CheckoutSessionResponse)
 async def create_checkout_session(
+    organization_id: UUID,
     current_user: CurrentUser,
     session: TransactionSessionDep,
     body: CheckoutSessionRequest,
 ):
-    """Create a Stripe checkout session for upgrading to Pro"""
+    """Create a Stripe checkout session for upgrading to Hobby"""
     if not settings.IS_CLOUD:
         raise HTTPException(
             status_code=404,
             detail="Billing is not enabled in this environment",
         )
 
+    organization = await _get_organization_with_access(
+        session, organization_id, current_user.id
+    )
+
     subscription = await billing_service.get_or_create_subscription(
-        session, current_user
+        session, organization
     )
 
     has_active_pro = await billing_service.has_active_hobby_subscription(subscription)
     if has_active_pro:
         raise HTTPException(
             status_code=400,
-            detail="You already have an active Hobby subscription",
+            detail="This organization already has an active Hobby subscription",
         )
 
     try:
         checkout_session = await stripe_service.create_checkout_session(
-            user=current_user,
+            organization=organization,
             subscription=subscription,
             success_url=body.success_url,
             cancel_url=body.cancel_url,
@@ -164,13 +207,16 @@ async def create_checkout_session(
         )
     except Exception as e:
         logger.error(
-            "Failed to create checkout session", error=str(e), user_id=current_user.id
+            "Failed to create checkout session",
+            error=str(e),
+            organization_id=organization_id,
         )
         raise HTTPException(status_code=500, detail="Failed to create checkout session")
 
 
-@router.post("/portal", response_model=CustomerPortalResponse)
+@router.post("/{organization_id}/portal", response_model=CustomerPortalResponse)
 async def create_customer_portal_session(
+    organization_id: UUID,
     current_user: CurrentUser,
     session: TransactionSessionDep,
     body: CustomerPortalRequest,
@@ -182,8 +228,12 @@ async def create_customer_portal_session(
             detail="Billing is not enabled in this environment",
         )
 
+    organization = await _get_organization_with_access(
+        session, organization_id, current_user.id
+    )
+
     subscription = await billing_service.get_or_create_subscription(
-        session, current_user
+        session, organization
     )
 
     if not subscription.stripe_customer_id:
@@ -201,6 +251,8 @@ async def create_customer_portal_session(
         return CustomerPortalResponse(url=portal_session["url"])
     except Exception as e:
         logger.error(
-            "Failed to create portal session", error=str(e), user_id=current_user.id
+            "Failed to create portal session",
+            error=str(e),
+            organization_id=organization_id,
         )
         raise HTTPException(status_code=500, detail="Failed to create portal session")

@@ -17,6 +17,91 @@ from app.utils.single_org import get_default_organization_id
 
 logger = structlog.stdlib.get_logger(__name__)
 
+
+def _generate_org_name(
+    first_name: str | None,
+    last_name: str | None,
+    email: str | None,
+    username: str | None,
+    user_id: str,
+) -> tuple[str, str]:
+    """Generate organization name and display_name from user info."""
+    import re
+
+    # Generate display name
+    if first_name and last_name:
+        display_name = f"{first_name} {last_name}"
+    elif first_name:
+        display_name = first_name
+    elif last_name:
+        display_name = last_name
+    elif username:
+        display_name = username
+    elif email:
+        display_name = email.split("@")[0]
+    else:
+        display_name = f"User {str(user_id)[:8]}"
+
+    # Create slug from display name
+    name = re.sub(r"[^a-z0-9]+", "-", display_name.lower()).strip("-")
+    if not name:
+        name = f"user-{str(user_id)[:8]}"
+
+    return name, display_name
+
+
+async def create_user_organization(
+    session: SessionDep,
+    user: User,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    email: str | None = None,
+    username: str | None = None,
+) -> tuple[Organization, Namespace]:
+    """
+    Create an organization and namespace for a new user.
+
+    Returns:
+        Tuple of (Organization, Namespace)
+    """
+    base_name, display_name = _generate_org_name(
+        first_name, last_name, email, username, str(user.id)
+    )
+
+    # Ensure uniqueness by checking and appending suffix
+    name = base_name
+    suffix = 0
+    while True:
+        existing = await session.execute(
+            select(Organization).where(Organization.name == name)
+        )
+        if not existing.scalar_one_or_none():
+            break
+        suffix += 1
+        name = f"{base_name}-{suffix}"
+
+    # Create organization
+    org = Organization(name=name, display_name=display_name)
+    session.add(org)
+    await session.flush()
+
+    # Create organization membership (owner)
+    org_member = OrganizationMember(
+        organization_id=org.id,
+        user_id=user.id,
+        role=OrganizationRole.OWNER,
+    )
+    session.add(org_member)
+    await session.flush()
+
+    # Create namespace for the organization
+    namespace = Namespace(organization_owner_id=org.id)
+    session.add(namespace)
+    await session.flush()
+
+    return org, namespace
+
+
 # Initialize WorkOS clients as optional feature for user sync
 # This is independent of the authentication method (which uses OIDC)
 workos_client = None
@@ -66,57 +151,54 @@ async def get_or_create_user(
 
         # Handle namespace and organization membership based on mode
         if settings.SINGLE_ORG_MODE:
-            # Single-org mode: skip personal namespace, add user to default org
-            if not settings.SINGLE_ORG_ALLOW_PERSONAL_NAMESPACES:
-                # Get the default organization
-                default_org_id = await get_default_organization_id(session)
+            # Single-org mode: add user to default org
+            default_org_id = await get_default_organization_id(session)
 
-                # Check if user is already a member (shouldn't happen for new user, but be safe)
-                existing_membership = await session.execute(
-                    select(OrganizationMember).where(
-                        OrganizationMember.organization_id == default_org_id,
-                        OrganizationMember.user_id == user.id,
-                    )
+            # Check if user is already a member (shouldn't happen for new user, but be safe)
+            existing_membership = await session.execute(
+                select(OrganizationMember).where(
+                    OrganizationMember.organization_id == default_org_id,
+                    OrganizationMember.user_id == user.id,
                 )
-                if not existing_membership.scalar_one_or_none():
-                    # Determine role based on whether this is the first user
-                    # Check total user count (excluding current user being created)
-                    user_count_result = await session.execute(
-                        select(func.count(User.id))
-                    )
-                    user_count = user_count_result.scalar()
+            )
+            if not existing_membership.scalar_one_or_none():
+                # Determine role based on whether this is the first user
+                # Check total user count (excluding current user being created)
+                user_count_result = await session.execute(select(func.count(User.id)))
+                user_count = user_count_result.scalar()
 
-                    # First user (user_count == 1, since we already flushed the current user) gets OWNER
-                    # All subsequent users get MEMBER
-                    role = (
-                        OrganizationRole.OWNER
-                        if user_count == 1
-                        else OrganizationRole.MEMBER
-                    )
+                # First user (user_count == 1, since we already flushed the current user) gets OWNER
+                # All subsequent users get MEMBER
+                role = (
+                    OrganizationRole.OWNER
+                    if user_count == 1
+                    else OrganizationRole.MEMBER
+                )
 
-                    org_member = OrganizationMember(
-                        organization_id=default_org_id,
-                        user_id=user.id,
-                        role=role,
-                    )
-                    session.add(org_member)
-                    await session.flush()
-                    logger.info(
-                        "Added user to default organization",
-                        user_id=user.id,
-                        organization_id=default_org_id,
-                        role=role,
-                    )
-            else:
-                # Create personal namespace even in single-org mode (if configured)
-                namespace = Namespace(user_owner_id=user.id)
-                session.add(namespace)
+                org_member = OrganizationMember(
+                    organization_id=default_org_id,
+                    user_id=user.id,
+                    role=role,
+                )
+                session.add(org_member)
                 await session.flush()
+                logger.info(
+                    "Added user to default organization",
+                    user_id=user.id,
+                    organization_id=default_org_id,
+                    role=role,
+                )
         else:
-            # Multi-tenant mode: create personal namespace (original behavior)
-            namespace = Namespace(user_owner_id=user.id)
-            session.add(namespace)
-            await session.flush()
+            # Multi-tenant mode: create organization + namespace for user
+            org, namespace = await create_user_organization(
+                session, user, first_name, last_name, email
+            )
+            logger.info(
+                "Created organization for user",
+                user_id=user.id,
+                organization_id=org.id,
+                namespace_id=namespace.id,
+            )
 
         if create:
             await session.commit()
@@ -344,48 +426,44 @@ async def create_password_user(
 
     # Handle namespace and organization membership based on mode
     if settings.SINGLE_ORG_MODE:
-        # Single-org mode: skip personal namespace, add user to default org
-        if not settings.SINGLE_ORG_ALLOW_PERSONAL_NAMESPACES:
-            # Get the default organization
-            from app.utils.single_org import get_default_organization_id
+        # Single-org mode: add user to default org
+        default_org_id = await get_default_organization_id(session)
 
-            default_org_id = await get_default_organization_id(session)
+        # Determine role based on whether this is the first user
+        # Check total user count (excluding current user being created)
+        user_count_result = await session.execute(select(func.count(User.id)))
+        user_count = user_count_result.scalar()
 
-            # Determine role based on whether this is the first user
-            # Check total user count (excluding current user being created)
-            user_count_result = await session.execute(select(func.count(User.id)))
-            user_count = user_count_result.scalar()
+        # First user (user_count == 1, since we already flushed the current user) gets OWNER
+        # All subsequent users get MEMBER
+        role = OrganizationRole.OWNER if user_count == 1 else OrganizationRole.MEMBER
 
-            # First user (user_count == 1, since we already flushed the current user) gets OWNER
-            # All subsequent users get MEMBER
-            role = (
-                OrganizationRole.OWNER if user_count == 1 else OrganizationRole.MEMBER
-            )
-
-            org_member = OrganizationMember(
-                organization_id=default_org_id,
-                user_id=user.id,
-                role=role,
-            )
-            session.add(org_member)
-            await session.flush()
-            logger.info(
-                "Added password user to default organization",
-                user_id=user.id,
-                username=username,
-                organization_id=default_org_id,
-                role=role,
-            )
-        else:
-            # Create personal namespace even in single-org mode (if configured)
-            namespace = Namespace(user_owner_id=user.id)
-            session.add(namespace)
-            await session.flush()
-    else:
-        # Multi-tenant mode: create personal namespace (original behavior)
-        namespace = Namespace(user_owner_id=user.id)
-        session.add(namespace)
+        org_member = OrganizationMember(
+            organization_id=default_org_id,
+            user_id=user.id,
+            role=role,
+        )
+        session.add(org_member)
         await session.flush()
+        logger.info(
+            "Added password user to default organization",
+            user_id=user.id,
+            username=username,
+            organization_id=default_org_id,
+            role=role,
+        )
+    else:
+        # Multi-tenant mode: create organization + namespace for user
+        org, namespace = await create_user_organization(
+            session, user, None, None, None, username
+        )
+        logger.info(
+            "Created organization for password user",
+            user_id=user.id,
+            username=username,
+            organization_id=org.id,
+            namespace_id=namespace.id,
+        )
 
     await session.commit()
 

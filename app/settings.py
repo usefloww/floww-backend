@@ -94,7 +94,6 @@ class SingleOrgConfig(BaseSettings):
     SINGLE_ORG_MODE: bool = False
     SINGLE_ORG_NAME: str = "default"
     SINGLE_ORG_DISPLAY_NAME: str = "Default Organization"
-    SINGLE_ORG_ALLOW_PERSONAL_NAMESPACES: bool = False
 
 
 class BillingConfig(BaseSettings):
