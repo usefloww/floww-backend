@@ -58,6 +58,17 @@ class WorkflowUpdate(BaseModel):
     active: Optional[bool] = None
 
 
+class N8nImportRequest(BaseModel):
+    namespace_id: UUID
+    n8n_json: dict  # The raw n8n workflow JSON
+
+
+class N8nImportResponse(BaseModel):
+    workflow: WorkflowRead
+    generated_code: str
+    message: str
+
+
 def helper_factory(user: CurrentUser, session: SessionDep):
     return CrudHelper(
         session=session,
@@ -192,6 +203,138 @@ async def create_workflow(
         active=workflow.active,
         last_deployment=None,
     )
+
+
+@router.post("/import/n8n")
+async def import_n8n_workflow(
+    data: N8nImportRequest,
+    current_user: CurrentUser,
+    session: TransactionSessionDep,
+    _: None = Depends(check_can_create_workflow),
+) -> N8nImportResponse:
+    """
+    Import a workflow from n8n JSON format.
+
+    This endpoint accepts an n8n workflow export and converts it to a Floww workflow.
+    Currently uses a mock implementation for code generation.
+    """
+    # Verify user has access to the namespace
+    namespace_query = (
+        UserAccessibleQuery(current_user.id)
+        .namespaces()
+        .where(Namespace.id == data.namespace_id)
+    )
+    namespace_result = await session.execute(namespace_query)
+    namespace = namespace_result.scalar_one_or_none()
+
+    if not namespace:
+        raise HTTPException(status_code=400, detail="Namespace not found")
+
+    # Extract workflow info from n8n JSON
+    n8n_workflow = data.n8n_json
+    workflow_name = n8n_workflow.get("name", "Imported Workflow")
+    nodes = n8n_workflow.get("nodes", [])
+    connections = n8n_workflow.get("connections", {})
+
+    # Build description from n8n workflow metadata
+    description_parts = []
+    if n8n_workflow.get("meta", {}).get("instanceId"):
+        description_parts.append("Imported from n8n")
+    description_parts.append(f"{len(nodes)} nodes")
+    description = (
+        " | ".join(description_parts) if description_parts else "Imported from n8n"
+    )
+
+    # Create the workflow
+    workflow = Workflow(
+        name=workflow_name,
+        description=description,
+        namespace_id=data.namespace_id,
+        created_by_id=current_user.id,
+    )
+
+    session.add(workflow)
+    await session.flush()
+
+    # Generate mock code from n8n workflow
+    generated_code = _generate_mock_code_from_n8n(n8n_workflow)
+
+    logger.info(
+        "Imported n8n workflow",
+        workflow_id=str(workflow.id),
+        name=workflow.name,
+        node_count=len(nodes),
+        connection_count=len(connections),
+    )
+
+    workflow_read = WorkflowRead(
+        id=workflow.id,
+        name=workflow.name,
+        description=workflow.description,
+        namespace_id=workflow.namespace_id,
+        created_by_id=workflow.created_by_id,
+        created_by=CreatedByUser(
+            id=current_user.id,
+            email=current_user.email,
+            first_name=current_user.first_name,
+            last_name=current_user.last_name,
+        ),
+        created_at=workflow.created_at,
+        updated_at=workflow.updated_at,
+        active=workflow.active,
+        last_deployment=None,
+    )
+
+    return N8nImportResponse(
+        workflow=workflow_read,
+        generated_code=generated_code,
+        message=f"Successfully imported workflow '{workflow_name}' with {len(nodes)} nodes",
+    )
+
+
+def _generate_mock_code_from_n8n(n8n_workflow: dict) -> str:
+    """
+    Generate mock Python code from an n8n workflow.
+
+    This is a placeholder implementation. In the future, this will use
+    AI/LLM to generate proper Floww workflow code from n8n structure.
+    """
+    nodes = n8n_workflow.get("nodes", [])
+    workflow_name = n8n_workflow.get("name", "imported_workflow")
+
+    # Build a simple mock code representation
+    code_lines = [
+        '"""',
+        f"Workflow: {workflow_name}",
+        "Imported from n8n",
+        f"Nodes: {len(nodes)}",
+        '"""',
+        "",
+        "from floww import workflow, trigger, action",
+        "",
+        "",
+        f'@workflow(name="{workflow_name}")',
+        "async def main():",
+    ]
+
+    if not nodes:
+        code_lines.append("    # No nodes in this workflow")
+        code_lines.append("    pass")
+    else:
+        code_lines.append("    # TODO: Implement workflow logic")
+        code_lines.append("    # The following nodes were found in the n8n workflow:")
+        code_lines.append("    #")
+
+        for node in nodes:
+            node_name = node.get("name", "Unknown")
+            node_type = node.get("type", "unknown")
+            code_lines.append(f"    # - {node_name} ({node_type})")
+
+        code_lines.append("    #")
+        code_lines.append("    # Implement your workflow logic here")
+        code_lines.append("    pass")
+
+    return "\n".join(code_lines)
 
 
 @router.get("/{workflow_id}")

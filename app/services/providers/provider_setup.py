@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 
 # base class for all setup steps
 class ProviderSetupStep(BaseModel, ABC):
-    type: Literal["value", "secret", "oauth", "choice", "file", "info"] = Field(
-        ..., description="Type of setup step"
+    type: Literal["value", "secret", "oauth", "choice", "file", "info", "webhook"] = (
+        Field(..., description="Type of setup step")
     )
 
 
@@ -66,6 +66,15 @@ class ProviderSetupStepInfo(ProviderSetupStep):
     message: str
     action_text: Optional[str] = None  # e.g. “Open dashboard”
     action_url: Optional[str] = None
+
+
+class ProviderSetupStepWebhook(ProviderSetupStep):
+    type: Literal["webhook"] = "webhook"
+    title: str
+    description: str
+    alias: str
+    default: Optional[str] = None
+    required: bool = True
 
 
 # example provider definition

@@ -138,6 +138,13 @@ class IntegrationsConfig(BaseSettings):
     GOOGLE_OAUTH_CLIENT_SECRET: str = ""
 
 
+class AIConfig(BaseSettings):
+    AI_MODEL_REQUIREMENTS: str = "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    AI_MODEL_PLANNING: str = "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    AI_MODEL_CODEGEN: str = "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    AI_MODEL_VERIFICATION: str = "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+
 class Settings(
     AuthConfig,
     CentrifugoConfig,
@@ -149,6 +156,7 @@ class Settings(
     BillingConfig,
     SchedulerConfig,
     IntegrationsConfig,
+    AIConfig,
     BaseSettings,
 ):
     model_config = SettingsConfigDict(

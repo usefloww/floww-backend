@@ -1,16 +1,18 @@
 import json
+import re
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import structlog
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator, model_validator
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep, TransactionSessionDep
-from app.models import Provider
+from app.models import IncomingWebhook, Provider
 from app.services.crud_helpers import CrudHelper
+from app.settings import settings
 from app.utils.encryption import decrypt_secret, encrypt_secret
 from app.utils.query_helpers import UserAccessibleQuery
 
@@ -102,24 +104,97 @@ async def create_provider(
     session: TransactionSessionDep,
 ):
     """Create a new provider."""
-    # Encrypt the config before saving
-    encrypted_config = encrypt_secret(json.dumps(data.config))
+    # Create a mutable copy of the config
+    config = data.config.copy()
 
-    # Create the provider manually to handle encryption
-    provider = Provider(
-        namespace_id=data.namespace_id,
-        type=data.type,
-        alias=data.alias,
-        encrypted_config=encrypted_config,
-    )
+    # For Slack providers, handle webhook URL
+    if data.type == "slack":
+        # Check if webhook_url was pre-generated and provided
+        if "webhook_url" in config and config["webhook_url"]:
+            webhook_url = config["webhook_url"]
 
-    session.add(provider)
-    await session.flush()
-    await session.refresh(provider)
+            # Validate URL format: must start with PUBLIC_API_URL
+            if not webhook_url.startswith(settings.PUBLIC_API_URL):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid webhook URL: must use the provided domain",
+                )
 
-    logger.info(
-        "Created new provider", provider_id=str(provider.id), alias=provider.alias
-    )
+            # Extract path from URL
+            webhook_path = webhook_url.replace(settings.PUBLIC_API_URL, "")
+
+            # Validate path format: /webhook/{uuid}
+            uuid_pattern = r"^/webhook/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            if not re.match(uuid_pattern, webhook_path, re.IGNORECASE):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid webhook path format: must be /webhook/{uuid}",
+                )
+
+            # Check uniqueness (ensure path not already used)
+            result = await session.execute(
+                select(IncomingWebhook).where(IncomingWebhook.path == webhook_path)
+            )
+            if result.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=400,
+                    detail="Webhook URL already in use. Please refresh the provider configuration to generate a new webhook URL.",
+                )
+        else:
+            # Backward compatibility: generate webhook path if not provided
+            webhook_path = f"/webhook/{uuid4()}"
+            webhook_url = f"{settings.PUBLIC_API_URL}{webhook_path}"
+
+        # Create the provider first
+        provider = Provider(
+            namespace_id=data.namespace_id,
+            type=data.type,
+            alias=data.alias,
+            encrypted_config=encrypt_secret(json.dumps(config)),
+        )
+        session.add(provider)
+        await session.flush()
+        await session.refresh(provider)
+
+        # Create provider-owned webhook
+        webhook = IncomingWebhook(
+            provider_id=provider.id,
+            trigger_id=None,
+            path=webhook_path,
+            method="POST",
+        )
+        session.add(webhook)
+        await session.flush()
+        await session.refresh(webhook)
+
+        # Ensure webhook_url is in config
+        config["webhook_url"] = webhook_url
+        provider.encrypted_config = encrypt_secret(json.dumps(config))
+        await session.flush()
+        await session.refresh(provider)
+
+        logger.info(
+            "Created Slack provider with webhook",
+            provider_id=str(provider.id),
+            alias=provider.alias,
+            webhook_url=webhook_url,
+        )
+    else:
+        # For non-Slack providers, create normally without webhook
+        encrypted_config = encrypt_secret(json.dumps(config))
+        provider = Provider(
+            namespace_id=data.namespace_id,
+            type=data.type,
+            alias=data.alias,
+            encrypted_config=encrypted_config,
+        )
+        session.add(provider)
+        await session.flush()
+        await session.refresh(provider)
+
+        logger.info(
+            "Created new provider", provider_id=str(provider.id), alias=provider.alias
+        )
 
     return ProviderRead.model_validate(provider, from_attributes=True)
 

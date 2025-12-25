@@ -77,6 +77,7 @@ async def _links_page(request: Request):
         </body>
     </html>
     """,
+        headers={"Content-Type": "text/html"},
         status_code=200,
     )
 

@@ -28,6 +28,7 @@ from app.routes import (
     summary,
     webhooks,
     whoami,
+    workflow_builder,
     workflow_deployments,
     workflows,
 )
@@ -93,6 +94,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 api_router.include_router(health.router)
 api_router.include_router(config.router)
 api_router.include_router(workflows.router)
+api_router.include_router(workflow_builder.router)
 api_router.include_router(whoami.router)
 api_router.include_router(secrets.router)
 api_router.include_router(runtimes.router)

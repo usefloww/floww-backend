@@ -127,3 +127,178 @@ async def test_update_and_delete_organization(client_a: UserClient):
     # Verify it's gone
     response = await client_a.get(f"/api/organizations/{organization_id}")
     assert response.status_code == 404
+
+
+# Member management tests
+
+
+async def test_update_member_role_requires_admin_or_owner(
+    client_a: UserClient, client_b: UserClient
+):
+    # Create organization (client_a is owner)
+    organization_data = {
+        "name": "role-test-org",
+        "display_name": "Role Test Organization",
+    }
+    response = await client_a.post("/api/organizations", json=organization_data)
+    assert response.status_code == 200
+    organization_id = response.json()["id"]
+
+    # Add client_b as a regular member
+    add_member_data = {"user_id": str(client_b.user.id), "role": "member"}
+    response = await client_a.post(
+        f"/api/organizations/{organization_id}/members", json=add_member_data
+    )
+    assert response.status_code == 200
+
+    # client_b (member) should not be able to update roles
+    update_data = {"role": "admin"}
+    response = await client_b.patch(
+        f"/api/organizations/{organization_id}/members/{client_b.user.id}",
+        json=update_data,
+    )
+    assert response.status_code == 403
+    assert "owners and admins" in response.json()["detail"].lower()
+
+    # client_a (owner) should be able to update roles
+    response = await client_a.patch(
+        f"/api/organizations/{organization_id}/members/{client_b.user.id}",
+        json=update_data,
+    )
+    assert response.status_code == 200
+    assert response.json()["role"] == "admin"
+
+
+async def test_remove_member_requires_admin_or_owner(
+    client_a: UserClient, client_b: UserClient
+):
+    # Create organization (client_a is owner)
+    organization_data = {
+        "name": "remove-test-org",
+        "display_name": "Remove Test Organization",
+    }
+    response = await client_a.post("/api/organizations", json=organization_data)
+    assert response.status_code == 200
+    organization_id = response.json()["id"]
+
+    # Add client_b as a regular member
+    add_member_data = {"user_id": str(client_b.user.id), "role": "member"}
+    response = await client_a.post(
+        f"/api/organizations/{organization_id}/members", json=add_member_data
+    )
+    assert response.status_code == 200
+
+    # client_b (member) should not be able to remove themselves
+    response = await client_b.delete(
+        f"/api/organizations/{organization_id}/members/{client_b.user.id}"
+    )
+    assert response.status_code == 403
+
+    # client_a (owner) should be able to remove members
+    response = await client_a.delete(
+        f"/api/organizations/{organization_id}/members/{client_b.user.id}"
+    )
+    assert response.status_code == 200
+
+
+async def test_cannot_remove_last_owner(client_a: UserClient):
+    # Create organization
+    organization_data = {
+        "name": "last-owner-org",
+        "display_name": "Last Owner Organization",
+    }
+    response = await client_a.post("/api/organizations", json=organization_data)
+    assert response.status_code == 200
+    organization_id = response.json()["id"]
+
+    # Try to remove the only owner (self)
+    response = await client_a.delete(
+        f"/api/organizations/{organization_id}/members/{client_a.user.id}"
+    )
+    assert response.status_code == 400
+    assert "last owner" in response.json()["detail"].lower()
+
+
+async def test_cannot_demote_last_owner(client_a: UserClient):
+    # Create organization (client_a is owner)
+    organization_data = {
+        "name": "demote-owner-org",
+        "display_name": "Demote Owner Organization",
+    }
+    response = await client_a.post("/api/organizations", json=organization_data)
+    assert response.status_code == 200
+    organization_id = response.json()["id"]
+
+    # Try to demote the only owner to member
+    response = await client_a.patch(
+        f"/api/organizations/{organization_id}/members/{client_a.user.id}",
+        json={"role": "member"},
+    )
+    assert response.status_code == 400
+    assert "last owner" in response.json()["detail"].lower()
+
+    # Try to demote to admin (also not allowed)
+    response = await client_a.patch(
+        f"/api/organizations/{organization_id}/members/{client_a.user.id}",
+        json={"role": "admin"},
+    )
+    assert response.status_code == 400
+    assert "last owner" in response.json()["detail"].lower()
+
+
+async def test_can_demote_owner_if_another_owner_exists(
+    client_a: UserClient, client_b: UserClient
+):
+    # Create organization (client_a is owner)
+    organization_data = {
+        "name": "multi-owner-org",
+        "display_name": "Multi Owner Organization",
+    }
+    response = await client_a.post("/api/organizations", json=organization_data)
+    assert response.status_code == 200
+    organization_id = response.json()["id"]
+
+    # Add client_b as another owner
+    add_member_data = {"user_id": str(client_b.user.id), "role": "owner"}
+    response = await client_a.post(
+        f"/api/organizations/{organization_id}/members", json=add_member_data
+    )
+    assert response.status_code == 200
+
+    # Now client_a should be able to demote themselves since there's another owner
+    response = await client_a.patch(
+        f"/api/organizations/{organization_id}/members/{client_a.user.id}",
+        json={"role": "admin"},
+    )
+    assert response.status_code == 200
+    assert response.json()["role"] == "admin"
+
+
+async def test_list_organization_members(client_a: UserClient, client_b: UserClient):
+    # Create organization
+    organization_data = {
+        "name": "members-list-org",
+        "display_name": "Members List Organization",
+    }
+    response = await client_a.post("/api/organizations", json=organization_data)
+    assert response.status_code == 200
+    organization_id = response.json()["id"]
+
+    # Add client_b as a member
+    add_member_data = {"user_id": str(client_b.user.id), "role": "member"}
+    response = await client_a.post(
+        f"/api/organizations/{organization_id}/members", json=add_member_data
+    )
+    assert response.status_code == 200
+
+    # List members
+    response = await client_a.get(f"/api/organizations/{organization_id}/members")
+    assert response.status_code == 200
+
+    members = response.json()
+    assert len(members) == 2
+
+    # Check that both users are in the list with correct roles
+    roles = {m["user"]["id"]: m["role"] for m in members}
+    assert roles[str(client_a.user.id)] == "owner"
+    assert roles[str(client_b.user.id)] == "member"

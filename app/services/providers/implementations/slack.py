@@ -8,6 +8,7 @@ from app.services.providers.provider_setup import (
     ProviderSetupStep,
     ProviderSetupStepSecret,
     ProviderSetupStepValue,
+    ProviderSetupStepWebhook,
 )
 from app.services.providers.provider_utils import (
     ProviderI,
@@ -27,6 +28,7 @@ logger = structlog.stdlib.get_logger(__name__)
 class SlackProviderState(BaseModel):
     workspace_url: str
     bot_token: str
+    webhook_url: str
 
 
 class SlackProvider(ProviderI):
@@ -43,6 +45,12 @@ class SlackProvider(ProviderI):
             description="Slack Bot User OAuth Token",
             alias="bot_token",
             placeholder="xoxb-xxxxxxxxxxxx-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx",
+        ),
+        ProviderSetupStepWebhook(
+            title="Webhook URL",
+            description="The webhook URL for Slack",
+            alias="webhook_url",
+            required=False,
         ),
     ]
     model = SlackProviderState
@@ -273,7 +281,6 @@ class OnMessageState(BaseModel):
     channel_id: str | None = None
     user_id: str | None = None
     include_thread_messages: bool = False
-    webhook_url: str
 
 
 class OnMessage(TriggerI[OnMessageInput, OnMessageState, SlackProviderState]):
@@ -311,32 +318,25 @@ class OnMessage(TriggerI[OnMessageInput, OnMessageState, SlackProviderState]):
         utils: TriggerUtils,
     ) -> OnMessageState:
         """
-        Store the webhook configuration for Slack message events.
+        Store the trigger configuration for Slack message events.
 
-        Since Slack Event Subscriptions are configured manually in the Slack App dashboard,
-        this method only stores the state. The actual webhook setup must be done manually
-        by configuring the Request URL in the Slack App's Event Subscriptions settings.
+        The webhook URL is configured at the provider level during provider setup,
+        so this method only stores the trigger-specific filter configuration.
 
         Args:
-            provider: Slack provider configuration (workspace_url, bot_token)
+            provider: Slack provider configuration (workspace_url, bot_token, webhook_url)
             input: Filter configuration (channel_id, user_id)
             utils: TriggerUtils instance for managing webhooks and recurring tasks
 
         Returns:
-            State containing the webhook configuration
+            State containing the trigger configuration
         """
-        webhook_registration = await utils.register_webhook(
-            owner="provider", reuse_existing=True
-        )
-        webhook_url = webhook_registration["url"]
-
+        # No webhook registration needed - the provider already has a webhook_url
         # No API call needed - Slack webhooks are configured manually in the app dashboard
-        # The webhook_url should be used to configure Event Subscriptions in Slack App settings
         return OnMessageState(
             channel_id=input.channel_id,
             user_id=input.user_id,
             include_thread_messages=input.include_thread_messages,
-            webhook_url=webhook_url,
         )
 
     async def destroy(
@@ -393,7 +393,6 @@ class OnReactionState(BaseModel):
     channel_id: str | None = None
     user_id: str | None = None
     reaction: str | None = None
-    webhook_url: str
 
 
 class OnReaction(TriggerI[OnReactionInput, OnReactionState, SlackProviderState]):
@@ -425,32 +424,25 @@ class OnReaction(TriggerI[OnReactionInput, OnReactionState, SlackProviderState])
         utils: TriggerUtils,
     ) -> OnReactionState:
         """
-        Store the webhook configuration for Slack reaction events.
+        Store the trigger configuration for Slack reaction events.
 
-        Since Slack Event Subscriptions are configured manually in the Slack App dashboard,
-        this method only stores the state. The actual webhook setup must be done manually
-        by configuring the Request URL in the Slack App's Event Subscriptions settings.
+        The webhook URL is configured at the provider level during provider setup,
+        so this method only stores the trigger-specific filter configuration.
 
         Args:
-            provider: Slack provider configuration (workspace_url, bot_token)
+            provider: Slack provider configuration (workspace_url, bot_token, webhook_url)
             input: Filter configuration (channel_id, user_id, reaction)
             utils: TriggerUtils instance for managing webhooks and recurring tasks
 
         Returns:
-            State containing the webhook configuration
+            State containing the trigger configuration
         """
-        webhook_registration = await utils.register_webhook(
-            owner="provider", reuse_existing=True
-        )
-        webhook_url = webhook_registration["url"]
-
+        # No webhook registration needed - the provider already has a webhook_url
         # No API call needed - Slack webhooks are configured manually in the app dashboard
-        # The webhook_url should be used to configure Event Subscriptions in Slack App settings
         return OnReactionState(
             channel_id=input.channel_id,
             user_id=input.user_id,
             reaction=input.reaction,
-            webhook_url=webhook_url,
         )
 
     async def destroy(

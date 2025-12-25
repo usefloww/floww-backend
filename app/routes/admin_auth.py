@@ -274,10 +274,6 @@ async def password_setup(
         )
 
     # Check if any users exist - only allow setup if no users
-    from sqlalchemy import func, select
-
-    from app.models import User
-
     result = await session.execute(select(func.count(User.id)))
     user_count = result.scalar()
 

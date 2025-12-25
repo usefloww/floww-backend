@@ -56,7 +56,7 @@ class AdminAuth(AuthenticationBackend):
             token_user = await auth_provider.validate_token(jwt_token)
 
             # Check if user is an admin
-            if token_user.sub not in ADMIN_USER_IDS:
+            if token_user.id not in ADMIN_USER_IDS:
                 return Response(
                     content="Access denied: Admin permissions required", status_code=403
                 )
@@ -71,6 +71,3 @@ class AdminAuth(AuthenticationBackend):
 
             login_url = f"/auth/login?next={urllib.parse.quote(current_path)}"
             return RedirectResponse(url=login_url)
-        except Exception:
-            # Other errors, return 500
-            return Response(content="Authentication error", status_code=500)

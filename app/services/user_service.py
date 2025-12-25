@@ -17,14 +17,22 @@ from app.utils.single_org import get_default_organization_id
 
 logger = structlog.stdlib.get_logger(__name__)
 
-# Initialize WorkOS client as optional feature for user sync
+# Initialize WorkOS clients as optional feature for user sync
 # This is independent of the authentication method (which uses OIDC)
 workos_client = None
+workos_sync_client = (
+    None  # Sync client needed for Portal APIs (not yet supported in async)
+)
 try:
+    from workos import WorkOSClient
     from workos.async_client import AsyncClient as AsyncWorkOSClient
 
     if settings.AUTH_CLIENT_SECRET and settings.AUTH_CLIENT_ID:
         workos_client = AsyncWorkOSClient(
+            api_key=settings.AUTH_CLIENT_SECRET,
+            client_id=settings.AUTH_CLIENT_ID,
+        )
+        workos_sync_client = WorkOSClient(
             api_key=settings.AUTH_CLIENT_SECRET,
             client_id=settings.AUTH_CLIENT_ID,
         )
@@ -49,7 +57,7 @@ async def get_or_create_user(
         user = User(
             workos_user_id=workos_user_id,
             email=email,
-            username=username,
+            username=None,
             first_name=first_name,
             last_name=last_name,
         )
@@ -386,15 +394,179 @@ async def create_password_user(
 
 
 async def get_user_by_username(session: SessionDep, username: str) -> Optional[User]:
-    """
-    Get a user by their username.
-
-    Args:
-        session: Database session
-        username: Username to search for
-
-    Returns:
-        User object if found, None otherwise
-    """
     result = await session.execute(select(User).where(User.username == username))
     return result.scalar_one_or_none()
+
+
+# WorkOS Invitation and Portal utilities
+
+
+def get_workos_client():
+    if workos_client is None:
+        raise ValueError(
+            "WorkOS client is not initialized. Please install the WorkOS SDK and "
+            "configure AUTH_CLIENT_SECRET and AUTH_CLIENT_ID."
+        )
+    return workos_client
+
+
+async def send_workos_invitation(
+    workos_organization_id: str,
+    email: str,
+    inviter_user_id: Optional[str] = None,
+    role_slug: Optional[str] = None,
+    expires_in_days: int = 7,
+):
+    """
+    Send an invitation to a user via WorkOS.
+
+    Args:
+        workos_organization_id: The WorkOS organization ID
+        email: Email address to invite
+        inviter_user_id: Optional WorkOS user ID of the inviter
+        role_slug: Optional role slug for the invitation
+        expires_in_days: Days until invitation expires (1-30)
+
+    Returns:
+        WorkOS Invitation object
+    """
+    client = get_workos_client()
+
+    invitation = await client.user_management.send_invitation(
+        email=email,
+        organization_id=workos_organization_id,
+        inviter_user_id=inviter_user_id,
+        role_slug=role_slug,
+        expires_in_days=expires_in_days,
+    )
+
+    logger.info(
+        "Sent WorkOS invitation",
+        email=email,
+        organization_id=workos_organization_id,
+        invitation_id=invitation.id,
+    )
+
+    return invitation
+
+
+async def list_workos_invitations(workos_organization_id: str):
+    """
+    List pending invitations for a WorkOS organization.
+
+    Args:
+        workos_organization_id: The WorkOS organization ID
+
+    Returns:
+        List of WorkOS Invitation objects
+    """
+    client = get_workos_client()
+
+    invitations = await client.user_management.list_invitations(
+        organization_id=workos_organization_id,
+    )
+
+    return invitations
+
+
+async def revoke_workos_invitation(invitation_id: str):
+    """
+    Revoke a WorkOS invitation.
+
+    Args:
+        invitation_id: The WorkOS invitation ID
+
+    Returns:
+        Revoked Invitation object
+    """
+    client = get_workos_client()
+
+    invitation = await client.user_management.revoke_invitation(invitation_id)
+
+    logger.info("Revoked WorkOS invitation", invitation_id=invitation_id)
+
+    return invitation
+
+
+def generate_sso_portal_link(
+    workos_organization_id: str,
+    return_url: Optional[str] = None,
+    success_url: Optional[str] = None,
+):
+    """
+    Generate a WorkOS Admin Portal link for SSO configuration.
+
+    Note: This is a synchronous function because the WorkOS async client
+    does not yet support Portal APIs.
+
+    Args:
+        workos_organization_id: The WorkOS organization ID
+        return_url: URL to redirect to after exiting the portal
+        success_url: URL to redirect to after successful configuration
+
+    Returns:
+        PortalLink object with the admin portal URL
+    """
+    if workos_sync_client is None:
+        raise ValueError(
+            "WorkOS client is not initialized. Please install the WorkOS SDK and "
+            "configure AUTH_CLIENT_SECRET and AUTH_CLIENT_ID."
+        )
+
+    portal_link = workos_sync_client.portal.generate_link(
+        intent="sso",
+        organization_id=workos_organization_id,
+        return_url=return_url,
+        success_url=success_url,
+    )
+
+    logger.info(
+        "Generated SSO portal link",
+        organization_id=workos_organization_id,
+    )
+
+    return portal_link
+
+
+async def create_workos_organization(name: str, external_id: Optional[str] = None):
+    """
+    Create a new organization in WorkOS.
+
+    Args:
+        name: The name of the organization
+        external_id: Optional external ID to link the organization
+
+    Returns:
+        WorkOS Organization object with the new organization's ID
+    """
+    client = get_workos_client()
+
+    organization = await client.organizations.create_organization(
+        name=name,
+        external_id=external_id,
+    )
+
+    logger.info(
+        "Created WorkOS organization",
+        workos_org_id=organization.id,
+        name=name,
+    )
+
+    return organization
+
+
+async def delete_workos_organization(workos_organization_id: str):
+    """
+    Delete an organization from WorkOS.
+
+    Args:
+        workos_organization_id: The WorkOS organization ID to delete
+    """
+    client = get_workos_client()
+
+    await client.organizations.delete_organization(workos_organization_id)
+
+    logger.info(
+        "Deleted WorkOS organization",
+        workos_org_id=workos_organization_id,
+    )
