@@ -54,7 +54,7 @@ class TestFullSubscriptionFlow:
         2. Creates checkout session
         3. Webhook: checkout.session.completed
         4. Webhook: customer.subscription.created (trialing)
-        5. Organization has PRO access during trial
+        5. Organization has HOBBY access during trial
         6. Webhook: customer.subscription.updated (active after trial)
         """
         user = await get_or_create_user(
@@ -102,7 +102,7 @@ class TestFullSubscriptionFlow:
 
         assert subscription.tier == SubscriptionTier.HOBBY
         assert subscription.status == SubscriptionStatus.TRIALING
-        assert await billing_service.has_active_hobby_subscription(subscription) is True
+        assert billing_service.has_active_hobby_subscription(subscription) is True
 
         event_data = {
             "id": "sub_test_12345",
@@ -123,7 +123,7 @@ class TestFullSubscriptionFlow:
         subscription = result.scalar_one()
 
         assert subscription.status == SubscriptionStatus.ACTIVE
-        assert await billing_service.has_active_hobby_subscription(subscription) is True
+        assert billing_service.has_active_hobby_subscription(subscription) is True
 
     async def test_payment_failure_to_grace_to_recovery(self, session: AsyncSession):
         """
@@ -131,7 +131,7 @@ class TestFullSubscriptionFlow:
         1. Organization has active HOBBY subscription
         2. Webhook: invoice.payment_failed
         3. Organization enters grace period (PAST_DUE)
-        4. Organization still has PRO access for 7 days
+        4. Organization still has HOBBY access for 7 days
         5. Webhook: invoice.payment_succeeded
         6. Organization reactivated
         """
@@ -164,7 +164,7 @@ class TestFullSubscriptionFlow:
 
         assert subscription.status == SubscriptionStatus.PAST_DUE
         assert subscription.grace_period_ends_at is not None
-        assert await billing_service.has_active_hobby_subscription(subscription) is True
+        assert billing_service.has_active_hobby_subscription(subscription) is True
 
         event_data = {"subscription": "sub_test_12345"}
         await billing_service.handle_payment_succeeded_event(
@@ -185,7 +185,7 @@ class TestFullSubscriptionFlow:
         Flow: Cancel at period end
         1. Organization cancels subscription via portal
         2. Webhook: customer.subscription.updated (cancel_at_period_end=true)
-        3. Organization keeps PRO until current_period_end
+        3. Organization keeps HOBBY until current_period_end
         4. Webhook: customer.subscription.deleted
         5. Organization downgraded to FREE
         """
@@ -226,7 +226,7 @@ class TestFullSubscriptionFlow:
 
         assert subscription.cancel_at_period_end is True
         assert subscription.tier == SubscriptionTier.HOBBY
-        assert await billing_service.has_active_hobby_subscription(subscription) is True
+        assert billing_service.has_active_hobby_subscription(subscription) is True
 
         event_data = {"id": "sub_test_12345"}
         await billing_service.handle_subscription_deleted(
@@ -474,13 +474,13 @@ class TestEdgeCases:
         session.add(subscription)
         await session.flush()
 
-        has_pro = await billing_service.has_active_hobby_subscription(subscription)
+        has_pro = billing_service.has_active_hobby_subscription(subscription)
         assert has_pro is True
 
         subscription.trial_ends_at = datetime.now(timezone.utc) - timedelta(hours=1)
         await session.flush()
 
-        has_pro = await billing_service.has_active_hobby_subscription(subscription)
+        has_pro = billing_service.has_active_hobby_subscription(subscription)
         assert has_pro is False
 
     async def test_execution_count_only_counts_billable_statuses(
@@ -531,7 +531,7 @@ class TestEdgeCases:
         assert count == 50
 
     async def test_grace_period_expiration(self, session: AsyncSession):
-        """Organization loses PRO access when grace period expires"""
+        """Organization loses HOBBY access when grace period expires"""
         user = await get_or_create_user(
             session, f"test_grace_expired_{uuid4()}", create=False
         )
@@ -548,7 +548,7 @@ class TestEdgeCases:
         session.add(subscription)
         await session.flush()
 
-        has_pro = await billing_service.has_active_hobby_subscription(subscription)
+        has_pro = billing_service.has_active_hobby_subscription(subscription)
         assert has_pro is True
 
         subscription.grace_period_ends_at = datetime.now(timezone.utc) - timedelta(
@@ -556,5 +556,5 @@ class TestEdgeCases:
         )
         await session.flush()
 
-        has_pro = await billing_service.has_active_hobby_subscription(subscription)
+        has_pro = billing_service.has_active_hobby_subscription(subscription)
         assert has_pro is False

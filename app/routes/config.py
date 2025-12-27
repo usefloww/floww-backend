@@ -22,6 +22,7 @@ class ConfigRead(BaseModel):
     websocket_url: str
     """url to centrifugo"""
     is_cloud: bool
+    stripe_publishable_key: str | None = None
 
 
 @router.get("/config")
@@ -48,4 +49,7 @@ async def get_config():
         ),
         websocket_url=websocket_url,
         is_cloud=settings.IS_CLOUD,
+        stripe_publishable_key=settings.STRIPE_PUBLISHABLE_KEY
+        if settings.IS_CLOUD
+        else None,
     )

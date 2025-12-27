@@ -3,10 +3,9 @@ from typing import List, Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import and_, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
 from app.deps.auth import CurrentUser
@@ -71,19 +70,16 @@ async def check_admin_or_owner(
 
 class OrganizationRead(BaseModel):
     id: UUID
-    name: str
     display_name: str
     created_at: datetime
     updated_at: datetime
 
 
 class OrganizationCreate(BaseModel):
-    name: str
     display_name: str
 
 
 class OrganizationUpdate(BaseModel):
-    name: Optional[str] = None
     display_name: Optional[str] = None
 
 
@@ -132,10 +128,13 @@ class InvitationRead(BaseModel):
 class SSOSetupRequest(BaseModel):
     return_url: Optional[str] = None
     success_url: Optional[str] = None
+    features: Optional[List[str]] = None
 
 
 class SSOSetupResponse(BaseModel):
     admin_portal_link: str
+    has_workos_org: bool = False
+    features_available: List[str] = []  # Features that can be configured
 
 
 def helper_factory(user: CurrentUser, session: SessionDep):
@@ -187,28 +186,11 @@ async def create_organization(
 
     # Create local organization
     org = Organization(
-        name=data.name,
         display_name=data.display_name,
         workos_organization_id=workos_org.id if workos_org else None,
     )
     session.add(org)
-
-    try:
-        await session.flush()
-    except IntegrityError:
-        await session.rollback()
-        # Clean up WorkOS organization if local creation fails
-        if workos_org:
-            try:
-                await delete_workos_organization(workos_org.id)
-            except Exception:
-                logger.error(
-                    "Failed to clean up WorkOS organization after local failure"
-                )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Organization with name '{data.name}' already exists",
-        )
+    await session.flush()
 
     # Make the creator the owner
     membership = OrganizationMember(
@@ -226,7 +208,6 @@ async def create_organization(
 
     return OrganizationRead(
         id=org.id,
-        name=org.name,
         display_name=org.display_name,
         created_at=org.created_at,
         updated_at=org.updated_at,
@@ -670,9 +651,13 @@ async def setup_sso(
     organization_id: UUID,
     data: SSOSetupRequest,
     current_user: CurrentUser,
-    session: SessionDep,
+    session: TransactionSessionDep,
 ) -> SSOSetupResponse:
-    """Generate an Admin Portal link for SSO configuration."""
+    """Generate an Admin Portal link for SSO/domain configuration.
+
+    If no WorkOS organization exists, one will be created automatically.
+    The features parameter controls what intents are passed to the portal.
+    """
     check_single_org_mode()
 
     # Verify user has admin/owner access
@@ -686,13 +671,56 @@ async def setup_sso(
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
+    # Create WorkOS organization if it doesn't exist
     if not org.workos_organization_id:
-        return SSOSetupResponse(admin_portal_link="")
+        try:
+            workos_org = await create_workos_organization(
+                name=org.display_name,
+                external_id=str(org.id),
+            )
+            org.workos_organization_id = workos_org.id
+            await session.flush()
+            logger.info(
+                "Created WorkOS organization on-demand",
+                organization_id=org.id,
+                workos_org_id=workos_org.id,
+            )
+        except ValueError as e:
+            # WorkOS client not configured
+            logger.warning("WorkOS client not configured: %s", e)
+            return SSOSetupResponse(
+                admin_portal_link="",
+                has_workos_org=False,
+                features_available=[],
+            )
+        except Exception as e:
+            logger.error("Failed to create WorkOS organization: %s", e)
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to set up authentication features. Please try again.",
+            )
+
+    # Determine which intents to include based on requested features
+    intents = []
+    if data.features:
+        if "sso" in data.features:
+            intents.append("sso")
+        if "domain_verification" in data.features:
+            intents.append("domain_verification")
+
+    # If no specific features requested, include all available
+    if not intents:
+        intents = ["sso", "domain_verification"]
 
     portal_link = generate_sso_portal_link(
         workos_organization_id=org.workos_organization_id,
         return_url=data.return_url,
         success_url=data.success_url,
+        intents=intents,
     )
 
-    return SSOSetupResponse(admin_portal_link=portal_link.link)
+    return SSOSetupResponse(
+        admin_portal_link=portal_link.link,
+        has_workos_org=True,
+        features_available=["sso", "domain_verification"],
+    )

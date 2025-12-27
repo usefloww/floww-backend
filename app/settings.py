@@ -101,12 +101,9 @@ class BillingConfig(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
-    STRIPE_PRICE_ID_PRO: str = ""
 
-    FREE_TIER_WORKFLOW_LIMIT: int = 3
-    FREE_TIER_EXECUTION_LIMIT_PER_MONTH: int = 100
-    PRO_TIER_WORKFLOW_LIMIT: int = 100
-    PRO_TIER_EXECUTION_LIMIT_PER_MONTH: int = 10000
+    STRIPE_PRICE_ID_HOBBY: str = ""
+    STRIPE_PRICE_ID_TEAM: str = ""
 
     TRIAL_PERIOD_DAYS: int = 0
     GRACE_PERIOD_DAYS: int = 7

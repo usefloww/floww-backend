@@ -3,256 +3,164 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Namespace, Organization, Subscription
+from app.models import Namespace, Organization, Subscription, SubscriptionTier
 from app.services import stripe_service
+from app.settings import settings
 
 
 class TestCustomerManagement:
-    """Tests for Stripe customer management"""
-
     async def test_get_or_create_customer_new(
         self,
         session: AsyncSession,
         test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
-        mock_stripe_customer,
     ):
-        """Creates new Stripe customer and returns customer ID"""
         organization, subscription, _ = test_org_with_free_subscription
 
-        mock_stripe_customer.return_value = MagicMock(id="cus_new_12345")
+        with patch("stripe.Customer.create") as mock_create:
+            mock_create.return_value = MagicMock(id="cus_new_12345")
 
-        customer_id = await stripe_service.get_or_create_customer(
-            organization, subscription
-        )
+            customer_id = await stripe_service.get_or_create_customer(
+                organization, subscription
+            )
 
-        assert customer_id == "cus_new_12345"
-        mock_stripe_customer.assert_called_once()
-        call_kwargs = mock_stripe_customer.call_args[1]
-        assert call_kwargs["name"] == organization.display_name
-        assert call_kwargs["metadata"]["organization_id"] == str(organization.id)
-        assert call_kwargs["metadata"]["subscription_id"] == str(subscription.id)
+            assert customer_id == "cus_new_12345"
+            mock_create.assert_called_once()
+            call_kwargs = mock_create.call_args[1]
+            assert call_kwargs["name"] == organization.display_name
+            assert call_kwargs["metadata"]["organization_id"] == str(organization.id)
+            assert call_kwargs["metadata"]["subscription_id"] == str(subscription.id)
 
     async def test_get_or_create_customer_existing(
         self,
-        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
-        mock_stripe_customer,
+        test_org_with_hobby_subscription: tuple[Organization, Subscription, Namespace],
     ):
-        """Returns existing customer_id from subscription, does not create duplicate"""
-        organization, subscription, _ = test_org_with_pro_subscription
-
+        organization, subscription, _ = test_org_with_hobby_subscription
         existing_customer_id = subscription.stripe_customer_id
 
-        customer_id = await stripe_service.get_or_create_customer(
-            organization, subscription
-        )
+        with patch("stripe.Customer.create") as mock_create:
+            customer_id = await stripe_service.get_or_create_customer(
+                organization, subscription
+            )
 
-        assert customer_id == existing_customer_id
-        mock_stripe_customer.assert_not_called()
-
-    async def test_get_or_create_customer_without_stripe(
-        self,
-        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
-    ):
-        """Raises ValueError when Stripe not configured"""
-        organization, subscription, _ = test_org_with_free_subscription
-
-        with patch.object(stripe_service, "stripe_client", None):
-            with pytest.raises(ValueError, match="Stripe is not configured"):
-                await stripe_service.get_or_create_customer(organization, subscription)
+            assert customer_id == existing_customer_id
+            mock_create.assert_not_called()
 
 
-class TestCheckoutSession:
-    """Tests for Stripe checkout session creation"""
-
-    async def test_create_checkout_session_with_trial(
+class TestSubscriptionWithIntent:
+    async def test_create_subscription_with_intent(
         self,
         session: AsyncSession,
         test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
-        mock_stripe_customer,
-        mock_stripe_checkout,
     ):
-        """Creates session with trial_period_days and correct metadata"""
         organization, subscription, _ = test_org_with_free_subscription
 
-        mock_stripe_customer.return_value = MagicMock(id="cus_test_12345")
-        mock_stripe_checkout.return_value = MagicMock(
-            id="cs_test_12345",
-            url="https://checkout.stripe.com/test",
-        )
-
-        from app.settings import settings
+        mock_sub = MagicMock()
+        mock_sub.id = "sub_test_12345"
+        mock_sub.latest_invoice = MagicMock()
+        mock_sub.latest_invoice.payment_intent = MagicMock()
+        mock_sub.latest_invoice.payment_intent.client_secret = "pi_secret_test"
 
         with (
-            patch.object(settings, "STRIPE_PRICE_ID_PRO", "price_test_pro"),
-            patch.object(settings, "TRIAL_PERIOD_DAYS", 14),
+            patch("stripe.Customer.create") as mock_customer,
+            patch("stripe.Subscription.create") as mock_sub_create,
+            patch("stripe.Subscription.list") as mock_sub_list,
+            patch.object(settings, "STRIPE_PRICE_ID_HOBBY", "price_test_hobby"),
         ):
-            result = await stripe_service.create_checkout_session(
+            mock_customer.return_value = MagicMock(id="cus_test_12345")
+            mock_sub_list.return_value = MagicMock(data=[])
+            mock_sub_create.return_value = mock_sub
+
+            result = await stripe_service.create_subscription_with_intent(
                 organization=organization,
                 subscription=subscription,
-                success_url="https://example.com/success",
-                cancel_url="https://example.com/cancel",
+                target_tier=SubscriptionTier.HOBBY,
                 session_db=session,
             )
 
-        assert result["session_id"] == "cs_test_12345"
-        assert result["url"] == "https://checkout.stripe.com/test"
+            assert result["subscription_id"] == "sub_test_12345"
+            assert result["client_secret"] == "pi_secret_test"
+            assert subscription.stripe_customer_id == "cus_test_12345"
+            assert subscription.stripe_subscription_id == "sub_test_12345"
 
-        call_kwargs = mock_stripe_checkout.call_args[1]
-        assert "subscription_data" in call_kwargs
-        assert "trial_period_days" in call_kwargs["subscription_data"]
-        assert call_kwargs["metadata"]["organization_id"] == str(organization.id)
-        assert call_kwargs["metadata"]["subscription_id"] == str(subscription.id)
-
-        assert subscription.stripe_customer_id == "cus_test_12345"
-
-    async def test_create_checkout_session_without_trial(
-        self,
-        session: AsyncSession,
-        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
-        mock_stripe_checkout,
-    ):
-        """Creates session without trial (existing PRO organization)"""
-        organization, subscription, _ = test_org_with_pro_subscription
-
-        mock_stripe_checkout.return_value = MagicMock(
-            id="cs_test_12345",
-            url="https://checkout.stripe.com/test",
-        )
-
-        from app.settings import settings
-
-        with patch.object(settings, "STRIPE_PRICE_ID_PRO", "price_test_pro"):
-            await stripe_service.create_checkout_session(
-                organization=organization,
-                subscription=subscription,
-                success_url="https://example.com/success",
-                cancel_url="https://example.com/cancel",
-                session_db=session,
-            )
-
-        call_kwargs = mock_stripe_checkout.call_args[1]
-        assert "subscription_data" in call_kwargs
-        assert "trial_period_days" not in call_kwargs["subscription_data"]
-
-    async def test_create_checkout_session_without_price_id(
+    async def test_create_subscription_with_intent_missing_price(
         self,
         test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
-        mock_stripe_customer,
     ):
-        """Raises ValueError when STRIPE_PRICE_ID_PRO not set"""
         organization, subscription, _ = test_org_with_free_subscription
 
-        mock_stripe_customer.return_value = MagicMock(id="cus_test_12345")
-
-        from app.settings import settings
-
-        with patch.object(settings, "STRIPE_PRICE_ID_PRO", None):
+        with patch.object(settings, "STRIPE_PRICE_ID_HOBBY", ""):
             with pytest.raises(
-                ValueError, match="STRIPE_PRICE_ID_PRO is not configured"
+                ValueError, match="STRIPE_PRICE_ID_HOBBY is not configured"
             ):
-                await stripe_service.create_checkout_session(
+                await stripe_service.create_subscription_with_intent(
                     organization=organization,
                     subscription=subscription,
-                    success_url="https://example.com/success",
-                    cancel_url="https://example.com/cancel",
+                    target_tier=SubscriptionTier.HOBBY,
                 )
 
 
 class TestCustomerPortal:
-    """Tests for Stripe customer portal session creation"""
-
     async def test_create_customer_portal_session(
         self,
-        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
-        mock_stripe_portal,
+        test_org_with_hobby_subscription: tuple[Organization, Subscription, Namespace],
     ):
-        """Creates portal session with correct customer_id and returns portal URL"""
-        _, subscription, _ = test_org_with_pro_subscription
+        _, subscription, _ = test_org_with_hobby_subscription
 
-        mock_stripe_portal.return_value = MagicMock(
-            url="https://billing.stripe.com/test",
-        )
+        with patch("stripe.billing_portal.Session.create") as mock_portal:
+            mock_portal.return_value = MagicMock(url="https://billing.stripe.com/test")
 
-        result = await stripe_service.create_customer_portal_session(
-            subscription=subscription,
-            return_url="https://example.com/return",
-        )
-
-        assert result["url"] == "https://billing.stripe.com/test"
-
-        call_kwargs = mock_stripe_portal.call_args[1]
-        assert call_kwargs["customer"] == subscription.stripe_customer_id
-        assert call_kwargs["return_url"] == "https://example.com/return"
-
-    async def test_create_customer_portal_session_no_customer(
-        self,
-        test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
-        mock_stripe_portal,
-    ):
-        """Raises ValueError when no stripe_customer_id"""
-        _, subscription, _ = test_org_with_free_subscription
-
-        # The mock_stripe_portal fixture ensures stripe_client is set
-        with pytest.raises(ValueError, match="No Stripe customer ID found"):
-            await stripe_service.create_customer_portal_session(
-                subscription=subscription,
+            result = stripe_service.create_customer_portal_session(
+                customer_id=subscription.stripe_customer_id,
                 return_url="https://example.com/return",
             )
 
+            assert result["url"] == "https://billing.stripe.com/test"
+            call_kwargs = mock_portal.call_args[1]
+            assert call_kwargs["customer"] == subscription.stripe_customer_id
+            assert call_kwargs["return_url"] == "https://example.com/return"
+
 
 class TestWebhookVerification:
-    """Tests for webhook signature verification"""
-
-    async def test_construct_webhook_event_valid_signature(
-        self, mock_stripe_webhook_event
-    ):
-        """Successfully constructs event from valid payload + signature"""
+    async def test_construct_webhook_event_valid_signature(self):
         payload = b'{"type": "customer.subscription.updated"}'
         sig_header = "test_signature"
 
-        mock_event = MagicMock(type="customer.subscription.updated")
-        mock_stripe_webhook_event.return_value = mock_event
+        mock_event = {"type": "customer.subscription.updated"}
 
-        from app.settings import settings
+        with (
+            patch("stripe.Webhook.construct_event") as mock_construct,
+            patch.object(settings, "STRIPE_WEBHOOK_SECRET", "whsec_test"),
+        ):
+            mock_construct.return_value = mock_event
 
-        with patch.object(settings, "STRIPE_WEBHOOK_SECRET", "whsec_test"):
             event = stripe_service.construct_webhook_event(payload, sig_header)
 
-        assert event == mock_event
-        mock_stripe_webhook_event.assert_called_once_with(
-            payload, sig_header, "whsec_test"
-        )
+            assert event == mock_event
+            mock_construct.assert_called_once_with(payload, sig_header, "whsec_test")
 
-    async def test_construct_webhook_event_invalid_signature(
-        self, mock_stripe_webhook_event
-    ):
-        """Raises SignatureVerificationError"""
+    async def test_construct_webhook_event_invalid_signature(self):
+        import stripe
+
         payload = b'{"type": "customer.subscription.updated"}'
         sig_header = "invalid_signature"
 
-        import stripe
+        with (
+            patch("stripe.Webhook.construct_event") as mock_construct,
+            patch.object(settings, "STRIPE_WEBHOOK_SECRET", "whsec_test"),
+        ):
+            mock_construct.side_effect = stripe.SignatureVerificationError(
+                "Invalid signature", sig_header
+            )
 
-        mock_stripe_webhook_event.side_effect = stripe.SignatureVerificationError(
-            "Invalid signature", sig_header
-        )
-
-        from app.settings import settings
-
-        with patch.object(settings, "STRIPE_WEBHOOK_SECRET", "whsec_test"):
             with pytest.raises(stripe.SignatureVerificationError):
                 stripe_service.construct_webhook_event(payload, sig_header)
 
-    async def test_construct_webhook_event_invalid_payload(
-        self, mock_stripe_webhook_event
-    ):
-        """Raises ValueError"""
-        payload = b"invalid json"
+    async def test_construct_webhook_event_missing_secret(self):
+        payload = b'{"type": "customer.subscription.updated"}'
         sig_header = "test_signature"
 
-        mock_stripe_webhook_event.side_effect = ValueError("Invalid payload")
-
-        from app.settings import settings
-
-        with patch.object(settings, "STRIPE_WEBHOOK_SECRET", "whsec_test"):
-            with pytest.raises(ValueError, match="Invalid payload"):
+        with patch.object(settings, "STRIPE_WEBHOOK_SECRET", ""):
+            with pytest.raises(
+                ValueError, match="STRIPE_WEBHOOK_SECRET is not configured"
+            ):
                 stripe_service.construct_webhook_event(payload, sig_header)

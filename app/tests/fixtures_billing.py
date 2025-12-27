@@ -95,12 +95,12 @@ async def test_org_with_free_subscription(
 
 
 @pytest.fixture
-async def test_org_with_pro_subscription(
+async def test_org_with_hobby_subscription(
     session: AsyncSession,
 ) -> tuple[Organization, Subscription, Namespace]:
     """Create a test organization with an active HOBBY subscription"""
     _, organization, namespace = await _create_test_org_with_user(
-        session, "test_pro_org"
+        session, "test_hobby_org"
     )
 
     subscription = Subscription(
@@ -228,12 +228,12 @@ async def test_user_with_free_subscription(
 
 
 @pytest.fixture
-async def test_user_with_pro_subscription(
+async def test_user_with_hobby_subscription(
     session: AsyncSession,
-    test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
+    test_org_with_hobby_subscription: tuple[Organization, Subscription, Namespace],
 ) -> tuple[Organization, Subscription]:
     """Legacy fixture that returns (organization, subscription)"""
-    organization, subscription, _ = test_org_with_pro_subscription
+    organization, subscription, _ = test_org_with_hobby_subscription
     return organization, subscription
 
 
@@ -279,26 +279,14 @@ async def test_user_grace_expired(
 
 @pytest.fixture
 def mock_stripe_customer():
-    """Mock Stripe customer creation"""
-    import stripe
-
-    with (
-        patch("app.services.stripe_service.stripe_client", stripe),
-        patch("stripe.Customer.create") as mock,
-    ):
+    with patch("stripe.Customer.create") as mock:
         mock.return_value = MagicMock(id="cus_test_12345")
         yield mock
 
 
 @pytest.fixture
 def mock_stripe_checkout():
-    """Mock Stripe checkout session creation"""
-    import stripe
-
-    with (
-        patch("app.services.stripe_service.stripe_client", stripe),
-        patch("stripe.checkout.Session.create") as mock,
-    ):
+    with patch("stripe.checkout.Session.create") as mock:
         mock.return_value = MagicMock(
             id="cs_test_12345",
             url="https://checkout.stripe.com/test",
@@ -308,34 +296,19 @@ def mock_stripe_checkout():
 
 @pytest.fixture
 def mock_stripe_portal():
-    """Mock Stripe customer portal session creation"""
-    import stripe
-
-    with (
-        patch("app.services.stripe_service.stripe_client", stripe),
-        patch("stripe.billing_portal.Session.create") as mock,
-    ):
-        mock.return_value = MagicMock(
-            url="https://billing.stripe.com/test",
-        )
+    with patch("stripe.billing_portal.Session.create") as mock:
+        mock.return_value = MagicMock(url="https://billing.stripe.com/test")
         yield mock
 
 
 @pytest.fixture
 def mock_stripe_webhook_event():
-    """Mock Stripe webhook event construction"""
-    import stripe
-
-    with (
-        patch("app.services.stripe_service.stripe_client", stripe),
-        patch("stripe.Webhook.construct_event") as mock,
-    ):
+    with patch("stripe.Webhook.construct_event") as mock:
         yield mock
 
 
 @pytest.fixture
 def mock_stripe_subscription():
-    """Mock Stripe subscription object"""
     return MagicMock(
         id="sub_test_12345",
         customer="cus_test_12345",

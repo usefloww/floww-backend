@@ -64,24 +64,12 @@ async def create_user_organization(
     Returns:
         Tuple of (Organization, Namespace)
     """
-    base_name, display_name = _generate_org_name(
+    _, display_name = _generate_org_name(
         first_name, last_name, email, username, str(user.id)
     )
 
-    # Ensure uniqueness by checking and appending suffix
-    name = base_name
-    suffix = 0
-    while True:
-        existing = await session.execute(
-            select(Organization).where(Organization.name == name)
-        )
-        if not existing.scalar_one_or_none():
-            break
-        suffix += 1
-        name = f"{base_name}-{suffix}"
-
     # Create organization
-    org = Organization(name=name, display_name=display_name)
+    org = Organization(display_name=display_name)
     session.add(org)
     await session.flush()
 
@@ -570,9 +558,10 @@ def generate_sso_portal_link(
     workos_organization_id: str,
     return_url: Optional[str] = None,
     success_url: Optional[str] = None,
+    intents: Optional[list[str]] = None,
 ):
     """
-    Generate a WorkOS Admin Portal link for SSO configuration.
+    Generate a WorkOS Admin Portal link for SSO/domain configuration.
 
     Note: This is a synchronous function because the WorkOS async client
     does not yet support Portal APIs.
@@ -581,26 +570,45 @@ def generate_sso_portal_link(
         workos_organization_id: The WorkOS organization ID
         return_url: URL to redirect to after exiting the portal
         success_url: URL to redirect to after successful configuration
+        intents: List of intents to include (sso, domain_verification, dsync, audit_logs)
+                 If multiple provided, uses the first one as primary.
 
     Returns:
         PortalLink object with the admin portal URL
     """
+    from typing import Literal, cast
+
+    PortalLinkIntent = Literal[
+        "audit_logs",
+        "certificate_renewal",
+        "domain_verification",
+        "dsync",
+        "log_streams",
+        "sso",
+    ]
+
     if workos_sync_client is None:
         raise ValueError(
             "WorkOS client is not initialized. Please install the WorkOS SDK and "
             "configure AUTH_CLIENT_SECRET and AUTH_CLIENT_ID."
         )
 
+    # Default to SSO if no intents specified
+    intent_str = "sso"
+    if intents and len(intents) > 0:
+        intent_str = intents[0]
+
     portal_link = workos_sync_client.portal.generate_link(
-        intent="sso",
+        intent=cast(PortalLinkIntent, intent_str),
         organization_id=workos_organization_id,
         return_url=return_url,
         success_url=success_url,
     )
 
     logger.info(
-        "Generated SSO portal link",
+        "Generated portal link",
         organization_id=workos_organization_id,
+        intent=intent_str,
     )
 
     return portal_link

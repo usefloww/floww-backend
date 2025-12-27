@@ -65,14 +65,14 @@ class TestGetOrganizationSubscription:
         assert data["status"] == "active"
         assert data["has_active_pro"] is False
 
-    async def test_get_subscription_pro_tier(
+    async def test_get_subscription_hobby_tier(
         self,
         client: AsyncClient,
         session: AsyncSession,
         dependency_overrides,
     ):
         """Returns subscription with tier=hobby, has_active_pro=true"""
-        user = await get_or_create_user(session, f"test_pro_{uuid4()}", create=False)
+        user = await get_or_create_user(session, f"test_hobby_{uuid4()}", create=False)
         await session.flush()
 
         organization = await _get_user_organization(session, user)
@@ -245,10 +245,10 @@ class TestGetOrganizationUsage:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["workflows_limit"] == settings.FREE_TIER_WORKFLOW_LIMIT
-        assert data["executions_limit"] == settings.FREE_TIER_EXECUTION_LIMIT_PER_MONTH
+        assert data["workflows_limit"] == 3
+        assert data["executions_limit"] == 100
 
-    async def test_get_usage_pro_tier(
+    async def test_get_usage_hobby_tier(
         self,
         client: AsyncClient,
         session: AsyncSession,
@@ -256,7 +256,7 @@ class TestGetOrganizationUsage:
     ):
         """Returns correct limits for hobby tier"""
         user = await get_or_create_user(
-            session, f"test_usage_pro_{uuid4()}", create=False
+            session, f"test_usage_hobby_{uuid4()}", create=False
         )
         await session.flush()
 
@@ -276,8 +276,8 @@ class TestGetOrganizationUsage:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["workflows_limit"] == settings.PRO_TIER_WORKFLOW_LIMIT
-        assert data["executions_limit"] == settings.PRO_TIER_EXECUTION_LIMIT_PER_MONTH
+        assert data["workflows_limit"] == 100
+        assert data["executions_limit"] == 10_000
 
     async def test_get_usage_not_cloud(
         self,
@@ -336,7 +336,7 @@ class TestCreateCheckoutSession:
             url="https://checkout.stripe.com/test",
         )
 
-        with patch.object(settings, "STRIPE_PRICE_ID_PRO", "price_test_pro"):
+        with patch.object(settings, "STRIPE_PRICE_ID_HOBBY", "price_test_pro"):
             response = await client.post(
                 f"/api/organizations/{organization.id}/checkout",
                 json={
@@ -350,15 +350,15 @@ class TestCreateCheckoutSession:
         assert data["session_id"] == "cs_test_12345"
         assert data["url"] == "https://checkout.stripe.com/test"
 
-    async def test_create_checkout_session_already_pro(
+    async def test_create_checkout_session_already_subscribed(
         self,
         client: AsyncClient,
         session: AsyncSession,
         dependency_overrides,
     ):
-        """Returns 400 when organization already has active pro"""
+        """Returns 400 when organization already has active subscription"""
         user = await get_or_create_user(
-            session, f"test_already_pro_{uuid4()}", create=False
+            session, f"test_already_subscribed_{uuid4()}", create=False
         )
         await session.flush()
 
@@ -383,7 +383,7 @@ class TestCreateCheckoutSession:
         )
 
         assert response.status_code == 400
-        assert "already has an active Hobby subscription" in response.json()["detail"]
+        assert "already has an active subscription" in response.json()["detail"]
 
     async def test_create_checkout_session_not_cloud(
         self,
@@ -439,7 +439,7 @@ class TestCreateCheckoutSession:
 
         mock_stripe_customer.side_effect = Exception("Stripe API error")
 
-        with patch.object(settings, "STRIPE_PRICE_ID_PRO", "price_test_pro"):
+        with patch.object(settings, "STRIPE_PRICE_ID_HOBBY", "price_test_pro"):
             response = await client.post(
                 f"/api/organizations/{organization.id}/checkout",
                 json={

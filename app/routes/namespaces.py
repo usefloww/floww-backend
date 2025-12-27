@@ -32,7 +32,6 @@ async def list_namespaces(current_user: CurrentUser, session: SessionDep):
                 "id": str(namespace.id),
                 "organization": {
                     "id": str(namespace.organization_owner.id),
-                    "name": namespace.organization_owner.name,
                     "display_name": namespace.organization_owner.display_name,
                 },
             }

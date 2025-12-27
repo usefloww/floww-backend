@@ -92,13 +92,13 @@ async def check_can_execute_workflow_in_org(
         )
 
 
-async def require_pro_tier_for_org(
+async def require_paid_subscription(
     session: SessionDep,
     organization: Organization,
 ) -> None:
     """
-    Require an active Hobby subscription for the organization.
-    Raises HTTPException if organization doesn't have Hobby.
+    Require an active paid subscription for the organization.
+    Raises HTTPException if organization is on free tier.
     """
     if not settings.IS_CLOUD:
         return
@@ -106,14 +106,14 @@ async def require_pro_tier_for_org(
     subscription = await billing_service.get_or_create_subscription(
         session, organization
     )
-    has_pro = await billing_service.has_active_hobby_subscription(subscription)
+    details = billing_service.get_subscription_details(subscription)
 
-    if not has_pro:
+    if not details.is_paid:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail={
-                "title": "Hobby subscription required",
-                "description": "This feature requires an active Hobby subscription.",
+                "title": "Paid subscription required",
+                "description": "This feature requires an active paid subscription.",
                 "upgrade_required": True,
             },
         )

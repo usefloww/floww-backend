@@ -1,9 +1,3 @@
-"""
-Billing webhook endpoints.
-
-Handles Stripe webhook events for subscription lifecycle management.
-"""
-
 import structlog
 from fastapi import APIRouter, HTTPException, Request
 
@@ -21,11 +15,6 @@ async def stripe_webhook(
     request: Request,
     session: TransactionSessionDep,
 ):
-    """
-    Handle Stripe webhook events.
-
-    This endpoint receives events from Stripe about subscription changes.
-    """
     if not settings.IS_CLOUD:
         raise HTTPException(
             status_code=404,
@@ -41,42 +30,27 @@ async def stripe_webhook(
     try:
         event = stripe_service.construct_webhook_event(payload, sig_header)
     except ValueError:
-        logger.error("Invalid payload")
         raise HTTPException(status_code=400, detail="Invalid payload")
-    except Exception as e:
-        logger.error("Invalid signature", error=str(e))
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     event_type = event["type"]
     event_data = event["data"]["object"]
+    event_id = event["id"]
 
-    logger.info("Received Stripe webhook", event_type=event_type, event_id=event["id"])
+    logger.info("Received Stripe webhook", event_type=event_type, event_id=event_id)
 
-    if event_type == "checkout.session.completed":
-        await billing_service.handle_checkout_completed(
-            session, event_data, event["id"]
-        )
-    elif event_type == "customer.subscription.created":
-        await billing_service.handle_subscription_created(
-            session, event_data, event["id"]
-        )
-    elif event_type == "customer.subscription.updated":
-        await billing_service.handle_subscription_updated(
-            session, event_data, event["id"]
-        )
-    elif event_type == "customer.subscription.deleted":
-        await billing_service.handle_subscription_deleted(
-            session, event_data, event["id"]
-        )
-    elif event_type == "invoice.payment_failed":
-        await billing_service.handle_payment_failed_event(
-            session, event_data, event["id"]
-        )
-    elif event_type == "invoice.payment_succeeded":
-        await billing_service.handle_payment_succeeded_event(
-            session, event_data, event["id"]
-        )
-    else:
-        logger.info("Unhandled event type", event_type=event_type)
+    handlers = {
+        "checkout.session.completed": billing_service.handle_checkout_completed,
+        "customer.subscription.created": billing_service.handle_subscription_created,
+        "customer.subscription.updated": billing_service.handle_subscription_updated,
+        "customer.subscription.deleted": billing_service.handle_subscription_deleted,
+        "invoice.payment_failed": billing_service.handle_payment_failed_event,
+        "invoice.payment_succeeded": billing_service.handle_payment_succeeded_event,
+    }
+
+    handler = handlers.get(event_type)
+    if handler:
+        await handler(session, event_data, event_id)
 
     return {"status": "success"}

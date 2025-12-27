@@ -1,9 +1,11 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models import (
     BillingEvent,
@@ -16,25 +18,92 @@ from app.models import (
     SubscriptionTier,
     Workflow,
 )
+from app.services.stripe_service import find_subscription_by_organization
 from app.settings import settings
 
 logger = structlog.stdlib.get_logger(__name__)
+
+PLAN_LIMITS: dict[SubscriptionTier, tuple[int, int]] = {
+    SubscriptionTier.FREE: (3, 100),
+    SubscriptionTier.HOBBY: (100, 10_000),
+    SubscriptionTier.TEAM: (100, 50_000),
+}
+
+PLAN_NAMES: dict[SubscriptionTier, str] = {
+    SubscriptionTier.FREE: "Free",
+    SubscriptionTier.HOBBY: "Hobby",
+    SubscriptionTier.TEAM: "Team",
+}
+
+
+@dataclass
+class SubscriptionDetails:
+    tier: SubscriptionTier
+    plan_name: str
+    workflow_limit: int
+    execution_limit_per_month: int
+    is_paid: bool
+
+
+def _is_subscription_active(subscription: Subscription) -> bool:
+    if subscription.tier == SubscriptionTier.FREE:
+        return False
+
+    now = datetime.now(timezone.utc)
+
+    if subscription.status == SubscriptionStatus.TRIALING:
+        return bool(subscription.trial_ends_at and subscription.trial_ends_at > now)
+
+    if subscription.status == SubscriptionStatus.ACTIVE:
+        return True
+
+    if subscription.status == SubscriptionStatus.PAST_DUE:
+        return bool(
+            subscription.grace_period_ends_at
+            and subscription.grace_period_ends_at > now
+        )
+
+    return False
+
+
+def get_subscription_details(subscription: Subscription) -> SubscriptionDetails:
+    is_paid = _is_subscription_active(subscription)
+
+    if is_paid:
+        tier = subscription.tier
+        workflow_limit, execution_limit = PLAN_LIMITS[tier]
+        return SubscriptionDetails(
+            tier=tier,
+            plan_name=PLAN_NAMES[tier],
+            workflow_limit=workflow_limit,
+            execution_limit_per_month=execution_limit,
+            is_paid=True,
+        )
+
+    workflow_limit, execution_limit = PLAN_LIMITS[SubscriptionTier.FREE]
+    return SubscriptionDetails(
+        tier=SubscriptionTier.FREE,
+        plan_name=PLAN_NAMES[SubscriptionTier.FREE],
+        workflow_limit=workflow_limit,
+        execution_limit_per_month=execution_limit,
+        is_paid=False,
+    )
+
+
+def has_active_hobby_subscription(subscription: Subscription) -> bool:
+    return get_subscription_details(subscription).is_paid
 
 
 async def get_or_create_subscription(
     session: AsyncSession, organization: Organization
 ) -> Subscription:
-    """
-    Get or create a subscription for an organization.
-    New organizations start on the free tier.
-    """
     result = await session.execute(
         select(Subscription).where(Subscription.organization_id == organization.id)
     )
-    existing_subscription = result.scalar_one_or_none()
+    existing = result.scalar_one_or_none()
 
-    if existing_subscription:
-        return existing_subscription
+    if existing:
+        return existing
 
     subscription = Subscription(
         organization_id=organization.id,
@@ -43,66 +112,10 @@ async def get_or_create_subscription(
     )
     session.add(subscription)
     await session.flush()
-    logger.info("Created free tier subscription", organization_id=organization.id)
     return subscription
 
 
-async def has_active_hobby_subscription(subscription: Subscription) -> bool:
-    """
-    Check if a subscription grants pro access.
-    This includes:
-    - Active hobby subscriptions
-    - Trial period (before trial_ends_at)
-    - Grace period (before grace_period_ends_at) even if payment failed
-    """
-    if subscription.tier != SubscriptionTier.HOBBY:
-        return False
-
-    now = datetime.now(timezone.utc)
-
-    if subscription.status == SubscriptionStatus.TRIALING:
-        if subscription.trial_ends_at and subscription.trial_ends_at > now:
-            return True
-        return False
-
-    if subscription.status == SubscriptionStatus.ACTIVE:
-        return True
-
-    if subscription.status == SubscriptionStatus.PAST_DUE:
-        if (
-            subscription.grace_period_ends_at
-            and subscription.grace_period_ends_at > now
-        ):
-            logger.info(
-                "User in grace period",
-                subscription_id=subscription.id,
-                grace_period_ends_at=subscription.grace_period_ends_at,
-            )
-            return True
-        return False
-
-    return False
-
-
-async def get_workflow_limit(subscription: Subscription) -> int:
-    """Get the workflow limit based on subscription tier"""
-    is_pro = await has_active_hobby_subscription(subscription)
-    if is_pro:
-        return settings.PRO_TIER_WORKFLOW_LIMIT
-    return settings.FREE_TIER_WORKFLOW_LIMIT
-
-
-async def get_execution_limit(subscription: Subscription) -> int:
-    """Get the monthly execution limit based on subscription tier"""
-    is_pro = await has_active_hobby_subscription(subscription)
-    if is_pro:
-        return settings.PRO_TIER_EXECUTION_LIMIT_PER_MONTH
-    return settings.FREE_TIER_EXECUTION_LIMIT_PER_MONTH
-
-
 async def get_workflow_count(session: AsyncSession, organization_id: UUID) -> int:
-    """Get the number of workflows for an organization"""
-    # Find the namespace owned by this organization
     result = await session.execute(
         select(func.count(Workflow.id))
         .select_from(Workflow)
@@ -115,7 +128,6 @@ async def get_workflow_count(session: AsyncSession, organization_id: UUID) -> in
 async def get_execution_count_this_month(
     session: AsyncSession, organization_id: UUID
 ) -> int:
-    """Get the number of workflow executions this month for an organization"""
     now = datetime.now(timezone.utc)
     start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
@@ -142,26 +154,23 @@ async def get_execution_count_this_month(
 async def check_workflow_limit(
     session: AsyncSession, organization: Organization
 ) -> tuple[bool, str]:
-    """
-    Check if organization can create more workflows.
-    Returns (can_create: bool, message: str)
-    """
     if not settings.IS_CLOUD:
         return True, ""
 
     subscription = await get_or_create_subscription(session, organization)
+    details = get_subscription_details(subscription)
     current_count = await get_workflow_count(session, organization.id)
-    limit = await get_workflow_limit(subscription)
 
-    if current_count >= limit:
-        is_pro = await has_active_hobby_subscription(subscription)
-        if is_pro:
-            return False, f"You have reached your workflow limit of {limit} workflows."
-        else:
+    if current_count >= details.workflow_limit:
+        if details.is_paid:
             return (
                 False,
-                f"You have reached the free tier limit of {limit} workflows. Upgrade to Hobby to create more workflows.",
+                f"You have reached your workflow limit of {details.workflow_limit} workflows.",
             )
+        return (
+            False,
+            f"You have reached the free tier limit of {details.workflow_limit} workflows. Upgrade to Hobby to create more workflows.",
+        )
 
     return True, ""
 
@@ -169,29 +178,23 @@ async def check_workflow_limit(
 async def check_execution_limit(
     session: AsyncSession, organization: Organization
 ) -> tuple[bool, str]:
-    """
-    Check if organization can execute more workflows this month.
-    Returns (can_execute: bool, message: str)
-    """
     if not settings.IS_CLOUD:
         return True, ""
 
     subscription = await get_or_create_subscription(session, organization)
+    details = get_subscription_details(subscription)
     current_count = await get_execution_count_this_month(session, organization.id)
-    limit = await get_execution_limit(subscription)
 
-    if current_count >= limit:
-        is_pro = await has_active_hobby_subscription(subscription)
-        if is_pro:
+    if current_count >= details.execution_limit_per_month:
+        if details.is_paid:
             return (
                 False,
-                f"You have reached your monthly execution limit of {limit:,} executions.",
+                f"You have reached your monthly execution limit of {details.execution_limit_per_month:,} executions.",
             )
-        else:
-            return (
-                False,
-                f"You have reached the free tier limit of {limit:,} executions this month. Upgrade to Hobby for more executions.",
-            )
+        return (
+            False,
+            f"You have reached the free tier limit of {details.execution_limit_per_month:,} executions this month. Upgrade to Hobby for more executions.",
+        )
 
     return True, ""
 
@@ -201,81 +204,44 @@ async def start_trial(
     subscription: Subscription,
     trial_ends_at: datetime | None = None,
 ) -> None:
-    """Start a trial period for a subscription"""
     subscription.tier = SubscriptionTier.HOBBY
     subscription.status = SubscriptionStatus.TRIALING
-    if trial_ends_at:
-        subscription.trial_ends_at = trial_ends_at
-    else:
-        subscription.trial_ends_at = datetime.now(timezone.utc) + timedelta(
-            days=settings.TRIAL_PERIOD_DAYS
-        )
-    await session.flush()
-    logger.info(
-        "Started trial period",
-        subscription_id=subscription.id,
-        trial_ends_at=subscription.trial_ends_at,
+    subscription.trial_ends_at = trial_ends_at or (
+        datetime.now(timezone.utc) + timedelta(days=settings.TRIAL_PERIOD_DAYS)
     )
+    await session.flush()
 
 
-async def activate_pro_subscription(
+async def activate_paid_subscription(
     session: AsyncSession,
     subscription: Subscription,
     stripe_subscription_id: str,
     current_period_end: datetime,
 ) -> None:
-    """Activate a hobby subscription after successful payment"""
-    subscription.tier = SubscriptionTier.HOBBY
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.stripe_subscription_id = stripe_subscription_id
     subscription.current_period_end = current_period_end
     subscription.trial_ends_at = None
     subscription.grace_period_ends_at = None
     await session.flush()
-    logger.info(
-        "Activated hobby subscription",
-        subscription_id=subscription.id,
-        stripe_subscription_id=stripe_subscription_id,
-    )
 
 
 async def cancel_subscription(
-    session: AsyncSession, subscription: Subscription, immediate: bool = False
+    session: AsyncSession, subscription: Subscription
 ) -> None:
-    """Cancel a subscription"""
-    if immediate:
-        subscription.tier = SubscriptionTier.FREE
-        subscription.status = SubscriptionStatus.CANCELED
-        subscription.stripe_subscription_id = None
-        subscription.current_period_end = None
-        subscription.grace_period_ends_at = None
-    else:
-        subscription.cancel_at_period_end = True
-
+    subscription.cancel_at_period_end = True
     await session.flush()
-    logger.info(
-        "Canceled subscription",
-        subscription_id=subscription.id,
-        immediate=immediate,
-    )
 
 
 async def start_grace_period(session: AsyncSession, subscription: Subscription) -> None:
-    """Start grace period after failed payment"""
     subscription.status = SubscriptionStatus.PAST_DUE
     subscription.grace_period_ends_at = datetime.now(timezone.utc) + timedelta(
         days=settings.GRACE_PERIOD_DAYS
     )
     await session.flush()
-    logger.warning(
-        "Payment failed, started grace period",
-        subscription_id=subscription.id,
-        grace_period_ends_at=subscription.grace_period_ends_at,
-    )
 
 
 async def downgrade_to_free(session: AsyncSession, subscription: Subscription) -> None:
-    """Downgrade a subscription to free tier"""
     subscription.tier = SubscriptionTier.FREE
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.stripe_subscription_id = None
@@ -284,18 +250,33 @@ async def downgrade_to_free(session: AsyncSession, subscription: Subscription) -
     subscription.grace_period_ends_at = None
     subscription.cancel_at_period_end = False
     await session.flush()
-    logger.info("Downgraded subscription to free tier", subscription_id=subscription.id)
 
 
 # Webhook event handlers
 
 
 async def _is_duplicate_event(session: AsyncSession, stripe_event_id: str) -> bool:
-    """Check if we've already processed this Stripe event"""
     result = await session.execute(
         select(BillingEvent).where(BillingEvent.stripe_event_id == stripe_event_id)
     )
     return result.scalar_one_or_none() is not None
+
+
+async def _record_event(
+    session: AsyncSession,
+    subscription_id: UUID,
+    event_type: str,
+    stripe_event_id: str,
+    payload: dict,
+) -> None:
+    event = BillingEvent(
+        subscription_id=subscription_id,
+        event_type=event_type,
+        stripe_event_id=stripe_event_id,
+        payload=payload,
+    )
+    session.add(event)
+    await session.flush()
 
 
 async def handle_checkout_completed(
@@ -303,25 +284,18 @@ async def handle_checkout_completed(
     event_data: dict,
     stripe_event_id: str,
 ) -> None:
-    """Handle successful checkout session completion"""
     if await _is_duplicate_event(session, stripe_event_id):
-        logger.info("Duplicate event, skipping", stripe_event_id=stripe_event_id)
         return
 
-    subscription_id_str = event_data.get("metadata", {}).get("subscription_id")
+    metadata = event_data.get("metadata", {})
+    subscription_id_str = metadata.get("subscription_id")
 
     if not subscription_id_str:
-        logger.warning("No subscription_id in checkout session metadata")
         return
 
     try:
         subscription_id = UUID(subscription_id_str)
-    except (ValueError, TypeError) as e:
-        logger.error(
-            "Invalid subscription_id format",
-            subscription_id=subscription_id_str,
-            error=str(e),
-        )
+    except (ValueError, TypeError):
         return
 
     result = await session.execute(
@@ -330,26 +304,19 @@ async def handle_checkout_completed(
     subscription = result.scalar_one_or_none()
 
     if not subscription:
-        logger.error("Subscription not found", subscription_id=subscription_id)
         return
 
+    # Update customer ID if not set
     stripe_customer_id = event_data.get("customer")
     if stripe_customer_id and not subscription.stripe_customer_id:
         subscription.stripe_customer_id = stripe_customer_id
 
-    billing_event = BillingEvent(
-        subscription_id=subscription.id,
-        event_type="checkout.session.completed",
-        stripe_event_id=stripe_event_id,
-        payload=event_data,
-    )
-    session.add(billing_event)
-    await session.flush()
-
-    logger.info(
-        "Checkout session completed",
-        subscription_id=subscription.id,
-        customer_id=stripe_customer_id,
+    await _record_event(
+        session,
+        subscription.id,
+        "checkout.session.completed",
+        stripe_event_id,
+        event_data,
     )
 
 
@@ -358,25 +325,16 @@ async def handle_subscription_created(
     event_data: dict,
     stripe_event_id: str,
 ) -> None:
-    """Handle subscription creation"""
     if await _is_duplicate_event(session, stripe_event_id):
-        logger.info("Duplicate event, skipping", stripe_event_id=stripe_event_id)
         return
 
     subscription_id_str = event_data.get("metadata", {}).get("subscription_id")
-
     if not subscription_id_str:
-        logger.warning("No subscription_id in subscription metadata")
         return
 
     try:
         subscription_id = UUID(subscription_id_str)
-    except (ValueError, TypeError) as e:
-        logger.error(
-            "Invalid subscription_id format",
-            subscription_id=subscription_id_str,
-            error=str(e),
-        )
+    except (ValueError, TypeError):
         return
 
     result = await session.execute(
@@ -385,7 +343,6 @@ async def handle_subscription_created(
     subscription = result.scalar_one_or_none()
 
     if not subscription:
-        logger.error("Subscription not found", subscription_id=subscription_id)
         return
 
     stripe_subscription_id = event_data.get("id")
@@ -407,25 +364,30 @@ async def handle_subscription_created(
         await start_trial(session, subscription, trial_ends_at=trial_end)
         subscription.stripe_subscription_id = stripe_subscription_id
         subscription.current_period_end = current_period_end
-    elif stripe_status in ["active", "past_due"]:
-        await activate_pro_subscription(
+    elif (
+        stripe_status in ["active", "past_due"]
+        and stripe_subscription_id
+        and current_period_end
+    ):
+        await activate_paid_subscription(
             session, subscription, stripe_subscription_id, current_period_end
         )
 
-    billing_event = BillingEvent(
-        subscription_id=subscription.id,
-        event_type="customer.subscription.created",
-        stripe_event_id=stripe_event_id,
-        payload=event_data,
-    )
-    session.add(billing_event)
-    await session.flush()
+    # Sync tier from subscription items
+    items = event_data.get("items", {}).get("data", [])
+    for item in items:
+        price_id = item.get("price", {}).get("id")
+        if price_id == settings.STRIPE_PRICE_ID_HOBBY:
+            subscription.tier = SubscriptionTier.HOBBY
+        elif price_id == settings.STRIPE_PRICE_ID_TEAM:
+            subscription.tier = SubscriptionTier.TEAM
 
-    logger.info(
-        "Subscription created",
-        subscription_id=subscription.id,
-        stripe_subscription_id=stripe_subscription_id,
-        status=stripe_status,
+    await _record_event(
+        session,
+        subscription.id,
+        "customer.subscription.created",
+        stripe_event_id,
+        event_data,
     )
 
 
@@ -434,9 +396,7 @@ async def handle_subscription_updated(
     event_data: dict,
     stripe_event_id: str,
 ) -> None:
-    """Handle subscription updates"""
     if await _is_duplicate_event(session, stripe_event_id):
-        logger.info("Duplicate event, skipping", stripe_event_id=stripe_event_id)
         return
 
     stripe_subscription_id = event_data.get("id")
@@ -449,10 +409,6 @@ async def handle_subscription_updated(
     subscription = result.scalar_one_or_none()
 
     if not subscription:
-        logger.warning(
-            "Subscription not found for update",
-            stripe_subscription_id=stripe_subscription_id,
-        )
         return
 
     stripe_status = event_data.get("status")
@@ -475,20 +431,22 @@ async def handle_subscription_updated(
     subscription.current_period_end = current_period_end
     subscription.cancel_at_period_end = cancel_at_period_end
 
-    billing_event = BillingEvent(
-        subscription_id=subscription.id,
-        event_type="customer.subscription.updated",
-        stripe_event_id=stripe_event_id,
-        payload=event_data,
-    )
-    session.add(billing_event)
-    await session.flush()
+    # Sync tier from subscription items
+    if stripe_status != "canceled":
+        items = event_data.get("items", {}).get("data", [])
+        for item in items:
+            price_id = item.get("price", {}).get("id")
+            if price_id == settings.STRIPE_PRICE_ID_HOBBY:
+                subscription.tier = SubscriptionTier.HOBBY
+            elif price_id == settings.STRIPE_PRICE_ID_TEAM:
+                subscription.tier = SubscriptionTier.TEAM
 
-    logger.info(
-        "Subscription updated",
-        subscription_id=subscription.id,
-        status=stripe_status,
-        cancel_at_period_end=cancel_at_period_end,
+    await _record_event(
+        session,
+        subscription.id,
+        "customer.subscription.updated",
+        stripe_event_id,
+        event_data,
     )
 
 
@@ -497,9 +455,7 @@ async def handle_subscription_deleted(
     event_data: dict,
     stripe_event_id: str,
 ) -> None:
-    """Handle subscription deletion/cancellation"""
     if await _is_duplicate_event(session, stripe_event_id):
-        logger.info("Duplicate event, skipping", stripe_event_id=stripe_event_id)
         return
 
     stripe_subscription_id = event_data.get("id")
@@ -512,26 +468,15 @@ async def handle_subscription_deleted(
     subscription = result.scalar_one_or_none()
 
     if not subscription:
-        logger.warning(
-            "Subscription not found for deletion",
-            stripe_subscription_id=stripe_subscription_id,
-        )
         return
 
     await downgrade_to_free(session, subscription)
-
-    billing_event = BillingEvent(
-        subscription_id=subscription.id,
-        event_type="customer.subscription.deleted",
-        stripe_event_id=stripe_event_id,
-        payload=event_data,
-    )
-    session.add(billing_event)
-    await session.flush()
-
-    logger.info(
-        "Subscription deleted",
-        subscription_id=subscription.id,
+    await _record_event(
+        session,
+        subscription.id,
+        "customer.subscription.deleted",
+        stripe_event_id,
+        event_data,
     )
 
 
@@ -540,15 +485,11 @@ async def handle_payment_failed_event(
     event_data: dict,
     stripe_event_id: str,
 ) -> None:
-    """Handle failed payment webhook event"""
     if await _is_duplicate_event(session, stripe_event_id):
-        logger.info("Duplicate event, skipping", stripe_event_id=stripe_event_id)
         return
 
     stripe_subscription_id = event_data.get("subscription")
-
     if not stripe_subscription_id:
-        logger.info("Payment failed event without subscription")
         return
 
     result = await session.execute(
@@ -559,26 +500,11 @@ async def handle_payment_failed_event(
     subscription = result.scalar_one_or_none()
 
     if not subscription:
-        logger.warning(
-            "Subscription not found for payment failure",
-            stripe_subscription_id=stripe_subscription_id,
-        )
         return
 
     await start_grace_period(session, subscription)
-
-    billing_event = BillingEvent(
-        subscription_id=subscription.id,
-        event_type="invoice.payment_failed",
-        stripe_event_id=stripe_event_id,
-        payload=event_data,
-    )
-    session.add(billing_event)
-    await session.flush()
-
-    logger.warning(
-        "Payment failed",
-        subscription_id=subscription.id,
+    await _record_event(
+        session, subscription.id, "invoice.payment_failed", stripe_event_id, event_data
     )
 
 
@@ -587,15 +513,11 @@ async def handle_payment_succeeded_event(
     event_data: dict,
     stripe_event_id: str,
 ) -> None:
-    """Handle successful payment webhook event"""
     if await _is_duplicate_event(session, stripe_event_id):
-        logger.info("Duplicate event, skipping", stripe_event_id=stripe_event_id)
         return
 
     stripe_subscription_id = event_data.get("subscription")
-
     if not stripe_subscription_id:
-        logger.info("Payment succeeded event without subscription")
         return
 
     result = await session.execute(
@@ -606,30 +528,121 @@ async def handle_payment_succeeded_event(
     subscription = result.scalar_one_or_none()
 
     if not subscription:
-        logger.warning(
-            "Subscription not found for payment success",
-            stripe_subscription_id=stripe_subscription_id,
-        )
         return
 
     if subscription.status == SubscriptionStatus.PAST_DUE:
         subscription.status = SubscriptionStatus.ACTIVE
         subscription.grace_period_ends_at = None
-        logger.info(
-            "Subscription reactivated after payment",
-            subscription_id=subscription.id,
-        )
 
-    billing_event = BillingEvent(
-        subscription_id=subscription.id,
-        event_type="invoice.payment_succeeded",
-        stripe_event_id=stripe_event_id,
-        payload=event_data,
+    await _record_event(
+        session,
+        subscription.id,
+        "invoice.payment_succeeded",
+        stripe_event_id,
+        event_data,
     )
-    session.add(billing_event)
+
+
+async def sync_subscription_from_stripe(
+    session: AsyncSession,
+    organization_id: UUID,
+) -> tuple[bool, str]:
+    result = await session.execute(
+        select(Organization)
+        .options(selectinload(Organization.subscription))
+        .where(Organization.id == organization_id)
+    )
+    organization = result.scalar_one_or_none()
+
+    if not organization:
+        return False, "Organization not found"
+
+    subscription = organization.subscription
+    if not subscription:
+        subscription = Subscription(
+            organization_id=organization_id,
+            tier=SubscriptionTier.FREE,
+            status=SubscriptionStatus.ACTIVE,
+        )
+        session.add(subscription)
+        await session.flush()
+
+    stripe_sub = find_subscription_by_organization(str(organization_id))
+    if not stripe_sub:
+        return False, "No Stripe subscription found for this organization"
+
+    stripe_subscription_id = stripe_sub.get("id")
+    stripe_customer_id = stripe_sub.get("customer")
+    if (
+        stripe_subscription_id
+        and subscription.stripe_subscription_id != stripe_subscription_id
+    ):
+        subscription.stripe_subscription_id = stripe_subscription_id
+    if stripe_customer_id and subscription.stripe_customer_id != stripe_customer_id:
+        subscription.stripe_customer_id = stripe_customer_id
+
+    stripe_status = stripe_sub.get("status")
+    current_period_end_ts = stripe_sub.get("current_period_end")
+    current_period_end = (
+        datetime.fromtimestamp(current_period_end_ts, tz=timezone.utc)
+        if current_period_end_ts
+        else None
+    )
+    cancel_at_period_end = stripe_sub.get("cancel_at_period_end", False)
+    trial_end_ts = stripe_sub.get("trial_end")
+    trial_end = (
+        datetime.fromtimestamp(trial_end_ts, tz=timezone.utc) if trial_end_ts else None
+    )
+
+    if stripe_status == "active":
+        subscription.status = SubscriptionStatus.ACTIVE
+        subscription.grace_period_ends_at = None
+        subscription.trial_ends_at = None
+    elif stripe_status == "trialing":
+        subscription.status = SubscriptionStatus.TRIALING
+        subscription.trial_ends_at = trial_end
+    elif stripe_status == "past_due":
+        subscription.status = SubscriptionStatus.PAST_DUE
+        if not subscription.grace_period_ends_at:
+            subscription.grace_period_ends_at = datetime.now(timezone.utc) + timedelta(
+                days=settings.GRACE_PERIOD_DAYS
+            )
+    elif stripe_status == "canceled":
+        subscription.tier = SubscriptionTier.FREE
+        subscription.status = SubscriptionStatus.CANCELED
+        subscription.stripe_subscription_id = None
+        subscription.current_period_end = None
+        subscription.trial_ends_at = None
+        subscription.grace_period_ends_at = None
+        subscription.cancel_at_period_end = False
+        await session.flush()
+        return (
+            True,
+            "Subscription synced - downgraded to free tier (canceled in Stripe)",
+        )
+    elif stripe_status == "incomplete":
+        subscription.status = SubscriptionStatus.INCOMPLETE
+    elif stripe_status == "incomplete_expired":
+        subscription.tier = SubscriptionTier.FREE
+        subscription.status = SubscriptionStatus.ACTIVE
+        subscription.stripe_subscription_id = None
+        await session.flush()
+        return True, "Subscription synced - downgraded to free tier (expired)"
+
+    subscription.current_period_end = current_period_end
+    subscription.cancel_at_period_end = cancel_at_period_end
+
+    items = stripe_sub.get("items", {}).get("data", [])
+    for item in items:
+        price_id = item.get("price", {}).get("id")
+        if price_id == settings.STRIPE_PRICE_ID_HOBBY:
+            subscription.tier = SubscriptionTier.HOBBY
+        elif price_id == settings.STRIPE_PRICE_ID_TEAM:
+            subscription.tier = SubscriptionTier.TEAM
+
     await session.flush()
 
-    logger.info(
-        "Payment succeeded",
-        subscription_id=subscription.id,
+    return (
+        True,
+        f"Subscription synced successfully (status: {stripe_status}, tier: {subscription.tier.value})",
     )

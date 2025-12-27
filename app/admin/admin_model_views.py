@@ -1,12 +1,14 @@
 import inspect
 from typing import Type
+from uuid import UUID
 
 from fastapi import Request
 from fastapi.responses import RedirectResponse
-from sqladmin import ModelView
+from sqladmin import ModelView, action
 
 import app.models as models_module
-from app.models import Base
+from app.models import Base, Organization
+from app.services.billing_service import sync_subscription_from_stripe
 
 
 def get_model_column_list(model: Type[Base]):
@@ -37,6 +39,43 @@ def redirect_to_referer(view: ModelView, request: Request):
         return RedirectResponse(referer)
     else:
         return RedirectResponse(request.url_for("admin:list", identity=view.identity))
+
+
+class OrganizationAdmin(ModelView, model=Organization):
+    name = "Organization"
+    name_plural = "Organizations"
+    icon = "fa-solid fa-building"
+    column_list = get_model_column_list(Organization)
+    column_searchable_list = get_searchable_columns(Organization)
+
+    @action(
+        name="refresh_subscription",
+        label="Refresh Subscription from Stripe",
+        confirmation_message="Sync subscription data from Stripe for selected organizations?",
+        add_in_detail=True,
+        add_in_list=True,
+    )
+    async def refresh_subscription(self, request: Request) -> RedirectResponse:
+        pks = request.query_params.get("pks", "")
+        if not pks:
+            return redirect_to_referer(self, request)
+
+        pk_list = pks.split(",")
+        async with self.session_maker() as session:
+            messages = []
+            for pk in pk_list:
+                try:
+                    org_id = UUID(pk)
+                    success, message = await sync_subscription_from_stripe(
+                        session, org_id
+                    )
+                    messages.append(f"{pk}: {message}")
+                except Exception as e:
+                    messages.append(f"{pk}: Error - {str(e)}")
+
+            await session.commit()
+
+        return redirect_to_referer(self, request)
 
 
 def get_model_icon(model_name: str) -> str:
@@ -93,10 +132,23 @@ def get_all_models() -> list[Type[Base]]:
     return models
 
 
+# Models that have custom admin classes
+CUSTOM_ADMIN_CLASSES: dict[str, Type[ModelView]] = {
+    "Organization": OrganizationAdmin,
+}
+
+
 def generate_all_views() -> list[Type[ModelView]]:
     """Generate ModelView classes for all models."""
     models = get_all_models()
-    return [create_model_admin_class(model) for model in models]
+    views = []
+    for model in models:
+        model_name = model.__name__
+        if model_name in CUSTOM_ADMIN_CLASSES:
+            views.append(CUSTOM_ADMIN_CLASSES[model_name])
+        else:
+            views.append(create_model_admin_class(model))
+    return views
 
 
 ALL_VIEWS = generate_all_views()

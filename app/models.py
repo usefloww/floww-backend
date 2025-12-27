@@ -94,6 +94,7 @@ class LogLevel(str, Enum):
 class SubscriptionTier(str, Enum):
     FREE = "free"
     HOBBY = "hobby"
+    TEAM = "team"
 
 
 class SubscriptionStatus(str, Enum):
@@ -334,7 +335,6 @@ class Organization(Base):
     workos_organization_id: Mapped[str] = mapped_column(
         String(255), unique=True, nullable=True
     )
-    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -353,7 +353,7 @@ class Organization(Base):
     )
 
     def __repr__(self):
-        return self._repr(id=self.id, name=self.name)
+        return self._repr(id=self.id, display_name=self.display_name)
 
 
 class OrganizationMember(Base):

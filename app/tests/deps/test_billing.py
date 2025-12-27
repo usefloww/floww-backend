@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.deps.billing import (
     check_can_create_workflow_in_namespace,
     check_can_execute_workflow_in_org,
-    require_pro_tier_for_org,
+    require_paid_subscription,
 )
 from app.models import (
     ExecutionHistory,
@@ -130,20 +130,20 @@ class TestCheckCanExecuteWorkflow:
         assert "limit" in str(exc_info.value.detail).lower()
 
 
-class TestRequireProTier:
-    """Tests for require_pro_tier_for_org dependency"""
+class TestRequirePaidSubscription:
+    """Tests for require_paid_subscription dependency"""
 
-    async def test_require_pro_tier_allowed(
+    async def test_require_paid_subscription_allowed(
         self,
         session: AsyncSession,
-        test_org_with_pro_subscription: tuple[Organization, Subscription, Namespace],
+        test_org_with_hobby_subscription: tuple[Organization, Subscription, Namespace],
     ):
-        """Passes for pro organizations"""
-        organization, _, _ = test_org_with_pro_subscription
+        """Passes for paid organizations"""
+        organization, _, _ = test_org_with_hobby_subscription
 
-        await require_pro_tier_for_org(session, organization)
+        await require_paid_subscription(session, organization)
 
-    async def test_require_pro_tier_blocked(
+    async def test_require_paid_subscription_blocked(
         self,
         session: AsyncSession,
         test_org_with_free_subscription: tuple[Organization, Subscription, Namespace],
@@ -152,7 +152,7 @@ class TestRequireProTier:
         organization, _, _ = test_org_with_free_subscription
 
         with pytest.raises(HTTPException) as exc_info:
-            await require_pro_tier_for_org(session, organization)
+            await require_paid_subscription(session, organization)
 
         assert exc_info.value.status_code == 402
-        assert "Hobby subscription required" in str(exc_info.value.detail)
+        assert "subscription required" in str(exc_info.value.detail).lower()
