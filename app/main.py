@@ -33,6 +33,7 @@ from app.routes import (
     workflows,
 )
 from app.routes.admin import init_admin
+from app.services.default_runtime import prepare_default_runtime
 from app.services.scheduler_service import cleanup_unused_runtimes
 from app.settings import settings
 from app.utils.logging_utils import setup_logger_fastapi
@@ -48,6 +49,9 @@ async def lifespan(app: FastAPI):
 
     if settings.SINGLE_ORG_MODE:
         await setup_single_org_mode(app)
+
+    if settings.DEFAULT_RUNTIME_IMAGE:
+        await prepare_default_runtime()
 
     if settings.SCHEDULER_ENABLED:
         scheduler = scheduler_factory()

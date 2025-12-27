@@ -196,27 +196,33 @@ async def execute_trigger(
     # Commit to ensure execution record exists before runtime reports completion
     await session.commit()
 
-    # Get image_hash from runtime config and compute image_digest
-    if not deployment.runtime.config or "image_hash" not in deployment.runtime.config:
-        logger.error(
-            "Runtime config missing image_hash",
-            runtime_id=str(deployment.runtime.id),
-            deployment_id=str(deployment.id),
-            execution_id=str(execution_id),
-        )
-        return None
+    # Get image info from runtime config
+    runtime_config = deployment.runtime.config or {}
+    image_uri = runtime_config.get("image_uri")
+    image_digest = ""
 
-    image_hash = deployment.runtime.config["image_hash"]
-    image_digest = await registry_client.get_image_digest(image_hash)
+    # If image_uri is not set, fall back to image_hash from registry
+    if not image_uri:
+        if "image_hash" not in runtime_config:
+            logger.error(
+                "Runtime config missing image_hash or image_uri",
+                runtime_id=str(deployment.runtime.id),
+                deployment_id=str(deployment.id),
+                execution_id=str(execution_id),
+            )
+            return None
 
-    if not image_digest:
-        logger.error(
-            "Image not found in registry",
-            runtime_id=str(deployment.runtime.id),
-            image_hash=image_hash,
-            execution_id=str(execution_id),
-        )
-        return None
+        image_hash = runtime_config["image_hash"]
+        image_digest = await registry_client.get_image_digest(image_hash)
+
+        if not image_digest:
+            logger.error(
+                "Image not found in registry",
+                runtime_id=str(deployment.runtime.id),
+                image_hash=image_hash,
+                execution_id=str(execution_id),
+            )
+            return None
 
     # Fetch provider configs
     provider_configs = await _get_provider_configs(
@@ -233,12 +239,14 @@ async def execute_trigger(
     )
 
     # Invoke runtime
+    # For default runtimes with image_uri, pass the full URI as image_digest
+    effective_image_digest = image_uri if image_uri else image_digest
     runtime_impl = runtime_factory()
     await runtime_impl.invoke_trigger(
         trigger_id=str(trigger.id),
         runtime_config=RuntimeConfig(
             runtime_id=str(deployment.runtime.id),
-            image_digest=image_digest,
+            image_digest=effective_image_digest,
         ),
         user_code=deployment.user_code,
         payload=payload_dict,

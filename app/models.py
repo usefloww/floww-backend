@@ -996,3 +996,16 @@ class ExecutionLog(Base):
             execution_history_id=self.execution_history_id,
             log_level=self.log_level,
         )
+
+
+class Configuration(Base):
+    __tablename__ = "configurations"
+
+    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self):
+        return self._repr(key=self.key)

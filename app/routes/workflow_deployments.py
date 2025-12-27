@@ -20,6 +20,7 @@ from app.models import (
 )
 from app.packages.runtimes.runtime_types import RuntimeConfig
 from app.services.crud_helpers import CrudHelper
+from app.services.default_runtime import get_default_runtime_id
 from app.services.trigger_service import TriggerService
 from app.utils.encryption import decrypt_secret
 from app.utils.query_helpers import UserAccessibleQuery
@@ -72,7 +73,7 @@ class TriggerMetadata(BaseModel):
 
 class WorkflowDeploymentCreate(BaseModel):
     workflow_id: UUID
-    runtime_id: UUID
+    runtime_id: Optional[UUID] = None  # If not provided, uses the default runtime
     code: WorkflowDeploymentUserCode
     triggers: Optional[list[TriggerMetadata]] = None
 
@@ -176,10 +177,19 @@ async def create_workflow_deployment(
     if not workflow:
         raise HTTPException(status_code=400, detail="Workflow not found")
 
+    # Resolve runtime_id: use provided value or fall back to default
+    runtime_id = data.runtime_id
+    if runtime_id is None:
+        runtime_id = await get_default_runtime_id()
+        if runtime_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No runtime_id provided and no default runtime configured",
+            )
+        logger.info("Using default runtime", runtime_id=str(runtime_id))
+
     runtime_query = (
-        UserAccessibleQuery(current_user.id)
-        .runtimes()
-        .where(Runtime.id == data.runtime_id)
+        UserAccessibleQuery(current_user.id).runtimes().where(Runtime.id == runtime_id)
     )
     runtime_result = await session.execute(runtime_query)
     runtime = runtime_result.scalar_one_or_none()
@@ -189,7 +199,7 @@ async def create_workflow_deployment(
     # Create the workflow deployment manually with additional fields
     workflow_deployment = WorkflowDeployment(
         workflow_id=data.workflow_id,
-        runtime_id=data.runtime_id,
+        runtime_id=runtime_id,
         deployed_by_id=current_user.id,
         user_code={
             "files": data.code.files,
@@ -217,11 +227,14 @@ async def create_workflow_deployment(
     provider_configs = await _get_provider_configs(session, workflow.namespace_id)
 
     # Call runtime.get_definitions()
+    # For default runtimes, image_uri is stored in config; otherwise use image_hash
     runtime_impl = runtime_factory()
+    runtime_cfg = runtime.config or {}
+    image_digest = runtime_cfg.get("image_uri") or runtime_cfg.get("image_hash", "")
     runtime_definitions = await runtime_impl.get_definitions(
         runtime_config=RuntimeConfig(
             runtime_id=str(runtime.id),
-            image_digest=(runtime.config or {}).get("image_hash", ""),
+            image_digest=image_digest,
         ),
         user_code=workflow_deployment.user_code,
         provider_configs=provider_configs,

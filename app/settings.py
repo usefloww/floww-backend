@@ -17,6 +17,9 @@ class GeneralConfig(BaseSettings):
     RUN_MIGRATIONS_ON_STARTUP: bool = True
     SENTRY_DSN: str = ""
     SENTRY_ENVIRONMENT: str = ""
+    DEFAULT_RUNTIME_IMAGE: str = ""
+    # Docker: "ghcr.io/floww/runtime:latest" (public image, will be pulled on startup)
+    # Lambda: "123456789.dkr.ecr.us-east-1.amazonaws.com/floww:latest" (existing ECR image)
 
 
 class LambdaConfig(BaseSettings):
@@ -135,10 +138,11 @@ class IntegrationsConfig(BaseSettings):
 
 
 class AIConfig(BaseSettings):
-    AI_MODEL_REQUIREMENTS: str = "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-    AI_MODEL_PLANNING: str = "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-    AI_MODEL_CODEGEN: str = "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-    AI_MODEL_VERIFICATION: str = "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    OPENROUTER_API_KEY: str = ""
+    AI_MODEL_REQUIREMENTS: str = "openrouter/minimax/minimax-m2.1"
+    AI_MODEL_PLANNING: str = "openrouter/minimax/minimax-m2.1"
+    AI_MODEL_CODEGEN: str = "openrouter/minimax/minimax-m2.1"
+    AI_MODEL_VERIFICATION: str = "openrouter/minimax/minimax-m2.1"
 
 
 class Settings(

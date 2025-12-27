@@ -151,6 +151,12 @@ async def create_runtime(
     if image_digest is None:
         raise HTTPException(400, "Image does not exist")
 
+    # Construct full image URI for the runtime
+    registry_host = settings.REGISTRY_URL_RUNTIME.replace("https://", "").replace(
+        "http://", ""
+    )
+    image_uri = f"{registry_host}/{settings.REGISTRY_REPOSITORY_NAME}@{image_digest}"
+
     if existing_runtime:
         # Update the existing runtime instead of creating a new one
         runtime = existing_runtime
@@ -176,7 +182,7 @@ async def create_runtime(
     creation_status = await runtime_impl.create_runtime(
         RuntimeConfig(
             runtime_id=str(runtime.id),
-            image_digest=image_digest,
+            image_digest=image_uri,
         ),
     )
 

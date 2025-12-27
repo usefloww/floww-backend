@@ -1,15 +1,15 @@
-# llm flow rewritten using litellm
-# simple parsing functions, no outlines, no heavy frameworks
-# explicit model arguments, fully portable
-
 import json
+import os
 from typing import Callable, Dict, List
 
 from litellm import completion
 from pydantic import BaseModel
 
-from app.packages.ai_generator.platform_validation import validate_platforms
-from app.packages.ai_generator.provider_docs import load_provider_documentation_batch
+from app.settings import settings
+
+# Configure OpenRouter API key for litellm if available
+if settings.OPENROUTER_API_KEY:
+    os.environ["OPENROUTER_API_KEY"] = settings.OPENROUTER_API_KEY
 
 # ---------------------------------------------------------------------------
 # pydantic schemas
@@ -213,14 +213,3 @@ def run_automation_flow(
         "code": code_out,
         "verification": ver_out,
     }
-
-
-result = run_automation_flow(
-    user_description="when a gitlab merge request is created on the project with id 12345, send a slack message in the channel #gitlab-merge-requests with the just the title of the merge request, no formatting, no nothing",
-    req_model="bedrock/qwen.qwen3-32b-v1:0",
-    plan_model="bedrock/qwen.qwen3-32b-v1:0",
-    code_model="bedrock/qwen.qwen3-32b-v1:0",
-    verify_model="bedrock/qwen.qwen3-32b-v1:0",
-    provider_loader=load_provider_documentation_batch,
-    platform_validator=validate_platforms,
-)

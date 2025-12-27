@@ -71,6 +71,7 @@ services:
       - backend_sentry_dsn
       - staging_backend_stripe_secret_key
       - staging_backend_stripe_webhook_secret
+      - staging_backend_openrouter_api_key
 
     environment:
       # Non-sensitive configuration
@@ -106,6 +107,7 @@ services:
       - SENTRY_DSN_FILE=/run/secrets/backend_sentry_dsn
       - STRIPE_SECRET_KEY_FILE=/run/secrets/staging_backend_stripe_secret_key
       - STRIPE_WEBHOOK_SECRET_FILE=/run/secrets/staging_backend_stripe_webhook_secret
+      - OPENROUTER_API_KEY_FILE=/run/secrets/staging_backend_openrouter_api_key
 
     deploy:
       mode: replicated
