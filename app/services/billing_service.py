@@ -6,6 +6,7 @@ import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import IntegrityError
 
 from app.models import (
     BillingEvent,
@@ -18,7 +19,10 @@ from app.models import (
     SubscriptionTier,
     Workflow,
 )
-from app.services.stripe_service import find_subscription_by_organization
+from app.services.stripe_service import (
+    find_subscription_by_organization,
+    set_default_payment_method_if_none,
+)
 from app.settings import settings
 
 logger = structlog.stdlib.get_logger(__name__)
@@ -97,22 +101,31 @@ def has_active_hobby_subscription(subscription: Subscription) -> bool:
 async def get_or_create_subscription(
     session: AsyncSession, organization: Organization
 ) -> Subscription:
+    organization_id = organization.id
+
     result = await session.execute(
-        select(Subscription).where(Subscription.organization_id == organization.id)
+        select(Subscription).where(Subscription.organization_id == organization_id)
     )
     existing = result.scalar_one_or_none()
 
     if existing:
         return existing
 
-    subscription = Subscription(
-        organization_id=organization.id,
-        tier=SubscriptionTier.FREE,
-        status=SubscriptionStatus.ACTIVE,
-    )
-    session.add(subscription)
-    await session.flush()
-    return subscription
+    try:
+        async with session.begin_nested():
+            subscription = Subscription(
+                organization_id=organization.id,
+                tier=SubscriptionTier.FREE,
+                status=SubscriptionStatus.ACTIVE,
+            )
+            session.add(subscription)
+            await session.flush()
+            return subscription
+    except IntegrityError:
+        result = await session.execute(
+            select(Subscription).where(Subscription.organization_id == organization_id)
+        )
+        return result.scalar_one()
 
 
 async def get_workflow_count(session: AsyncSession, organization_id: UUID) -> int:
@@ -513,12 +526,17 @@ async def handle_payment_succeeded_event(
     event_data: dict,
     stripe_event_id: str,
 ) -> None:
+    print("?")
     if await _is_duplicate_event(session, stripe_event_id):
         return
+    print("o")
+
+    print(event_data)
 
     stripe_subscription_id = event_data.get("subscription")
     if not stripe_subscription_id:
         return
+    print("i")
 
     result = await session.execute(
         select(Subscription).where(
@@ -530,9 +548,17 @@ async def handle_payment_succeeded_event(
     if not subscription:
         return
 
+    print("shee")
     if subscription.status == SubscriptionStatus.PAST_DUE:
         subscription.status = SubscriptionStatus.ACTIVE
         subscription.grace_period_ends_at = None
+
+    customer_id = event_data.get("customer")
+    payment_method_id = event_data.get("default_payment_method")
+
+    print("testt", customer_id, payment_method_id)
+    if customer_id and payment_method_id:
+        set_default_payment_method_if_none(customer_id, payment_method_id)
 
     await _record_event(
         session,

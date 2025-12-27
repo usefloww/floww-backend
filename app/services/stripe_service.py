@@ -79,15 +79,17 @@ async def create_subscription_with_intent(
             "subscription_id": str(subscription.id),
             "tier": target_tier.value,
         },
-        expand=["latest_invoice.payment_intent"],
+        expand=["latest_invoice.confirmation_secret"],
     )
 
     subscription.stripe_subscription_id = stripe_sub.id
     if session_db:
         await session_db.flush()
 
-    client_secret = _extract_client_secret_from_subscription(stripe_sub)
-    if not client_secret:
+    # client_secret = _extract_client_secret_from_subscription(stripe_sub)
+    try:
+        client_secret = stripe_sub.latest_invoice.confirmation_secret.client_secret  # type: ignore
+    except Exception:
         raise ValueError("No client_secret found on payment intent")
 
     return {"subscription_id": stripe_sub.id, "client_secret": client_secret}
@@ -114,35 +116,39 @@ def _extract_client_secret(sub: dict) -> str | None:
     if not latest_invoice:
         return None
 
-    payment_intent = (
-        latest_invoice.get("payment_intent")
+    confirmation_secret = (
+        latest_invoice.get("confirmation_secret")
         if isinstance(latest_invoice, dict)
-        else getattr(latest_invoice, "payment_intent", None)
+        else getattr(latest_invoice, "confirmation_secret", None)
     )
-    if not payment_intent:
+    if not confirmation_secret:
         return None
 
     return (
-        payment_intent.get("client_secret")
-        if isinstance(payment_intent, dict)
-        else getattr(payment_intent, "client_secret", None)
+        confirmation_secret.get("client_secret")
+        if isinstance(confirmation_secret, dict)
+        else getattr(confirmation_secret, "client_secret", None)
     )
 
 
 def _extract_client_secret_from_subscription(stripe_sub) -> str | None:
-    latest_invoice = stripe_sub.latest_invoice
-    if isinstance(latest_invoice, str):
+    latest_invoice_id = stripe_sub.latest_invoice
+    if isinstance(latest_invoice_id, str):
         # Expansion failed, fetch invoice
         try:
-            invoice = stripe.Invoice.retrieve(latest_invoice, expand=["payment_intent"])
+            invoice = stripe.Invoice.retrieve(
+                latest_invoice_id, expand=["payment_intent"]
+            )
+            print(dict(invoice))
             payment_intent = invoice.payment_intent
         except Exception:
             return None
     else:
+        print(latest_invoice_id)
         payment_intent = (
-            latest_invoice.get("payment_intent")
-            if isinstance(latest_invoice, dict)
-            else getattr(latest_invoice, "payment_intent", None)
+            latest_invoice_id.get("payment_intent")
+            if isinstance(latest_invoice_id, dict)
+            else getattr(latest_invoice_id, "payment_intent", None)
         )
 
     if not payment_intent:
@@ -268,6 +274,27 @@ def construct_webhook_event(payload: bytes, sig_header: str):
     )
 
 
+def set_default_payment_method_if_none(
+    customer_id: str, payment_method_id: str
+) -> bool:
+    print("WOOO")
+    try:
+        customer = stripe.Customer.retrieve(customer_id)
+        print(customer)
+        default_pm = customer.get("invoice_settings", {}).get("default_payment_method")
+
+        if default_pm:
+            return False
+
+        stripe.Customer.modify(
+            customer_id,
+            invoice_settings={"default_payment_method": payment_method_id},
+        )
+        return True
+    except stripe.StripeError:
+        return False
+
+
 def find_subscription_by_organization(organization_id: str) -> dict | None:
     try:
         customers = stripe.Customer.search(
@@ -295,6 +322,7 @@ def get_default_payment_method(customer_id: str) -> dict | None:
         customer = stripe.Customer.retrieve(
             customer_id, expand=["invoice_settings.default_payment_method"]
         )
+        print(customer)
         default_pm = customer.get("invoice_settings", {}).get("default_payment_method")
         if not default_pm:
             return None
@@ -310,7 +338,8 @@ def get_default_payment_method(customer_id: str) -> dict | None:
             "exp_month": card.get("exp_month"),
             "exp_year": card.get("exp_year"),
         }
-    except stripe.StripeError:
+    except stripe.StripeError as e:
+        print(e)
         return None
 
 

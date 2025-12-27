@@ -222,7 +222,7 @@ async def create_subscription_intent(
 async def verify_subscription_payment(
     organization_id: UUID,
     current_user: CurrentUser,
-    session: SessionDep,
+    session: TransactionSessionDep,
 ):
     _require_cloud()
 
@@ -243,6 +243,10 @@ async def verify_subscription_payment(
     result = await stripe_service.verify_subscription_payment(
         subscription.stripe_subscription_id
     )
+
+    if result["status"] in ["active", "trialing"]:
+        await billing_service.sync_subscription_from_stripe(session, organization_id)
+
     return VerifyPaymentResponse(**result)
 
 
