@@ -139,12 +139,10 @@ def _extract_client_secret_from_subscription(stripe_sub) -> str | None:
             invoice = stripe.Invoice.retrieve(
                 latest_invoice_id, expand=["payment_intent"]
             )
-            print(dict(invoice))
             payment_intent = invoice.payment_intent
         except Exception:
             return None
     else:
-        print(latest_invoice_id)
         payment_intent = (
             latest_invoice_id.get("payment_intent")
             if isinstance(latest_invoice_id, dict)
@@ -277,10 +275,8 @@ def construct_webhook_event(payload: bytes, sig_header: str):
 def set_default_payment_method_if_none(
     customer_id: str, payment_method_id: str
 ) -> bool:
-    print("WOOO")
     try:
         customer = stripe.Customer.retrieve(customer_id)
-        print(customer)
         default_pm = customer.get("invoice_settings", {}).get("default_payment_method")
 
         if default_pm:
@@ -322,7 +318,6 @@ def get_default_payment_method(customer_id: str) -> dict | None:
         customer = stripe.Customer.retrieve(
             customer_id, expand=["invoice_settings.default_payment_method"]
         )
-        print(customer)
         default_pm = customer.get("invoice_settings", {}).get("default_payment_method")
         if not default_pm:
             return None
@@ -339,7 +334,6 @@ def get_default_payment_method(customer_id: str) -> dict | None:
             "exp_year": card.get("exp_year"),
         }
     except stripe.StripeError as e:
-        print(e)
         return None
 
 

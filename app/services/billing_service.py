@@ -526,17 +526,13 @@ async def handle_payment_succeeded_event(
     event_data: dict,
     stripe_event_id: str,
 ) -> None:
-    print("?")
     if await _is_duplicate_event(session, stripe_event_id):
         return
-    print("o")
-
-    print(event_data)
 
     stripe_subscription_id = event_data.get("subscription")
+
     if not stripe_subscription_id:
         return
-    print("i")
 
     result = await session.execute(
         select(Subscription).where(
@@ -548,7 +544,6 @@ async def handle_payment_succeeded_event(
     if not subscription:
         return
 
-    print("shee")
     if subscription.status == SubscriptionStatus.PAST_DUE:
         subscription.status = SubscriptionStatus.ACTIVE
         subscription.grace_period_ends_at = None
@@ -556,7 +551,6 @@ async def handle_payment_succeeded_event(
     customer_id = event_data.get("customer")
     payment_method_id = event_data.get("default_payment_method")
 
-    print("testt", customer_id, payment_method_id)
     if customer_id and payment_method_id:
         set_default_payment_method_if_none(customer_id, payment_method_id)
 
