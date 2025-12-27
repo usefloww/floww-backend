@@ -47,6 +47,7 @@ class OrganizationAdmin(ModelView, model=Organization):
     icon = "fa-solid fa-building"
     column_list = get_model_column_list(Organization)
     column_searchable_list = get_searchable_columns(Organization)
+    form_include_pk = True
 
     @action(
         name="refresh_subscription",
@@ -108,6 +109,7 @@ def create_model_admin_class(model: Type[Base]) -> Type[ModelView]:
         icon = get_model_icon(model_name)
         column_list = get_model_column_list(model)
         column_searchable_list = searchable_columns
+        form_include_pk = True
 
     # Set the class name for debugging
     DynamicModelView.__name__ = class_name
