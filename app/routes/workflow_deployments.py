@@ -96,12 +96,17 @@ def validate_definitions(
         Tuple of (is_valid, error_message)
     """
     if not runtime_definitions.get("success"):
-        error = runtime_definitions.get("error", {})
-        error_msg = error.get("message", "Unknown error")
-        error_stack = error.get("stack", "")
+        error = runtime_definitions.get("error", "Unknown error")
+        if isinstance(error, dict):
+            error_msg = error.get("message", "Unknown error")
+            error_stack = error.get("stack", "")
+            return (
+                False,
+                f"Runtime failed to extract definitions: {error_msg}\n{error_stack}",
+            )
         return (
             False,
-            f"Runtime failed to extract definitions: {error_msg}\n{error_stack}",
+            f"Runtime failed to extract definitions: {error}",
         )
 
     return True, None

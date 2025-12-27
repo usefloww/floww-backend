@@ -159,7 +159,15 @@ async def get_default_runtime_id() -> UUID | None:
         config = result.scalar_one_or_none()
 
         if config and config.value:
-            runtime_id_str = config.value.get("runtime_id")
+            value = config.value
+            # Handle both dict format {"runtime_id": "..."} and legacy string format
+            if isinstance(value, dict):
+                runtime_id_str = value.get("runtime_id")
+            elif isinstance(value, str):
+                runtime_id_str = value
+            else:
+                runtime_id_str = None
+
             if runtime_id_str:
                 return UUID(runtime_id_str)
 

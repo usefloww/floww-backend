@@ -25,12 +25,19 @@ class DockerRuntime(RuntimeI):
         self,
         runtime_config: RuntimeConfig,
     ) -> RuntimeCreationStatus:
-        # Construct full image URI using registry URL (Docker needs direct registry access)
-        # Remove protocol from registry URL for Docker image reference
-        registry_host = self.registry_url.replace("https://", "").replace("http://", "")
-        image_uri = (
-            f"{registry_host}/{self.repository_name}@{runtime_config.image_digest}"
-        )
+        # Check if image_digest is already a full URI (for default runtimes)
+        # or just a digest (for regular runtimes)
+        if "/" in runtime_config.image_digest:
+            # Already a full URI, use directly
+            image_uri = runtime_config.image_digest
+        else:
+            # Construct full image URI using registry URL
+            registry_host = self.registry_url.replace("https://", "").replace(
+                "http://", ""
+            )
+            image_uri = (
+                f"{registry_host}/{self.repository_name}@{runtime_config.image_digest}"
+            )
 
         await create_container(
             runtime_id=runtime_config.runtime_id,

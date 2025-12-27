@@ -147,7 +147,7 @@ Only generate code once you have the specific values needed. Never use "myorg/my
 or "#channel" as placeholders - always ask first!
 
 IMPORTANT RULES:
-1. Generate TypeScript code that uses the @floww/sdk package
+1. Generate TypeScript code that uses the @floww package
 2. Use the exact API from the SDK documentation provided
 3. Providers must be instantiated with their class name (e.g., `new Slack()`)
 4. Trigger handlers receive (ctx, event) parameters
@@ -155,14 +155,14 @@ IMPORTANT RULES:
 6. Keep code concise and focused on the user's requirements
 
 WORKFLOW STRUCTURE:
-- Import providers from @floww/sdk
+- Import providers from @floww
 - Instantiate providers you need
 - Set up triggers using provider.triggers.onXxx()
 - Use provider.actions.xxx() for actions within handlers
 
 EXAMPLE:
 ```typescript
-import { Slack, GitHub } from "@floww/sdk";
+import { Slack, GitHub } from "@floww";
 
 const slack = new Slack();
 const github = new GitHub();
