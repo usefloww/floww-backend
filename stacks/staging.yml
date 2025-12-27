@@ -170,6 +170,8 @@ secrets:
     external: true
   staging_backend_stripe_webhook_secret:
     external: true
+  staging_backend_openrouter_api_key:
+    external: true
 
 networks:
   traefik-staging-net:

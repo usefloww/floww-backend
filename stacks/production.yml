@@ -172,6 +172,8 @@ secrets:
   backend_stripe_webhook_secret:
     external: true
     name: backend_stripe_webhook_secret_v2
+  backend_openrouter_api_key:
+    external: true
 
 networks:
   traefik-net:
