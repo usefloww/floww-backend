@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from re import sub
 from uuid import UUID
 
 import structlog
@@ -529,8 +530,9 @@ async def handle_payment_succeeded_event(
     if await _is_duplicate_event(session, stripe_event_id):
         return
 
-    stripe_subscription_id = event_data.get("subscription")
-
+    stripe_subscription_id = (
+        event_data.get("parent", {}).get("subscription_details", {}).get("subscription")
+    )
     if not stripe_subscription_id:
         return
 
@@ -549,10 +551,9 @@ async def handle_payment_succeeded_event(
         subscription.grace_period_ends_at = None
 
     customer_id = event_data.get("customer")
-    payment_method_id = event_data.get("default_payment_method")
 
-    if customer_id and payment_method_id:
-        set_default_payment_method_if_none(customer_id, payment_method_id)
+    if customer_id and stripe_subscription_id:
+        set_default_payment_method_if_none(customer_id, stripe_subscription_id)
 
     await _record_event(
         session,

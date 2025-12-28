@@ -273,13 +273,19 @@ def construct_webhook_event(payload: bytes, sig_header: str):
 
 
 def set_default_payment_method_if_none(
-    customer_id: str, payment_method_id: str
+    customer_id: str, stripe_subscription_id: str
 ) -> bool:
     try:
         customer = stripe.Customer.retrieve(customer_id)
         default_pm = customer.get("invoice_settings", {}).get("default_payment_method")
 
         if default_pm:
+            return False
+
+        subscription = stripe.Subscription.retrieve(stripe_subscription_id)
+        payment_method_id = subscription.get("default_payment_method")
+
+        if not payment_method_id:
             return False
 
         stripe.Customer.modify(
