@@ -92,7 +92,8 @@ services:
       - REGISTRY_REPOSITORY_NAME=trigger-lambda
       - IS_CLOUD=true
       - STRIPE_PUBLISHABLE_KEY=pk_live_51SToIG9QR0ekoyxExl6rbZdjKrPubJFpPMe2dCiG7BxsVrJuQ04GP5QsMWQwg1L1s1tz255LV0JQMw2izZfHyeKZ00stQnGCze
-      - STRIPE_PRICE_ID_PRO=price_1SU76M9QR0ekoyxE5zIOKROn
+      - STRIPE_PRICE_ID_HOBBY=price_1SjjFK9QR0ekoyxEJlYJwPmb
+      - STRIPE_PRICE_ID_TEAM=price_1SjjFK9QR0ekoyxEJKp9zl6q
 
       # Secret file paths (read by updated settings.py)
       - AUTH_CLIENT_SECRET_FILE=/run/secrets/backend_auth_client_secret
