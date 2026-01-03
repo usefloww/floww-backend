@@ -513,6 +513,23 @@ class Runtime(Base):
     __table_args__ = (UniqueConstraint("config_hash", name="uq_runtime_config_hash"),)
 
 
+class WorkflowFolder(Base):
+    __tablename__ = "workflow_folders"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
+    )
+    namespace_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("namespaces.id", ondelete="CASCADE")
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    parent_folder_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workflow_folders.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
+
 class Workflow(Base):
     __tablename__ = "workflows"
 
@@ -548,6 +565,11 @@ class Workflow(Base):
     ]
     """
     active: Mapped[bool] = mapped_column(nullable=True, default=True)
+    parent_folder_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workflow_folders.id", ondelete="CASCADE"),
+        nullable=True,
+    )
 
     # Relationships
     namespace: Mapped["Namespace"] = relationship(back_populates="workflows")
@@ -1009,3 +1031,58 @@ class Configuration(Base):
 
     def __repr__(self):
         return self._repr(key=self.key)
+
+
+### ACCESS CONTROL ###
+# 1. Workflow/Folder/User -> Provider
+# 2. User -> Workflow/Folder
+
+
+class AccessRole(Enum):
+    OWNER = "owner"
+    USER = "user"
+
+
+class ResourceType(Enum):
+    WORKFLOW = "workflow"
+    FOLDER = "folder"
+    PROVIDER = "provider"
+
+
+class PrincipleType(Enum):
+    USER = "user"
+    WORKFLOW = "workflow"
+    FOLDER = "folder"
+
+
+class AccessTuple(Base):
+    __tablename__ = "provider_access"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=generate_ulid_uuid
+    )
+
+    resource_type: Mapped[ResourceType] = mapped_column(
+        SQLEnum(ResourceType), nullable=False
+    )
+    resource_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    principle_type: Mapped[PrincipleType] = mapped_column(
+        SQLEnum(PrincipleType), nullable=False
+    )
+    principle_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    role: Mapped[AccessRole] = mapped_column(SQLEnum(AccessRole), nullable=False)
+
+    __table_args__ = (
+        # Prevent duplicate access grants for the same principal-resource pair
+        UniqueConstraint(
+            "principle_type",
+            "principle_id",
+            "resource_type",
+            "resource_id",
+            name="uq_access_principal_resource",
+        ),
+        # Query: get all resources a principal can access
+        Index("idx_access_principal", "principle_type", "principle_id"),
+        # Query: get all principals with access to a resource
+        Index("idx_access_resource", "resource_type", "resource_id"),
+    )
