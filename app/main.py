@@ -18,6 +18,7 @@ from app.routes import (
     health,
     kv_store,
     namespaces,
+    oauth,
     organizations,
     provider_types,
     providers,
@@ -119,4 +120,5 @@ app.include_router(webhooks.router)
 app.include_router(admin_auth.router)
 app.include_router(device_auth.router)
 app.include_router(centrifugo.router)
+app.include_router(oauth.router)
 app.include_router(api_router)

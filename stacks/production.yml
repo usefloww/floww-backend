@@ -133,7 +133,7 @@ services:
           memory: 512M
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.floww-backend-api.rule=Host(`app.usefloww.dev`) && (PathPrefix(`/api`) || PathPrefix(`/auth`) || PathPrefix(`/v2`) || PathPrefix(`/admin`) || PathPrefix(`/webhook`))"
+        - "traefik.http.routers.floww-backend-api.rule=Host(`app.usefloww.dev`) && (PathPrefix(`/api`) || PathPrefix(`/auth`) || PathPrefix(`/v2`) || PathPrefix(`/admin`) || PathPrefix(`/webhook`) || PathPrefix(`/oauth`))"
         - "traefik.http.routers.floww-backend-api.entrypoints=websecure"
         - "traefik.http.routers.floww-backend-api.tls.certresolver=myresolver"
         - "traefik.http.routers.floww-backend-api.service=floww-backend"

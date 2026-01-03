@@ -133,7 +133,7 @@ services:
           memory: 512M
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.floww-backend-staging-api.rule=Host(`app.flow.toondn.app`) && (PathPrefix(`/api`) || PathPrefix(`/auth`) || PathPrefix(`/v2`) || PathPrefix(`/admin`))"
+        - "traefik.http.routers.floww-backend-staging-api.rule=Host(`app.flow.toondn.app`) && (PathPrefix(`/api`) || PathPrefix(`/auth`) || PathPrefix(`/v2`) || PathPrefix(`/admin`) || PathPrefix(`/oauth`))"
         - "traefik.http.routers.floww-backend-staging-api.entrypoints=websecure"
         - "traefik.http.routers.floww-backend-staging-api.tls.certresolver=myresolver"
         - "traefik.http.routers.floww-backend-staging-api.service=floww-backend-staging"

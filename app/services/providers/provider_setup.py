@@ -35,9 +35,10 @@ class ProviderSetupStepSecret(ProviderSetupStep):
 # oauth-based step
 class ProviderSetupStepOAuth(ProviderSetupStep):
     type: Literal["oauth"] = "oauth"
-    provider_name: str
-    scopes: List[str]
-    redirect_uri: str
+    title: str
+    alias: str  # Key used to identify OAuth connection in config
+    provider_name: str  # OAuth provider (e.g., "google")
+    scopes: List[str]  # OAuth scopes to request
 
 
 # user selects one from predefined options
@@ -75,21 +76,3 @@ class ProviderSetupStepWebhook(ProviderSetupStep):
     alias: str
     default: Optional[str] = None
     required: bool = True
-
-
-# example provider definition
-
-
-class GoogleCalendarProvider(BaseModel):
-    name: str = "google_calendar"
-    setup_steps: List[ProviderSetupStep] = [
-        ProviderSetupStepOAuth(
-            provider_name="google",
-            scopes=["calendar.readonly"],
-            redirect_uri="https://yourapp.com/oauth/callback",
-        ),
-        ProviderSetupStepInfo(
-            title="Authorize Access",
-            message="Go to your Google account and verify calendar permissions.",
-        ),
-    ]

@@ -5,6 +5,9 @@ from app.services.providers.implementations.builtin import BuiltinProvider
 from app.services.providers.implementations.discord import DiscordProvider
 from app.services.providers.implementations.github import GithubProvider
 from app.services.providers.implementations.gitlab import GitlabProvider
+from app.services.providers.implementations.google_calendar import (
+    GoogleCalendarProvider,
+)
 from app.services.providers.implementations.jira import JiraProvider
 from app.services.providers.implementations.kvstore import KVStoreProvider
 from app.services.providers.implementations.slack import SlackProvider
@@ -15,6 +18,7 @@ ALL_PROVIDER_TYPES = [
     DiscordProvider,
     GithubProvider,
     GitlabProvider,
+    GoogleCalendarProvider,
     JiraProvider,
     KVStoreProvider,
     SlackProvider,
