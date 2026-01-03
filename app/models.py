@@ -529,6 +529,18 @@ class WorkflowFolder(Base):
         nullable=True,
     )
 
+    # Relationships
+    namespace: Mapped["Namespace"] = relationship("Namespace")
+    parent_folder: Mapped[Optional["WorkflowFolder"]] = relationship(
+        "WorkflowFolder", remote_side="WorkflowFolder.id", back_populates="subfolders"
+    )
+    subfolders: Mapped[list["WorkflowFolder"]] = relationship(
+        "WorkflowFolder", back_populates="parent_folder"
+    )
+    workflows: Mapped[list["Workflow"]] = relationship(
+        "Workflow", back_populates="parent_folder"
+    )
+
 
 class Workflow(Base):
     __tablename__ = "workflows"
@@ -575,6 +587,9 @@ class Workflow(Base):
     namespace: Mapped["Namespace"] = relationship(back_populates="workflows")
     created_by: Mapped[Optional["User"]] = relationship(
         back_populates="created_workflows"
+    )
+    parent_folder: Mapped[Optional["WorkflowFolder"]] = relationship(
+        back_populates="workflows"
     )
     deployments: Mapped[list["WorkflowDeployment"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"

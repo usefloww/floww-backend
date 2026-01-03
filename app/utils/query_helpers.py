@@ -18,6 +18,7 @@ from app.models import (
     UserType,
     Workflow,
     WorkflowDeployment,
+    WorkflowFolder,
 )
 
 
@@ -59,6 +60,11 @@ class UserAccessibleQuery:
     def workflows(self):
         return select(Workflow).where(
             Workflow.namespace.has(_namespace_filter(self.user_id))
+        )
+
+    def folders(self):
+        return select(WorkflowFolder).where(
+            WorkflowFolder.namespace.has(_namespace_filter(self.user_id))
         )
 
     def deployments(self):

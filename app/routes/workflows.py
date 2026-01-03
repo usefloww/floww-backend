@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.deps.auth import CurrentUser
 from app.deps.billing import check_can_create_workflow_in_namespace
 from app.deps.db import SessionDep, TransactionSessionDep
-from app.models import Namespace, Workflow, WorkflowDeployment
+from app.models import Namespace, Workflow, WorkflowDeployment, WorkflowFolder
 from app.services.crud_helpers import CrudHelper, ListResult
 from app.utils.query_helpers import UserAccessibleQuery
 
@@ -37,6 +37,7 @@ class WorkflowRead(BaseModel):
     name: str
     description: Optional[str] = None
     namespace_id: UUID
+    parent_folder_id: Optional[UUID] = None
     created_by_id: Optional[UUID] = None
     created_by: Optional[CreatedByUser] = None
     created_at: datetime
@@ -49,12 +50,14 @@ class WorkflowCreate(BaseModel):
     name: str
     namespace_id: UUID
     description: Optional[str] = None
+    parent_folder_id: Optional[UUID] = None
 
 
 class WorkflowUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     namespace_id: Optional[UUID] = None
+    parent_folder_id: Optional[UUID] = None
     active: Optional[bool] = None
 
 
@@ -86,8 +89,16 @@ async def list_workflows(
     current_user: CurrentUser,
     session: SessionDep,
     namespace_id: Optional[UUID] = None,
+    parent_folder_id: Optional[UUID] = None,
+    root_only: bool = False,
 ):
-    """List workflows accessible to the authenticated user."""
+    """
+    List workflows accessible to the authenticated user.
+
+    - If parent_folder_id is provided, filters to workflows in that folder
+    - If root_only is True and parent_folder_id is not provided, returns only root workflows (no parent folder)
+    - Otherwise returns all workflows in the namespace
+    """
     # Build query with eager loading of created_by relationship
     query = (
         UserAccessibleQuery(current_user.id)
@@ -98,6 +109,11 @@ async def list_workflows(
 
     if namespace_id:
         query = query.where(Workflow.namespace_id == namespace_id)
+
+    if parent_folder_id:
+        query = query.where(Workflow.parent_folder_id == parent_folder_id)
+    elif root_only:
+        query = query.where(Workflow.parent_folder_id.is_(None))
 
     result = await session.execute(query)
     workflows = result.scalars().all()
@@ -173,11 +189,31 @@ async def create_workflow(
     # Check workflow limit for the namespace's organization
     await check_can_create_workflow_in_namespace(session, data.namespace_id)
 
+    # If parent_folder_id is provided, verify it exists and is in the same namespace
+    if data.parent_folder_id:
+        folder_query = (
+            UserAccessibleQuery(current_user.id)
+            .folders()
+            .where(WorkflowFolder.id == data.parent_folder_id)
+        )
+        folder_result = await session.execute(folder_query)
+        folder = folder_result.scalar_one_or_none()
+
+        if not folder:
+            raise HTTPException(status_code=400, detail="Parent folder not found")
+
+        if folder.namespace_id != data.namespace_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Parent folder must be in the same namespace",
+            )
+
     # Create a workflow manually with created_by_id
     workflow = Workflow(
         name=data.name,
         description=data.description,
         namespace_id=data.namespace_id,
+        parent_folder_id=data.parent_folder_id,
         created_by_id=current_user.id,
     )
 
@@ -193,6 +229,7 @@ async def create_workflow(
         name=workflow.name,
         description=workflow.description,
         namespace_id=workflow.namespace_id,
+        parent_folder_id=workflow.parent_folder_id,
         created_by_id=workflow.created_by_id,
         created_by=CreatedByUser(
             id=current_user.id,
@@ -407,8 +444,29 @@ async def update_workflow(
         .where(Workflow.id == workflow_id)
     )
     access_result = await session.execute(access_query)
-    if not access_result.scalar_one_or_none():
+    workflow = access_result.scalar_one_or_none()
+    if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # If moving to a new folder, validate it
+    if data.parent_folder_id is not None:
+        folder_query = (
+            UserAccessibleQuery(current_user.id)
+            .folders()
+            .where(WorkflowFolder.id == data.parent_folder_id)
+        )
+        folder_result = await session.execute(folder_query)
+        folder = folder_result.scalar_one_or_none()
+
+        if not folder:
+            raise HTTPException(status_code=400, detail="Parent folder not found")
+
+        # Ensure folder is in the same namespace as the workflow
+        if folder.namespace_id != workflow.namespace_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Parent folder must be in the same namespace",
+            )
 
     # Update the workflow
     await session.execute(

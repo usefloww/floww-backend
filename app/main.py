@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.factories import scheduler_factory
 from app.routes import (
+    access,
     admin_auth,
     billing,
     centrifugo,
@@ -15,6 +16,7 @@ from app.routes import (
     device_auth,
     docker_proxy,
     executions,
+    folders,
     health,
     kv_store,
     namespaces,
@@ -98,7 +100,9 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 api_router.include_router(health.router)
 api_router.include_router(config.router)
+api_router.include_router(access.router)
 api_router.include_router(workflows.router)
+api_router.include_router(folders.router)
 api_router.include_router(workflow_builder.router)
 api_router.include_router(whoami.router)
 api_router.include_router(secrets.router)
