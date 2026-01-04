@@ -1,15 +1,8 @@
 import json
-import os
 from typing import Callable, Dict, List
 
 from litellm import completion
 from pydantic import BaseModel
-
-from app.settings import settings
-
-# Configure OpenRouter API key for litellm if available
-if settings.OPENROUTER_API_KEY:
-    os.environ["OPENROUTER_API_KEY"] = settings.OPENROUTER_API_KEY
 
 # ---------------------------------------------------------------------------
 # pydantic schemas

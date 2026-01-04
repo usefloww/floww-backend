@@ -126,7 +126,10 @@ def llm_json(model: str, messages: list[dict], temperature: float = 0.0) -> dict
                 try:
                     return json.loads(raw[start:end])
                 except json.JSONDecodeError as e2:
-                    logger.error(f"Failed to parse extracted JSON: {e2}", extracted=raw[start:end])
+                    logger.error(
+                        f"Failed to parse extracted JSON: {e2}",
+                        extracted=raw[start:end],
+                    )
 
         raise
 
