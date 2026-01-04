@@ -157,7 +157,7 @@ Only generate code once you have the specific values needed. Never use "myorg/my
 or "#channel" as placeholders - always ask first!
 
 IMPORTANT RULES:
-1. Generate TypeScript code that uses the @floww package
+1. Generate TypeScript code that uses the floww package
 2. Use the exact API from the SDK documentation provided
 3. Providers must be instantiated with their class name (e.g., `new Slack()`)
 4. Trigger handlers receive (ctx, event) parameters
@@ -165,7 +165,7 @@ IMPORTANT RULES:
 6. Keep code concise and focused on the user's requirements
 
 WORKFLOW STRUCTURE:
-- Import providers from @floww
+- Import providers from floww
 - Instantiate providers you need
 - Set up triggers using provider.triggers.onXxx()
 - Use provider.actions.xxx() for actions within handlers
@@ -176,7 +176,7 @@ CUSTOM SECRETS:
 - Access secret values with .value() method
 - Example:
 ```typescript
-import { Secret } from "@floww";
+import { Secret } from "floww";
 import { z } from "zod";
 
 const apiKey = new Secret("my-api", z.object({
@@ -191,7 +191,7 @@ fetch(config.endpoint, { headers: { "X-API-Key": config.key } });
 
 EXAMPLE WORKFLOW:
 ```typescript
-import { Slack, GitHub } from "@floww";
+import { Slack, GitHub } from "floww";
 
 const slack = new Slack();
 const github = new GitHub();
