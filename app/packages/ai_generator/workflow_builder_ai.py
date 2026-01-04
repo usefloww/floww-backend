@@ -76,7 +76,13 @@ class ExtractedIntent(BaseModel):
 
 def llm_json(model: str, messages: list[dict], temperature: float = 0.0) -> dict:
     """Call LLM and parse JSON response."""
-    resp = completion(model=model, messages=messages, temperature=temperature)
+    print(model)
+    resp = completion(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        timeout=120,  # 2 minutes for complex JSON responses
+    )
     raw = resp.choices[0].message["content"]
 
     # Handle <think> tags from some models
@@ -85,20 +91,55 @@ def llm_json(model: str, messages: list[dict], temperature: float = 0.0) -> dict
         if think_end != -1:
             raw = raw[think_end + 8 :].strip()
 
+    # Remove markdown code blocks if present
+    if "```json" in raw:
+        start = raw.find("```json") + 7
+        end = raw.find("```", start)
+        if end > start:
+            raw = raw[start:end].strip()
+    elif "```" in raw:
+        start = raw.find("```") + 3
+        end = raw.find("```", start)
+        if end > start:
+            raw = raw[start:end].strip()
+
     try:
         return json.loads(raw)
-    except json.JSONDecodeError:
-        # Try to extract JSON from response
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse LLM JSON response: {e}", raw_response=raw[:500])
+
+        # Try to extract JSON from response by finding balanced braces
         start = raw.find("{")
-        end = raw.rfind("}") + 1
-        if start >= 0 and end > start:
-            return json.loads(raw[start:end])
+        if start >= 0:
+            brace_count = 0
+            end = start
+            for i in range(start, len(raw)):
+                if raw[i] == "{":
+                    brace_count += 1
+                elif raw[i] == "}":
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end = i + 1
+                        break
+
+            if end > start:
+                try:
+                    return json.loads(raw[start:end])
+                except json.JSONDecodeError as e2:
+                    logger.error(f"Failed to parse extracted JSON: {e2}", extracted=raw[start:end])
+
         raise
 
 
 def llm_text(model: str, messages: list[dict], temperature: float = 0.1) -> str:
     """Call LLM and return text response."""
-    resp = completion(model=model, messages=messages, temperature=temperature)
+    print(model)
+    resp = completion(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        timeout=180,  # 3 minutes for code generation
+    )
     raw = resp.choices[0].message["content"]
 
     # Handle <think> tags from some models
@@ -118,7 +159,7 @@ def extract_intent(
 Extract the following information as JSON:
 {{
   "summary": "Brief description of what the user wants",
-  "platforms": ["list", "of", "platforms", "mentioned"],
+  "platforms": ["list", "of", "SUPPORTED", "platforms"],
   "trigger_type": "webhook|schedule|event|null",
   "actions": ["list", "of", "actions", "to", "perform"],
   "needs_clarification": true/false,
@@ -135,6 +176,19 @@ Extract the following information as JSON:
   ]
 }}
 
+CRITICAL - Platform Extraction Rules:
+- **ONLY** include platforms in the "platforms" list if they are SUPPORTED Floww providers
+- Supported providers: Slack, GitHub, GitLab, Discord, Jira, Todoist, OpenAI, Anthropic, Google, KVStore
+- **DO NOT** include custom APIs, external services, or third-party APIs in "platforms"
+- For custom integrations (APIs, databases, external services), leave "platforms" empty or include only the supported ones
+- Custom APIs will be implemented using the Secret class + fetch, not as platforms
+
+Examples:
+- "Send Slack message when AccuWeather API shows rain" → platforms: ["Slack"] (NOT ["Slack", "AccuWeather"])
+- "Call my custom API every hour" → platforms: [] (custom API uses Secret + fetch)
+- "GitHub webhook triggers Jira ticket" → platforms: ["GitHub", "Jira"]
+- "Connect to PostgreSQL database" → platforms: [] (use Secret for DB credentials)
+
 IMPORTANT: You MUST ask for specific configuration details before generating code.
 Set needs_clarification to TRUE and ask questions if ANY of these are missing:
 
@@ -145,6 +199,7 @@ Set needs_clarification to TRUE and ask questions if ANY of these are missing:
 - **Jira**: Which project key? What issue types?
 - **Schedule/Cron**: How often? What time? (be specific: "every hour", "daily at 9am UTC")
 - **Webhooks**: What kind of data will be received?
+- **Custom APIs**: What's the API endpoint? What authentication? What request format?
 
 Look at the conversation history - if the user already provided these details in previous 
 messages, don't ask again. But if specific values like channel names, repository names, 
@@ -197,7 +252,7 @@ Examples of good structured questions:
    }}
 
 Previous conversation:
-{json.dumps(conversation_history[-6:], indent=2) if conversation_history else "None"}
+{json.dumps(conversation_history, indent=2) if conversation_history else "None"}
 
 Current user message:
 {user_message}
@@ -206,6 +261,23 @@ Current user message:
     messages = [{"role": "user", "content": prompt}]
     data = llm_json(settings.AI_MODEL_REQUIREMENTS, messages)
     return ExtractedIntent(**data)
+
+
+def extract_secrets_from_code(code: str) -> list[dict]:
+    """Extract Secret definitions from generated TypeScript code."""
+    import re
+
+    secrets = []
+    # Match: new Secret("name", z.object({ ... }))
+    # We'll do a simple pattern match for the secret name
+    pattern = r'new\s+Secret\s*\(\s*["\']([^"\']+)["\']'
+    matches = re.finditer(pattern, code)
+
+    for match in matches:
+        secret_name = match.group(1)
+        secrets.append({"name": secret_name})
+
+    return secrets
 
 
 def generate_workflow_code(
@@ -226,19 +298,30 @@ def generate_workflow_code(
     user_prompt = f"""Generate a complete Floww workflow based on this requirement:
 
 Summary: {intent.summary}
-Platforms: {", ".join(intent.platforms)}
+Platforms: {", ".join(intent.platforms) if intent.platforms else "None (using custom integrations)"}
 Trigger type: {intent.trigger_type or "to be determined from context"}
 Actions: {", ".join(intent.actions) if intent.actions else "to be determined"}
 
-IMPORTANT:
-- Output ONLY the TypeScript code, no markdown fences, no explanations
+CRITICAL INSTRUCTIONS:
+- Output ONLY the TypeScript code, no markdown fences, no explanations, no questions
+- NEVER output text asking for more information - generate working code with placeholders if needed
 - Use the exact APIs from the SDK documentation provided
 - Include all necessary imports
 - Instantiate providers correctly with new ProviderName()
 - Set up proper trigger handlers
 
+For missing specific details (API keys, IDs, endpoints):
+- Use the Secret class with descriptive placeholder names (e.g., "ACCUWEATHER_API_KEY", "LOCATION_KEY")
+- Add helpful comments indicating what values need to be configured
+- Generate functional code that will work once secrets are configured
+- For API endpoints, use realistic examples based on the service documentation
+
+For custom APIs/services not in the provider list:
+- Use the Secret class + fetch/HTTP requests
+- Use proper TypeScript types and error handling for HTTP requests
+
 Previous conversation for context:
-{json.dumps(conversation_history[-4:], indent=2) if conversation_history else "None"}
+{json.dumps(conversation_history, indent=2) if conversation_history else "None"}
 """
 
     messages = [
@@ -276,9 +359,17 @@ def generate_iteration_response(
         current_code=current_code,
     )
 
+    conversation_context = ""
+    if conversation_history:
+        conversation_context = f"""
+Previous conversation for context:
+{json.dumps(conversation_history, indent=2)}
+"""
+
     user_prompt = f"""The user wants to modify the current workflow code.
 
-User request: {user_message}
+{conversation_context}
+Current user request: {user_message}
 
 Current code is in the context above.
 
@@ -292,6 +383,7 @@ IMPORTANT:
 - Include the COMPLETE updated code, not just the changes
 - Preserve existing functionality unless explicitly asked to change it
 - Use exact APIs from SDK documentation
+- Consider the conversation history when interpreting the user's request
 """
 
     messages = [
@@ -451,14 +543,13 @@ async def process_message(
             )
 
         if missing:
-            # Some platforms are not supported
+            # Some platforms are not supported - but we can use Secret + fetch for custom integrations
             parts.append(
                 MessagePart(
-                    type="data-not-supported",
-                    data={
-                        "message": f"The following platforms are not currently supported: {', '.join(missing)}. "
-                        f"Supported platforms include: Slack, GitHub, GitLab, Discord, Jira, Todoist, and more.",
-                    },
+                    type="text",
+                    text=f"Note: {', '.join(missing)} {'is' if len(missing) == 1 else 'are'} not built-in "
+                    f"provider{'s' if len(missing) > 1 else ''}, but I can integrate with {'it' if len(missing) == 1 else 'them'} "
+                    f"using the Secret class for credentials and standard HTTP requests.",
                 )
             )
 
@@ -466,14 +557,9 @@ async def process_message(
                 parts.append(
                     MessagePart(
                         type="text",
-                        text=f"I can still help you with: {', '.join(matched)}. Should I proceed?",
+                        text=f"I'll use the built-in providers for: {', '.join(matched)}, and custom HTTP integration for the rest. "
+                        f"This will work great! Let me know any API details I need.",
                     )
-                )
-            else:
-                return AIResponse(
-                    parts=parts,
-                    code=None,
-                    stage=ConversationStage.GATHERING_REQUIREMENTS,
                 )
 
         # Build SDK context for the matched providers
@@ -493,17 +579,47 @@ async def process_message(
         conversation_history=conversation_history,
     )
 
-    # Build response
-    parts.append(
-        MessagePart(
-            type="text",
-            text=f"I've created a workflow based on your requirements: **{intent.summary}**\n\n"
-            "The code is shown in the editor. You can:\n"
-            "- Ask me to modify it\n"
-            "- Add more functionality\n"
-            "- Deploy it when you're ready",
+    # Check if code uses Secret class - if so, prompt user to configure secrets
+    secrets = extract_secrets_from_code(code)
+    if secrets:
+        parts.append(
+            MessagePart(
+                type="text",
+                text=f"I've created a workflow based on your requirements: **{intent.summary}**\n\n"
+                "This workflow uses custom secrets for credentials:",
+            )
         )
-    )
+
+        for secret in secrets:
+            parts.append(
+                MessagePart(
+                    type="data-secret-setup",
+                    data={
+                        "message": f"Configure secret '{secret['name']}' with your credentials",
+                        "secret_name": secret["name"],
+                    },
+                )
+            )
+
+        parts.append(
+            MessagePart(
+                type="text",
+                text="You'll need to configure these secrets before deploying. "
+                "The code is shown in the editor with comments indicating what values are needed.",
+            )
+        )
+    else:
+        # Build response
+        parts.append(
+            MessagePart(
+                type="text",
+                text=f"I've created a workflow based on your requirements: **{intent.summary}**\n\n"
+                "The code is shown in the editor. You can:\n"
+                "- Ask me to modify it\n"
+                "- Add more functionality\n"
+                "- Deploy it when you're ready",
+            )
+        )
 
     return AIResponse(
         parts=parts,

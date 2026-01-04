@@ -49,7 +49,7 @@ def build_sdk_context(provider_names: list[str]) -> str:
     """
     Build SDK documentation context for the specified providers.
 
-    Loads the TypeScript source files for each provider plus common types.
+    Loads the TypeScript source files for each provider plus common types and secrets.
     """
     context_parts = []
 
@@ -59,6 +59,16 @@ def build_sdk_context(provider_names: list[str]) -> str:
         context_parts.append("# SDK Common Types (common.ts)\n")
         context_parts.append("```typescript")
         context_parts.append(common_types)
+        context_parts.append("```\n")
+
+    # Load Secret class documentation
+    from app.packages.ai_generator.provider_docs import load_secret_documentation
+
+    secret_docs = load_secret_documentation()
+    if secret_docs:
+        context_parts.append("# SDK Secret Class (for custom credentials)\n")
+        context_parts.append("```typescript")
+        context_parts.append(secret_docs)
         context_parts.append("```\n")
 
     # Load provider documentation
@@ -143,7 +153,7 @@ Examples of good clarifying questions:
 - "What's the GitHub repository (e.g., 'myorg/myrepo')? Any specific branch?"
 - "How often should this run? (e.g., every hour, daily at 9am)"
 
-Only generate code once you have the specific values needed. Never use "myorg/myrepo" 
+Only generate code once you have the specific values needed. Never use "myorg/myrepo"
 or "#channel" as placeholders - always ask first!
 
 IMPORTANT RULES:
@@ -160,7 +170,26 @@ WORKFLOW STRUCTURE:
 - Set up triggers using provider.triggers.onXxx()
 - Use provider.actions.xxx() for actions within handlers
 
-EXAMPLE:
+CUSTOM SECRETS:
+- Use the Secret class to store custom credentials (API keys, database passwords, etc.)
+- Secrets are defined with Zod schemas and stored securely
+- Access secret values with .value() method
+- Example:
+```typescript
+import { Secret } from "@floww";
+import { z } from "zod";
+
+const apiKey = new Secret("my-api", z.object({
+  key: z.string(),
+  endpoint: z.string(),
+}));
+
+// Use in your workflow
+const config = apiKey.value();
+fetch(config.endpoint, { headers: { "X-API-Key": config.key } });
+```
+
+EXAMPLE WORKFLOW:
 ```typescript
 import { Slack, GitHub } from "@floww";
 

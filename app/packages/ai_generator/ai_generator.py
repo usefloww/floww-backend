@@ -91,7 +91,7 @@ def llm_text(model: str, prompt: str, temperature=0.1):
 
 def extract_requirements(model: str, text: str) -> RequirementsOutput:
     prompt = f"""
-You extract automation requirements, you are not to picky on the exact details and if something
+You extract automation requirements, you are not to be picky on the exact details and if something
 is clear enough you pass it on as is.
 Follow this format strictly:
 {{

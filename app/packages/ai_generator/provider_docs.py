@@ -87,6 +87,23 @@ def load_common_types() -> Optional[str]:
         return None
 
 
+def load_secret_documentation() -> Optional[str]:
+    """Load the secret.ts file containing the Secret class for custom credentials."""
+    secret_file = get_sdk_providers_path() / "secret.ts"
+
+    if not secret_file.exists():
+        logger.warning(f"Secret documentation file not found: {secret_file}")
+        return None
+
+    try:
+        content = secret_file.read_text(encoding="utf-8")
+        logger.debug("Loaded secret documentation")
+        return content
+    except Exception as e:
+        logger.error(f"Error reading secret documentation: {e}")
+        return None
+
+
 def load_provider_index() -> Optional[str]:
     """Load the providers index.ts for available provider exports."""
     index_file = get_sdk_providers_path() / "index.ts"
