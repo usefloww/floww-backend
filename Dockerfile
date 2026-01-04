@@ -61,5 +61,5 @@ COPY ./app /home/appuser/app
 COPY ./alembic.ini /home/appuser/alembic.ini
 WORKDIR /home/appuser
 
-CMD ["gunicorn", "-k", "app.utils.uvicorn_worker.MyUvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000", "--workers", "2"]
+CMD ["gunicorn", "-k", "app.utils.uvicorn_worker.MyUvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeoout", "300"]
 
