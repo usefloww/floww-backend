@@ -15,6 +15,7 @@ from typing import Optional
 from uuid import UUID
 
 import structlog
+import litellm
 from litellm import completion
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +30,8 @@ from app.packages.ai_generator.platform_validation import validate_platforms
 from app.settings import settings
 
 logger = structlog.stdlib.get_logger(__name__)
+
+litellm.callbacks = ["langfuse_otel"]
 
 
 class ConversationStage(str, Enum):

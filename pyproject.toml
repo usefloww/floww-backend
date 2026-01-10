@@ -41,6 +41,9 @@ dependencies = [
     "psycopg2-binary>=2.9.10",
     "python-ulid>=2.3.0",
     "authlib>=1.6.5",
+    "opentelemetry-api>=1.39.1",
+    "opentelemetry-sdk>=1.39.1",
+    "opentelemetry-exporter-otlp>=1.39.1",
 ]
 
 [dependency-groups]
