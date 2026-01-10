@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from app.deps.auth import CurrentUser
 from app.deps.db import SessionDep
 from app.models import Workflow
-from app.packages.ai_generator.workflow_builder_ai import process_message
+from app.packages.ai_generator.agentic_workflow_builder import process_message
 from app.utils.query_helpers import UserAccessibleQuery
 
 logger = structlog.stdlib.get_logger(__name__)
@@ -34,6 +34,7 @@ class BuilderChatRequest(BaseModel):
     user_message: str
     current_code: Optional[str] = None
     namespace_id: Optional[UUID] = None
+    plan: Optional[dict] = None
 
 
 class QuestionOption(BaseModel):
@@ -56,6 +57,7 @@ class AssistantMessage(BaseModel):
 class BuilderChatResponse(BaseModel):
     message: AssistantMessage
     code: Optional[str] = None
+    plan: Optional[dict] = None
 
 
 @router.post("/{workflow_id}/builder/chat")
@@ -109,6 +111,7 @@ async def builder_chat(
             user_message=data.user_message,
             conversation_history=conversation_history,
             current_code=data.current_code,
+            plan=data.plan,
         )
 
         # Convert AI response parts to endpoint format
@@ -124,6 +127,7 @@ async def builder_chat(
         return BuilderChatResponse(
             message=AssistantMessage(parts=parts),
             code=ai_response.code,
+            plan=ai_response.plan,
         )
 
     except Exception as e:
