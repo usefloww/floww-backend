@@ -182,8 +182,14 @@ jobs:
         env:
           DOCKER_HOST: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
         run: |
-          export IMAGE_TAG="sha-${GITHUB_SHA:0:7}"
-          envsubst < stacks/staging.yml | docker stack deploy -c - floww-backend-staging --with-registry-auth
+          IMAGE_TAG="sha-${GITHUB_SHA:0:7}"
+          echo "Deploying with IMAGE_TAG=${IMAGE_TAG}"
+          
+          # Substitute image tag in stack file
+          sed "s|\${IMAGE_TAG:-latest}|${IMAGE_TAG}|g" stacks/staging.yml > /tmp/staging-deploy.yml
+          
+          # Deploy and wait for convergence
+          docker stack deploy -c /tmp/staging-deploy.yml floww-backend-staging --with-registry-auth --detach=false
 
   integration-tests:
     needs: [staging-deploy]
@@ -310,5 +316,11 @@ jobs:
         env:
           DOCKER_HOST: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
         run: |
-          export IMAGE_TAG="sha-${GITHUB_SHA:0:7}"
-          envsubst < stacks/production.yml | docker stack deploy -c - floww-backend --with-registry-auth
+          IMAGE_TAG="sha-${GITHUB_SHA:0:7}"
+          echo "Deploying with IMAGE_TAG=${IMAGE_TAG}"
+          
+          # Substitute image tag in stack file
+          sed "s|\${IMAGE_TAG:-latest}|${IMAGE_TAG}|g" stacks/production.yml > /tmp/production-deploy.yml
+          
+          # Deploy and wait for convergence
+          docker stack deploy -c /tmp/production-deploy.yml floww-backend --with-registry-auth --detach=false
