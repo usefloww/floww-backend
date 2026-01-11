@@ -72,6 +72,8 @@ services:
       - backend_stripe_secret_key
       - backend_stripe_webhook_secret
       - backend_openrouter_api_key
+      - backend_google_oauth_client_id
+      - backend_google_oauth_client_secret
 
     environment:
       # Non-sensitive configuration
@@ -109,6 +111,8 @@ services:
       - STRIPE_SECRET_KEY_FILE=/run/secrets/backend_stripe_secret_key
       - STRIPE_WEBHOOK_SECRET_FILE=/run/secrets/backend_stripe_webhook_secret
       - OPENROUTER_API_KEY_FILE=/run/secrets/backend_openrouter_api_key
+      - GOOGLE_OAUTH_CLIENT_ID_FILE=/run/secrets/backend_google_oauth_client_id
+      - GOOGLE_OAUTH_CLIENT_SECRET_FILE=/run/secrets/backend_google_oauth_client_secret
 
     deploy:
       mode: replicated
@@ -174,6 +178,10 @@ secrets:
     external: true
     name: backend_stripe_webhook_secret_v2
   backend_openrouter_api_key:
+    external: true
+  backend_google_oauth_client_id:
+    external: true
+  backend_google_oauth_client_secret:
     external: true
 
 networks:
