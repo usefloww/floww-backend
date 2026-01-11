@@ -29,6 +29,7 @@ from app.routes import (
     service_accounts,
     subscriptions,
     summary,
+    triggers,
     webhooks,
     whoami,
     workflow_builder,
@@ -119,6 +120,7 @@ api_router.include_router(executions.router)
 api_router.include_router(subscriptions.router)
 api_router.include_router(billing.router)
 api_router.include_router(summary.router)
+api_router.include_router(triggers.router)
 app.include_router(docker_proxy.router)
 app.include_router(webhooks.router)
 app.include_router(admin_auth.router)

@@ -29,6 +29,7 @@ async def create_execution_record(
     session: AsyncSession,
     workflow_id: UUID,
     trigger_id: UUID,
+    triggered_by_user_id: Optional[UUID] = None,
 ) -> ExecutionHistory:
     """
     Create initial execution record when webhook received.
@@ -37,6 +38,7 @@ async def create_execution_record(
         session: Database session
         workflow_id: ID of the workflow being executed
         trigger_id: ID of the trigger that initiated execution
+        triggered_by_user_id: Optional ID of the user who manually triggered the execution
 
     Returns:
         ExecutionHistory with status=RECEIVED
@@ -44,6 +46,7 @@ async def create_execution_record(
     execution = ExecutionHistory(
         workflow_id=workflow_id,
         trigger_id=trigger_id,
+        triggered_by_user_id=triggered_by_user_id,
         status=ExecutionStatus.RECEIVED,
     )
     session.add(execution)
@@ -427,6 +430,11 @@ def serialize_execution(execution: ExecutionHistory) -> dict:
         "trigger_id": str(execution.trigger_id) if execution.trigger_id else None,
         "deployment_id": (
             str(execution.deployment_id) if execution.deployment_id else None
+        ),
+        "triggered_by_user_id": (
+            str(execution.triggered_by_user_id)
+            if execution.triggered_by_user_id
+            else None
         ),
         "status": execution.status.value,
         "received_at": execution.received_at.isoformat(),

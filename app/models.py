@@ -958,6 +958,11 @@ class ExecutionHistory(Base):
         ForeignKey("workflow_deployments.id", ondelete="SET NULL"),
         nullable=True,
     )
+    triggered_by_user_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     status: Mapped[ExecutionStatus] = mapped_column(
         SQLEnum(ExecutionStatus), nullable=False, default=ExecutionStatus.RECEIVED
     )
@@ -979,6 +984,7 @@ class ExecutionHistory(Base):
     deployment: Mapped[Optional["WorkflowDeployment"]] = relationship(
         "WorkflowDeployment"
     )
+    triggered_by_user: Mapped[Optional["User"]] = relationship("User")
     log_entries: Mapped[list["ExecutionLog"]] = relationship(
         back_populates="execution", cascade="all, delete-orphan"
     )
