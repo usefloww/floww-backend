@@ -1,36 +1,122 @@
 import inspect
-from typing import Type
+import json
+from typing import Any, Type
 from uuid import UUID
 
 from fastapi import Request
 from fastapi.responses import RedirectResponse
+from markupsafe import Markup
 from sqladmin import ModelView, action
+from sqlalchemy.dialects.postgresql import JSONB
 
 import app.models as models_module
 from app.models import Base, Organization
 from app.services.billing_service import sync_subscription_from_stripe
 
+# Maximum characters to show in list view before truncating
+MAX_DISPLAY_LENGTH = 80
 
-def get_model_column_list(model: Type[Base]):
+
+def get_model_column_list(model: Type[Base]) -> list[str]:
     return [column.name for column in model.__table__.columns]
 
 
 def get_searchable_columns(model: Type[Base]) -> list[str]:
-    """Get columns that should be searchable (fields ending in _id or containing 'name')."""
+    """Get columns that should be searchable (IDs and name fields)."""
     searchable = []
     for column in model.__table__.columns:
         column_name = column.name
-        # Include fields ending in _id or containing 'name'
-        if column_name.endswith("_id") or "name" in column_name.lower():
-            # Only include string-based columns for search
-            if hasattr(column.type, "python_type") and column.type.python_type is str:
-                searchable.append(column_name)
-            # Also include String columns without python_type check
-            elif str(column.type).startswith("VARCHAR") or str(column.type).startswith(
-                "TEXT"
-            ):
-                searchable.append(column_name)
+
+        # Include all ID fields (including UUIDs - SQLAdmin casts to string for search)
+        if column_name.endswith("_id") or column_name == "id":
+            searchable.append(column_name)
+            continue
+
+        # Include name-related fields
+        if "name" in column_name.lower():
+            searchable.append(column_name)
+            continue
+
+        # Include email fields
+        if "email" in column_name.lower():
+            searchable.append(column_name)
+            continue
+
+        # Include type/status/key fields for filtering
+        if column_name in ("type", "alias", "key", "prefix", "path", "method"):
+            searchable.append(column_name)
+            continue
+
     return searchable
+
+
+def get_columns_to_hide_in_list(model: Type[Base]) -> list[str]:
+    """Get columns that should be hidden in list view (large/sensitive fields)."""
+    hidden = []
+    for column in model.__table__.columns:
+        column_name = column.name
+        column_type = column.type
+
+        # Hide JSONB columns in list view (show in detail)
+        if isinstance(column_type, JSONB):
+            hidden.append(column_name)
+            continue
+
+        # Hide encrypted/sensitive fields
+        if any(
+            x in column_name.lower()
+            for x in ("encrypted", "hash", "password", "secret")
+        ):
+            hidden.append(column_name)
+            continue
+
+    return hidden
+
+
+def truncate_value(value: Any, max_length: int = MAX_DISPLAY_LENGTH) -> str:
+    """Truncate a value for display, handling different types."""
+    if value is None:
+        return ""
+
+    if isinstance(value, dict):
+        text = json.dumps(value, default=str)
+    elif isinstance(value, list):
+        text = json.dumps(value, default=str)
+    elif isinstance(value, UUID):
+        return str(value)
+    else:
+        text = str(value)
+
+    if len(text) <= max_length:
+        return text
+
+    return text[:max_length] + "…"
+
+
+def create_column_formatters(model: Type[Base]) -> dict:
+    """Create column formatters for large fields."""
+    formatters = {}
+
+    for column in model.__table__.columns:
+        column_name = column.name
+        column_type = column.type
+
+        # Format JSONB columns
+        if isinstance(column_type, JSONB):
+            formatters[column_name] = lambda m, a, col=column_name: Markup(
+                f'<code style="font-size: 11px; white-space: pre-wrap; max-width: 300px; display: block; overflow: hidden;">'
+                f"{truncate_value(getattr(m, col), 200)}</code>"
+            )
+            continue
+
+        # Format long text fields
+        if str(column_type).startswith("TEXT"):
+            formatters[column_name] = lambda m, a, col=column_name: Markup(
+                f'<span title="{str(getattr(m, col) or "")[:500]}">'
+                f"{truncate_value(getattr(m, col))}</span>"
+            )
+
+    return formatters
 
 
 def redirect_to_referer(view: ModelView, request: Request):
@@ -47,7 +133,10 @@ class OrganizationAdmin(ModelView, model=Organization):
     icon = "fa-solid fa-building"
     column_list = get_model_column_list(Organization)
     column_searchable_list = get_searchable_columns(Organization)
+    column_formatters = create_column_formatters(Organization)
     form_include_pk = True
+    page_size = 25
+    page_size_options = [25, 50, 100]
 
     @action(
         name="refresh_subscription",
@@ -89,9 +178,38 @@ def get_model_icon(model_name: str) -> str:
         "Runtime": "fa-solid fa-server",
         "Workflow": "fa-solid fa-diagram-project",
         "WorkflowDeployment": "fa-solid fa-rocket",
+        "WorkflowFolder": "fa-solid fa-folder-tree",
         "IncomingWebhook": "fa-solid fa-blog",
+        "Trigger": "fa-solid fa-bolt",
+        "Secret": "fa-solid fa-key",
+        "Provider": "fa-solid fa-plug",
+        "ExecutionHistory": "fa-solid fa-clock-rotate-left",
+        "ExecutionLog": "fa-solid fa-scroll",
+        "Subscription": "fa-solid fa-credit-card",
+        "BillingEvent": "fa-solid fa-receipt",
+        "ApiKey": "fa-solid fa-key",
+        "DeviceCode": "fa-solid fa-mobile",
+        "RefreshToken": "fa-solid fa-rotate",
+        "KeyValueTable": "fa-solid fa-table",
+        "KeyValueItem": "fa-solid fa-database",
+        "KeyValueTablePermission": "fa-solid fa-lock",
+        "RecurringTask": "fa-solid fa-repeat",
+        "Configuration": "fa-solid fa-gear",
+        "AccessTuple": "fa-solid fa-shield",
     }
     return icon_map.get(model_name, "fa-solid fa-table")
+
+
+def get_default_sort(model_name: str) -> list[tuple[str, bool]]:
+    """Get default sort column for a model (column_name, descending)."""
+    # Models with created_at should sort by newest first
+    sort_map = {
+        "ExecutionHistory": [("received_at", True)],
+        "ExecutionLog": [("timestamp", True)],
+        "BillingEvent": [("created_at", True)],
+        "WorkflowDeployment": [("deployed_at", True)],
+    }
+    return sort_map.get(model_name, [])
 
 
 def create_model_admin_class(model: Type[Base]) -> Type[ModelView]:
@@ -99,17 +217,29 @@ def create_model_admin_class(model: Type[Base]) -> Type[ModelView]:
     model_name = model.__name__
     class_name = f"{model_name}Admin"
 
-    # Get searchable columns for this model
+    # Get config for this model
     searchable_columns = get_searchable_columns(model)
+    hidden_in_list = get_columns_to_hide_in_list(model)
+    formatters = create_column_formatters(model)
+    default_sort = get_default_sort(model_name)
+
+    # Get list columns (exclude hidden ones)
+    all_columns = get_model_column_list(model)
+    list_columns = [col for col in all_columns if col not in hidden_in_list]
 
     # Create the class with proper model binding
     class DynamicModelView(ModelView, model=model):
         name = model_name
         name_plural = f"{model_name}s"
         icon = get_model_icon(model_name)
-        column_list = get_model_column_list(model)
+        column_list = list_columns
+        column_details_list = all_columns  # Show all columns in detail view
         column_searchable_list = searchable_columns
+        column_formatters = formatters
         form_include_pk = True
+        page_size = 25
+        page_size_options = [25, 50, 100]
+        column_default_sort = default_sort if default_sort else None
 
     # Set the class name for debugging
     DynamicModelView.__name__ = class_name
