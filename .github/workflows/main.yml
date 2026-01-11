@@ -188,8 +188,29 @@ jobs:
           # Substitute image tag in stack file
           sed "s|\${IMAGE_TAG:-latest}|${IMAGE_TAG}|g" stacks/staging.yml > /tmp/staging-deploy.yml
           
-          # Deploy and wait for convergence
-          docker stack deploy -c /tmp/staging-deploy.yml floww-backend-staging --with-registry-auth --detach=false
+          # Deploy and capture output
+          set +e
+          OUTPUT=$(docker stack deploy -c /tmp/staging-deploy.yml floww-backend-staging --with-registry-auth --detach=false 2>&1)
+          EXIT_CODE=$?
+          set -e
+          
+          echo "$OUTPUT"
+          
+          # Check for rollback or failure
+          if echo "$OUTPUT" | grep -q "rollback"; then
+            echo "::error::Deployment rolled back!"
+            echo "Fetching service logs..."
+            docker service logs floww-backend-staging_app --tail 100 2>&1 || true
+            docker service logs floww-backend-staging_centrifugo --tail 50 2>&1 || true
+            exit 1
+          fi
+          
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "::error::Deployment failed with exit code $EXIT_CODE"
+            exit $EXIT_CODE
+          fi
+          
+          echo "Deployment successful!"
 
   integration-tests:
     needs: [staging-deploy]
@@ -322,5 +343,26 @@ jobs:
           # Substitute image tag in stack file
           sed "s|\${IMAGE_TAG:-latest}|${IMAGE_TAG}|g" stacks/production.yml > /tmp/production-deploy.yml
           
-          # Deploy and wait for convergence
-          docker stack deploy -c /tmp/production-deploy.yml floww-backend --with-registry-auth --detach=false
+          # Deploy and capture output
+          set +e
+          OUTPUT=$(docker stack deploy -c /tmp/production-deploy.yml floww-backend --with-registry-auth --detach=false 2>&1)
+          EXIT_CODE=$?
+          set -e
+          
+          echo "$OUTPUT"
+          
+          # Check for rollback or failure
+          if echo "$OUTPUT" | grep -q "rollback"; then
+            echo "::error::Deployment rolled back!"
+            echo "Fetching service logs..."
+            docker service logs floww-backend_app --tail 100 2>&1 || true
+            docker service logs floww-backend_centrifugo --tail 50 2>&1 || true
+            exit 1
+          fi
+          
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "::error::Deployment failed with exit code $EXIT_CODE"
+            exit $EXIT_CODE
+          fi
+          
+          echo "Deployment successful!"
