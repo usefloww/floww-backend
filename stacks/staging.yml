@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   centrifugo:
-    image: "ghcr.io/usefloww/floww-centrifugo:latest"
+    image: "ghcr.io/usefloww/floww-centrifugo:${IMAGE_TAG:-latest}"
 
     networks:
       - traefik-staging-net
@@ -53,7 +53,7 @@ services:
         hard: 65535
 
   app:
-    image: "ghcr.io/usefloww/floww-backend:latest"
+    image: "ghcr.io/usefloww/floww-backend:${IMAGE_TAG:-latest}"
 
     networks:
       - traefik-staging-net

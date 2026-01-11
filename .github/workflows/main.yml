@@ -38,6 +38,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
+            type=sha,prefix=sha-
             type=ref,event=branch
             type=ref,event=pr
             type=semver,pattern={{version}}
@@ -77,6 +78,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/usefloww/floww-centrifugo
           tags: |
+            type=sha,prefix=sha-
             type=ref,event=branch
             type=ref,event=pr
             type=semver,pattern={{version}}
@@ -111,8 +113,9 @@ jobs:
         env:
           DOCKER_HOST: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
         run: |
-          SHORT_SHA=${GITHUB_SHA:0:8}
+          SHORT_SHA=${GITHUB_SHA:0:7}
           SERVICE_NAME="backend-staging-migration-${SHORT_SHA}"
+          IMAGE_TAG="sha-${SHORT_SHA}"
 
           docker service create \
             --name ${SERVICE_NAME} \
@@ -128,7 +131,7 @@ jobs:
             --env ENCRYPTION_KEY_FILE="/run/secrets/staging_backend_encryption_key" \
             --restart-condition none \
             --detach \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG} \
             python -m alembic upgrade head
 
           timeout 180 bash -c '
@@ -179,7 +182,8 @@ jobs:
         env:
           DOCKER_HOST: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
         run: |
-          docker stack deploy -c stacks/staging.yml floww-backend-staging --with-registry-auth
+          export IMAGE_TAG="sha-${GITHUB_SHA:0:7}"
+          envsubst < stacks/staging.yml | docker stack deploy -c - floww-backend-staging --with-registry-auth
 
   integration-tests:
     needs: [staging-deploy]
@@ -237,8 +241,9 @@ jobs:
         env:
           DOCKER_HOST: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
         run: |
-          SHORT_SHA=${GITHUB_SHA:0:8}
+          SHORT_SHA=${GITHUB_SHA:0:7}
           SERVICE_NAME="backend-migration-${SHORT_SHA}"
+          IMAGE_TAG="sha-${SHORT_SHA}"
 
           docker service create \
             --name ${SERVICE_NAME} \
@@ -254,7 +259,7 @@ jobs:
             --env ENCRYPTION_KEY_FILE="/run/secrets/backend_encryption_key" \
             --restart-condition none \
             --detach \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG} \
             python -m alembic upgrade head
 
           timeout 180 bash -c '
@@ -305,4 +310,5 @@ jobs:
         env:
           DOCKER_HOST: ssh://${{ vars.SERVER_USER }}@${{ vars.SERVER_HOST }}
         run: |
-          docker stack deploy -c stacks/production.yml floww-backend --with-registry-auth
+          export IMAGE_TAG="sha-${GITHUB_SHA:0:7}"
+          envsubst < stacks/production.yml | docker stack deploy -c - floww-backend --with-registry-auth
