@@ -44,8 +44,31 @@ UPDATE_CODE_TOOL = {
 @register_tool("update_workflow_code", UPDATE_CODE_TOOL)
 async def update_workflow_code(args: dict, ctx: "AgentContext") -> ToolResult:
     """Update existing workflow code."""
+    from app.packages.ai_generator.services.code_validator import (
+        format_errors_for_llm,
+        validate_typescript,
+    )
+
     code = clean_code(args["code"])
     changes_made = args["changes_made"]
+
+    # Validate TypeScript code
+    validation_result = await validate_typescript(
+        ctx.session, ctx.namespace_id, code
+    )
+
+    if not validation_result.get("success", True):
+        error_message = format_errors_for_llm(validation_result.get("errors", []))
+        return ToolResult(
+            data={"status": "validation_failed", "errors": error_message},
+            parts=[
+                {
+                    "type": "text",
+                    "text": f"The updated code has TypeScript errors:\n\n{error_message}",
+                }
+            ],
+            is_terminal=False,  # Let agent retry
+        )
 
     secrets = extract_secrets_from_code(code)
     old_secrets = extract_secrets_from_code(ctx.current_code or "")

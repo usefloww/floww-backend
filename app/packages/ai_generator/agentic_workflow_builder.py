@@ -396,6 +396,67 @@ Now generate TypeScript code for the workflow plan."""
                     lines = lines[:-1]
                 code = "\n".join(lines).strip()
 
+        # Validate TypeScript code
+        from app.packages.ai_generator.services.code_validator import (
+            format_errors_for_llm,
+            validate_typescript,
+        )
+
+        validation_result = await validate_typescript(session, namespace_id, code)
+
+        if not validation_result.get("success", True):
+            error_message = format_errors_for_llm(validation_result.get("errors", []))
+            logger.warning(
+                "plan_approval_code_validation_failed",
+                error_count=len(validation_result.get("errors", [])),
+            )
+
+            # Try to regenerate with the error feedback
+            retry_prompt = f"""The generated code has TypeScript errors:
+
+{error_message}
+
+Please fix these errors and regenerate the complete TypeScript code."""
+
+            response = completion(
+                model=settings.AI_MODEL_CODEGEN,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                    {"role": "assistant", "content": code},
+                    {"role": "user", "content": retry_prompt},
+                ],
+                temperature=0.1,
+                timeout=180,
+            )
+            code = response.choices[0].message.content.strip()
+
+            # Clean again
+            if code.startswith("```"):
+                lines = code.split("\n")
+                lines = lines[1:]
+                if lines and lines[-1].strip() == "```":
+                    lines = lines[:-1]
+                code = "\n".join(lines).strip()
+
+            # Validate again
+            validation_result = await validate_typescript(session, namespace_id, code)
+            if not validation_result.get("success", True):
+                # Still has errors - return them to user
+                error_message = format_errors_for_llm(
+                    validation_result.get("errors", [])
+                )
+                return AgentResponse(
+                    parts=[
+                        MessagePart(
+                            type="text",
+                            text=f"I generated code but it has TypeScript errors that I couldn't fix automatically:\n\n{error_message}\n\nPlease describe what you need and I'll try again.",
+                        )
+                    ],
+                    code=None,
+                    terminal_reason=TerminalReason.ERROR,
+                )
+
         # Extract secrets from code
         secrets = extract_secrets_from_code(code)
 

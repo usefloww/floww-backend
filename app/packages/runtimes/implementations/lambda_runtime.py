@@ -130,5 +130,21 @@ class LambdaRuntime(RuntimeI):
         )
         return result
 
+    async def validate_code(
+        self,
+        runtime_config: RuntimeConfig,
+        user_code: dict[str, str],
+    ) -> dict[str, Any]:
+        event_payload = {
+            "type": "validate_code",
+            "userCode": user_code,
+        }
+        result = invoke_lambda_sync(
+            self.lambda_client,
+            runtime_config.runtime_id,
+            event_payload,
+        )
+        return result
+
     async def teardown_unused_runtimes(self) -> None:
         pass

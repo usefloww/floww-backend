@@ -114,5 +114,22 @@ class DockerRuntime(RuntimeI):
         )
         return result
 
+    async def validate_code(
+        self,
+        runtime_config: RuntimeConfig,
+        user_code: dict[str, str],
+    ) -> dict[str, Any]:
+        await start_container_if_stopped(runtime_config.runtime_id)
+        event_payload = {
+            "type": "validate_code",
+            "userCode": user_code,
+        }
+        result = await send_webhook_to_container(
+            runtime_config.runtime_id,
+            event_payload,
+            timeout=30,
+        )
+        return result
+
     async def teardown_unused_runtimes(self) -> None:
         await cleanup_idle_containers(300)

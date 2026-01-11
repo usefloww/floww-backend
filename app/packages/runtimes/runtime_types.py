@@ -109,4 +109,34 @@ class RuntimeI(ABC):
         ...
 
     @abstractmethod
+    async def validate_code(
+        self,
+        runtime_config: RuntimeConfig,
+        user_code: dict[str, str],
+    ) -> dict[str, Any]:
+        """
+        Validate TypeScript code for compilation errors.
+
+        Args:
+            runtime_config: Runtime configuration
+            user_code: Dict with 'files' and 'entrypoint' keys
+
+        Returns:
+            {
+                "success": bool,
+                "errors": [
+                    {
+                        "file": "...",
+                        "line": int,
+                        "column": int,
+                        "message": "...",
+                        "code": "TS..."
+                    },
+                    ...
+                ]
+            }
+        """
+        ...
+
+    @abstractmethod
     async def teardown_unused_runtimes(self) -> None: ...

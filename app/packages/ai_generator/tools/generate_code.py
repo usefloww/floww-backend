@@ -70,8 +70,31 @@ def extract_secrets_from_code(code: str) -> list[dict]:
 @register_tool("generate_workflow_code", GENERATE_CODE_TOOL)
 async def generate_workflow_code(args: dict, ctx: "AgentContext") -> ToolResult:
     """Generate workflow code."""
+    from app.packages.ai_generator.services.code_validator import (
+        format_errors_for_llm,
+        validate_typescript,
+    )
+
     code = clean_code(args["code"])
     explanation = args["explanation"]
+
+    # Validate TypeScript code
+    validation_result = await validate_typescript(
+        ctx.session, ctx.namespace_id, code
+    )
+
+    if not validation_result.get("success", True):
+        error_message = format_errors_for_llm(validation_result.get("errors", []))
+        return ToolResult(
+            data={"status": "validation_failed", "errors": error_message},
+            parts=[
+                {
+                    "type": "text",
+                    "text": f"The generated code has TypeScript errors:\n\n{error_message}",
+                }
+            ],
+            is_terminal=False,  # Let agent retry
+        )
 
     secrets = extract_secrets_from_code(code)
 
